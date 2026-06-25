@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "vrc-udon-skills@agent-skills-vrc-udon": true
+  }
+}
