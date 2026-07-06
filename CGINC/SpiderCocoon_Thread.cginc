@@ -28,9 +28,13 @@
 #define SC_JITTER_GAIN 2.5
 #define SC_FUZZ_GAIN   2.5
 
-float SC_EvalFiber(float2 uv, float cx, float cy, float2 posOffset,
-                   float seed, float thickMul, float2 aaUV,
-                   out float outSigned, out float outRim)
+// fuzzCoord: Fuzz（糸長方向の太さうねり）ノイズに使う「糸に沿った座標」。
+// 通常はそのまま p.x を渡せばよい（ラッパー SC_EvalFiber がそうしている）。
+// 円周がラップする座標系（デカール等）では、シームで連続する折返し座標を
+// 呼び出し側で作って渡すことで、継ぎ目の太さ段差を防げる。
+float SC_EvalFiberEx(float2 uv, float cx, float cy, float2 posOffset,
+                     float seed, float thickMul, float2 aaUV, float fuzzCoord,
+                     out float outSigned, out float outRim)
 {
     float2 p = uv + posOffset;                 // レイヤー位置オフセット
 
@@ -45,10 +49,12 @@ float SC_EvalFiber(float2 uv, float cx, float cy, float2 posOffset,
 
     // 太さの乱雑性: 糸ごとの差（Jitter）＋ 糸長方向のうねり（Fuzz）。
     //   円周シーム（uv.y 0/1）をまたいでも連続するよう、糸インデックスを巻き数 W=cy で巡回。
+    //   HLSL の fmod は負数で結果が負になり巡回が壊れるため、フロア剰余を使う
+    //   （例: fmod(-1,24)=-1 だがフロア剰余なら 23 ＝ シーム両側で一致）。
     float period = max(abs(cy), 1.0);
-    float idxMod = fmod(idx, period);
+    float idxMod = idx - period * floor(idx / period);
     float jit    = SC_Hash11Signed(idxMod + seed);
-    float fuzzN  = SC_ValueNoise1(p.x * _ThreadFuzzScale + (idxMod + seed) * 7.0); // 0..1
+    float fuzzN  = SC_ValueNoise1(fuzzCoord * _ThreadFuzzScale + (idxMod + seed) * 7.0); // 0..1
     float widthMul = (1.0 + _ThreadJitter * SC_JITTER_GAIN * jit)
                    * (1.0 + _ThreadFuzz   * SC_FUZZ_GAIN   * (fuzzN * 2.0 - 1.0));
     hw = max(hw * widthMul, 1e-4);
@@ -65,6 +71,15 @@ float SC_EvalFiber(float2 uv, float cx, float cy, float2 posOffset,
     outSigned = clamp(s / hw, -1.0, 1.0);
     outRim    = saturate(dt / hw);
     return alpha;
+}
+
+// 従来シグネチャのラッパー（fuzz 座標 = p.x。メッシュ版はこちらで十分）
+float SC_EvalFiber(float2 uv, float cx, float cy, float2 posOffset,
+                   float seed, float thickMul, float2 aaUV,
+                   out float outSigned, out float outRim)
+{
+    return SC_EvalFiberEx(uv, cx, cy, posOffset, seed, thickMul, aaUV,
+                          uv.x + posOffset.x, outSigned, outRim);
 }
 
 #endif // SPIDERCOCOON_THREAD_INCLUDED
