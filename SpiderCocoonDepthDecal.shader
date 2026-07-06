@@ -36,58 +36,59 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描くため
         // 二重表示にはならない。
-        [Header(糸のデザイン)]
+        // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
+        [Header(Thread Design)]
         _ThreadColor        ("糸の色 (Thread Color)", Color)              = (1, 1, 1, 1)
         _ThreadThickness    ("糸の太さ (Thickness)", Range(0.01, 1.0))     = 0.35
         _ThreadJitter       ("太さの乱雑性 (Thickness Jitter)", Range(0, 1))= 0.3
         _ThreadFuzz         ("幅の揺らぎ (Fuzz Amount)", Range(0, 1))       = 0.2
         _ThreadFuzzScale    ("揺らぎの細かさ (Fuzz Scale)", Float)          = 8.0
 
-        [Header(巻きのレイアウト)]
+        [Header(Winding Layout)]
         _WindingCount       ("巻き数 (Winding Count)", Float)               = 24
         _ThreadDensity      ("糸の密度倍率 (Density Mult)", Float)          = 1.0
         _FiberAngle         ("基準の糸の角度 (Base Fiber Angle deg)", Range(-89, 89)) = 0
 
-        [Header(トゥーン陰影)]
+        [Header(Toon Shading)]
         _ToonSteps          ("トゥーン段階数 (Toon Steps)", Range(1, 8))    = 3
         _ToonSmooth         ("段差の柔らかさ (Toon Smooth)", Range(0.001, 0.5)) = 0.05
         _ShadowColor        ("影色 (Shadow Tint)", Color)                  = (0.55, 0.55, 0.62, 1)
         _AmbientBoost       ("環境光の底上げ (Ambient Boost)", Range(0, 1)) = 0.35
         _LightInfluence     ("シーン光の反映度 (Light Influence)", Range(0, 1)) = 0.5
 
-        [Header(リムライト)]
+        [Header(Rim Light)]
         _RimColor           ("リムライト色 (Rim Color)", Color)            = (0.8, 0.9, 1.0, 1)
         _RimPower           ("リム幅 / 鋭さ (Rim Power)", Range(0.5, 16))   = 4.0
         _RimStrength        ("リム強さ (Rim Strength)", Range(0, 4))        = 0.4
         _RimFloor           ("リムの下限/全体発光 (Rim Floor)", Range(0, 1)) = 0.25
 
-        [Header(糸ごとの陰影)]
+        [Header(Fiber Shading)]
         _FiberNormalStrength("糸断面の法線曲げ (Fiber Normal Strength)", Range(0, 1)) = 0.4
         _RimShadowColor     ("ファイバー縁の影色 (Fiber Edge Shadow)", Color) = (0.25, 0.22, 0.22, 1)
         _RimShadowStrength  ("ファイバー縁影の濃さ (Edge Shadow Strength)", Range(0, 1)) = 0.3
 
-        [Header(レイヤー)]
+        [Header(Layer Stack)]
         _LayerCount         ("レイヤー枚数 (Layer Count)", Range(1, 8))     = 3
         _LayerAngleStep     ("レイヤー角度ステップ (Angle Step deg)", Range(-45, 45)) = 8
         _LayerPosStepX      ("レイヤー位置ステップ X 円周 (Pos Step X)", Float) = 0.02
         _LayerPosStepY      ("レイヤー位置ステップ Y 軸 (Pos Step Y)", Float) = 0.0
         _LayerThicknessFalloff ("奥レイヤーの減衰 (Thickness Falloff)", Range(0, 1)) = 0.0
 
-        [Header(投影フィット)]
+        [Header(Projection Fit)]
         _RadiusFit          ("円筒半径 (box内接=0.5)", Range(0.05, 0.5))   = 0.5
         _HeightFit          ("円筒高さ (box一杯=0.5)", Range(0.05, 0.5))   = 0.5
         _ProjectRange       ("投影の許容距離 (Project Range m)", Range(0, 0.5)) = 0.1
 
-        [Header(糸の厚み)]
+        [Header(Glue Thickness)]
         _GlueThickness      ("糸の厚み m 輪郭の外への膨張 (Glue Thickness)", Range(0, 0.2)) = 0.06
 
-        [Header(床と天井)]
+        [Header(Ground And Ceiling)]
         _GroundTex          ("床/天井テクスチャ 蜘蛛の巣など (Ground Web)", 2D) = "black" {}
         _GroundColor        ("床/天井テクスチャの色 (Ground Tint)", Color) = (1, 1, 1, 1)
         _GroundDetectScale  ("床判定のサンプル間隔 m (Ground Detect Scale)", Range(0.01, 0.2)) = 0.05
         _GroundNormalY      ("水平とみなす法線Y (Horizontal Normal Y)", Range(0.5, 0.99)) = 0.8
 
-        [Header(視界ジャック)]
+        [Header(Vision Jack)]
         [Toggle] _VisionJackEnable ("視界ジャック有効 (Vision Jack)", Float) = 1
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
         _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7

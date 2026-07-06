@@ -27,37 +27,38 @@ Shader "mecaota/SpiderThreadTrail"
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描く。
         // 共通プロパティは繭本体と同名（値を揃えると質感が一致）。既定値のみ
         // 細い帯向けにチューニングしてある（本数少なめ・レイヤー少なめ）。
-        [Header(糸のデザイン)]
+        // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
+        [Header(Thread Design)]
         _ThreadColor        ("糸の色 (Thread Color)", Color)              = (1, 1, 1, 1)
         _ThreadThickness    ("糸の太さ (Thickness)", Range(0.01, 1.0))     = 0.35
         _ThreadJitter       ("太さの乱雑性 (Thickness Jitter)", Range(0, 1))= 0.3
         _ThreadFuzz         ("幅の揺らぎ (Fuzz Amount)", Range(0, 1))       = 0.2
         _ThreadFuzzScale    ("揺らぎの細かさ (Fuzz Scale)", Float)          = 8.0
 
-        [Header(巻きのレイアウト)]
+        [Header(Winding Layout)]
         _WindingCount       ("巻き数 / 幅方向の本数 (Winding Count)", Float) = 4
         _ThreadDensity      ("糸の密度倍率 (Density Mult)", Float)          = 1.0
         _FiberAngle         ("基準の糸の角度 (Base Fiber Angle deg)", Range(-89, 89)) = 0
 
-        [Header(トゥーン陰影)]
+        [Header(Toon Shading)]
         _ToonSteps          ("トゥーン段階数 (Toon Steps)", Range(1, 8))    = 3
         _ToonSmooth         ("段差の柔らかさ (Toon Smooth)", Range(0.001, 0.5)) = 0.05
         _ShadowColor        ("影色 (Shadow Tint)", Color)                  = (0.55, 0.55, 0.62, 1)
         _AmbientBoost       ("環境光の底上げ (Ambient Boost)", Range(0, 1)) = 0.35
         _LightInfluence     ("シーン光の反映度 (Light Influence)", Range(0, 1)) = 0.5
 
-        [Header(リムライト)]
+        [Header(Rim Light)]
         _RimColor           ("リムライト色 (Rim Color)", Color)            = (0.8, 0.9, 1.0, 1)
         _RimPower           ("リム幅 / 鋭さ (Rim Power)", Range(0.5, 16))   = 4.0
         _RimStrength        ("リム強さ (Rim Strength)", Range(0, 4))        = 0.4
         _RimFloor           ("リムの下限/全体発光 (Rim Floor)", Range(0, 1)) = 0.25
 
-        [Header(糸ごとの陰影)]
+        [Header(Fiber Shading)]
         _FiberNormalStrength("糸断面の法線曲げ (Fiber Normal Strength)", Range(0, 1)) = 0.4
         _RimShadowColor     ("ファイバー縁の影色 (Fiber Edge Shadow)", Color) = (0.25, 0.22, 0.22, 1)
         _RimShadowStrength  ("ファイバー縁影の濃さ (Edge Shadow Strength)", Range(0, 1)) = 0.3
 
-        [Header(レイヤー)]
+        [Header(Layer Stack)]
         _LayerCount         ("レイヤー枚数 (Layer Count)", Range(1, 8))     = 2
         _LayerAngleStep     ("レイヤー角度ステップ (Angle Step deg)", Range(-45, 45)) = 4
         _LayerPosStepX      ("レイヤー位置ステップ X 軌跡 (Pos Step X)", Float) = 0.0
@@ -65,7 +66,7 @@ Shader "mecaota/SpiderThreadTrail"
         _LayerThicknessFalloff ("奥レイヤーの減衰 (Thickness Falloff)", Range(0, 1)) = 0.0
 
         // ---- トレイル固有（揺れアニメ） ----
-        [Header(トレイルの揺れ)]
+        [Header(Trail Sway)]
         _SwayAmount         ("揺れ幅 帯幅=1 (Sway Amount)", Range(0, 0.5))  = 0.15
         _SwaySpeed          ("揺れの速さ (Sway Speed)", Range(0, 10))        = 2.0
         _SwayWaves          ("揺れの波数 (Sway Waves)", Range(0, 20))        = 3.0
