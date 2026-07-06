@@ -80,12 +80,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         [Header(Ground and Ceiling Texture)]
         _GroundTex          ("床/天井テクスチャ 蜘蛛の巣など (Ground Web)", 2D) = "black" {}
         _GroundColor        ("床/天井テクスチャの色 (Ground Tint)", Color) = (1, 1, 1, 1)
-        _GroundLevel        ("床とみなす高さ ローカルY (Ground Level)", Range(-0.5, 0.5)) = -0.45
-        _CeilingLevel       ("天井とみなす高さ ローカルY (Ceiling Level)", Range(-0.5, 0.5)) = 0.5
+        _GroundDetectScale  ("床判定のサンプル間隔 m (Ground Detect Scale)", Range(0.01, 0.2)) = 0.05
+        _GroundNormalY      ("水平とみなす法線Y (Horizontal Normal Y)", Range(0.5, 0.99)) = 0.8
 
-        [Header(Vision Jack)]
         [Toggle] _VisionJackEnable ("視界ジャック有効 (Vision Jack)", Float) = 1
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
+        _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
+        _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
     }
 
     SubShader
@@ -108,12 +109,14 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         float _HeightFit;
         float _ProjectRange;
         float _GlueThickness;
+        float _JackRadius;
+        float _JackStretch;
 
         sampler2D _GroundTex;
         float4    _GroundTex_ST;
         fixed4    _GroundColor;
-        float     _GroundLevel;
-        float     _CeilingLevel;
+        float     _GroundDetectScale;
+        float     _GroundNormalY;
 
         // 深度の LOD0 サンプル（動的ループ内でも安全な明示 LOD 版）
         #if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED)
@@ -143,6 +146,79 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             float denom = ndcZ - K;
             denom = (abs(denom) < 1e-8) ? 1e-8 : denom;
             return UNITY_MATRIX_P._m23 / denom;
+        }
+
+        // 画面上の任意 UV の深度から view 空間座標を厳密復元（斜交投影対応。
+        // SC_EyeDepthOblique と同じ代数で、xy 成分まで求める版）
+        float3 SC_ViewPosAt(float2 uv, float rawDepth)
+        {
+            float2 ndc = float2(uv.x * 2.0 - 1.0, (uv.y * 2.0 - 1.0) * _ProjectionParams.x);
+            #if defined(UNITY_REVERSED_Z)
+                float ndcZ = rawDepth;
+            #else
+                float ndcZ = rawDepth * 2.0 - 1.0;
+            #endif
+            float K = UNITY_MATRIX_P._m20 * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00
+                    + UNITY_MATRIX_P._m21 * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11
+                    - UNITY_MATRIX_P._m22;
+            float denom = ndcZ - K;
+            denom = (abs(denom) < 1e-8) ? 1e-8 : denom;
+            float w = UNITY_MATRIX_P._m23 / denom;
+            return float3(w * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00,
+                          w * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11,
+                          -w);
+        }
+
+        // 隣接画素の深度を「厳密復元」して表面の世界法線を求め、水平面かを判定する。
+        // ・GPU の自動微分(ddx/ddy)は使わない（浅い角度で外積の向きが暴れて過去2回
+        //   失敗した原因）。明示的に±2pxの4点をサンプルし、3点から法線を構成する。
+        // ・シルエット境界の深度段差は「深度差が小さい側」を選んで回避（古典的な
+        //   頑健法線復元）。両側とも段差なら輪郭画素とみなし水平面ではない扱い。
+        // 高さゾーンに依存しないため、床の高さを厳密に合わせられない場合
+        // （アバター搭載・段差・ジャンプ中など）でも床・天井を識別できる。
+        bool SC_IsHorizontalSurface(float2 uv, float rawDepth0)
+        {
+            float3 p0 = SC_ViewPosAt(uv, rawDepth0);
+            float  z0 = -p0.z;
+
+            // サンプル間隔は「世界で約 _GroundDetectScale (m)」を基準にする。
+            // 画素数固定だと近距離で対応する実寸が縮み、体表の微細な起伏
+            // （肩・胸・服のしわ等の局所的な上向き面）まで床と誤判定して、
+            // 近づくほど糸が消える。世界基準なら距離に依らず同じスケールで
+            // 面の向きを評価できる。遠距離では最低2pxを確保。
+            float2 px;
+            px.x = 0.5 * abs(UNITY_MATRIX_P._m00) * _GroundDetectScale / max(z0, 0.05);
+            px.y = 0.5 * abs(UNITY_MATRIX_P._m11) * _GroundDetectScale / max(z0, 0.05);
+            px = max(px, 2.0 / _ScreenParams.xy);
+
+            // X方向: 左右のうち深度差が小さい側を採用
+            float2 uvR = uv + float2(px.x, 0.0);
+            float2 uvL = uv - float2(px.x, 0.0);
+            float3 pR = SC_ViewPosAt(uvR, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvR)));
+            float3 pL = SC_ViewPosAt(uvL, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvL)));
+            float dzR = abs(-pR.z - z0);
+            float dzL = abs(-pL.z - z0);
+            float3 dX = (dzR <= dzL) ? (pR - p0) : (p0 - pL);
+
+            // Y方向も同様
+            float2 uvU = uv + float2(0.0, px.y);
+            float2 uvD = uv - float2(0.0, px.y);
+            float3 pU = SC_ViewPosAt(uvU, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvU)));
+            float3 pD = SC_ViewPosAt(uvD, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvD)));
+            float dzU = abs(-pU.z - z0);
+            float dzD = abs(-pD.z - z0);
+            float3 dY = (dzU <= dzD) ? (pU - p0) : (p0 - pD);
+
+            // 両側とも大きな深度跳び＝輪郭画素 → 水平面ではない扱い
+            float maxStep = 0.10 + 0.05 * z0 + _GroundDetectScale * 2.0; // 距離とサンプル間隔に応じた許容段差
+            if (min(dzR, dzL) > maxStep) return false;
+            if (min(dzU, dzD) > maxStep) return false;
+
+            // view 空間の法線 → 世界空間へ（V の回転部の転置＝逆変換）
+            float3 nV = cross(dX, dY);
+            float3 nW = mul(nV, (float3x3)UNITY_MATRIX_V);
+            nW = normalize(nW + float3(0.0, 1e-6, 0.0));
+            return abs(nW.y) > _GroundNormalY;
         }
 
         // 視界ジャックの発火判定（vert/frag で同一のこの関数を使い、判定を一致させる）
@@ -176,9 +252,10 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             float2 uv = float2(ang / (UNITY_PI * 2.0) + 0.5, localPos.y + 0.5);
 
             float3 axisDir = normalize(colY);   // 体軸
-            float3 V = normalize(_WorldSpaceCameraPos - worldPos);
-            // 法線が視線と逆向きなら反転（リム全面発光・明暗反転を防ぐ）
-            if (dot(N, V) < 0.0) N = -N;
+            // N はワールド固定の径方向のまま使う（視線による反転はしない）。
+            // 反転すると法線が常にカメラを向き、陰影がカメラ追従になって
+            // 正対時に白飛びする（ライト方向ベースの自然な陰影にならない）。
+            // 裏向き法線でのリム暴走は SC_RimLight 側の abs で防いでいる。
             float3 nt = cross(axisDir, N);
             float3 T = (length(nt) > 1e-5) ? normalize(nt) : normalize(colX); // uv.x=円周方向
             float3 B = axisDir;                                               // uv.y=軸方向
@@ -274,19 +351,47 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                 if (!SC_DecalJackActive()) discard;
 
-                // 画面空間の糸。描画内容は素の糸パターン（本体ジャックと同系の見た目）。
-                float2 screenUV = i.screenPos.xy / max(i.screenPos.w, 1e-5);
-                float2 juv = screenUV;
-                juv.x *= _ScreenParams.x / _ScreenParams.y;   // アスペクト補正（糸太さを等方に）
-                float2 aaJ = float2(fwidth(juv.x), fwidth(juv.y));
+                // 視界ジャック: カメラを囲む繭の「内壁」を、体表 glue と同じ描画処理で描く。
+                // 交差先は無限円筒ではなく「上下が閉じた紡錘形（楕円体）」。
+                // 上下に遠ざかるほど糸のリングの半径が縮み、極で 0 に収束して閉じる。
+                //   半径 = _RadiusFit × _JackRadius（実円筒より小さくできる）
+                //   半高 = _HeightFit × _JackStretch（閉じるまでの縦距離）
+                // 内壁を小さくするとカメラが楕円体の外に出得るため、レイ原点を
+                // 楕円体内へ連続的に引き込み、常に「内側から奥壁を見る」状態を保証する。
+                // 糸のパラメータもライティングも通常の繭と完全に同一。隙間は共通
+                // 実装内の discard で素通し（色・深度・ステンシルとも書かない）。
+                float3 rdW = normalize(i.worldDir);
+                float3 o = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos, 1.0)).xyz;
+                float3 d = mul((float3x3)unity_WorldToObject, rdW);
 
-                // レイヤー合成は共通実装へ。フラット彩色（flatColor=true）なので
-                // ライティングは行われず、基底 N/T/B と位置はダミーでよい。
-                // 隙間は共通実装内の discard で素通し（色・深度・ステンシルとも書かない）。
-                float3 dummyPos = _WorldSpaceCameraPos + i.worldDir;
-                return SC_CompositeLayers(juv, float3(0.0, 1.0, 0.0), float3(1.0, 0.0, 0.0),
-                                          float3(0.0, 0.0, 1.0), dummyPos, aaJ,
-                                          false, false, true);
+                float A = _RadiusFit * _JackRadius;                  // 内壁の半径
+                float B = _HeightFit * _JackStretch;                 // 半高（閉じるまでの距離）
+
+                // 楕円体を単位球へスケールしてレイ-球交差（奥側解）
+                float3 os = float3(o.x / A, o.y / B, o.z / A);
+                float3 ds = float3(d.x / A, d.y / B, d.z / A);
+
+                // 原点の引き込み: 楕円体の外（または縁ぎりぎり）なら内側へ寄せる
+                float osLen = length(os);
+                if (osLen > 0.9) os *= 0.9 / osLen;
+
+                float a2 = max(dot(ds, ds), 1e-9);
+                float b2 = 2.0 * dot(os, ds);
+                float c2 = dot(os, os) - 1.0;                        // 引き込み後は常に負
+                float t  = (-b2 + sqrt(max(b2 * b2 - 4.0 * a2 * c2, 0.0))) / (2.0 * a2);
+
+                float3 oc = float3(os.x * A, os.y * B, os.z * A);    // 引き込み後のローカル原点
+                float3 lp = oc + d * t;
+                float3 wp = mul(unity_ObjectToWorld, float4(lp, 1.0)).xyz;
+
+                // 楕円体の内向き法線（勾配ベース。ローカル→ワールドへ方向変換）
+                float3 nL = normalize(float3(lp.x / (A * A), lp.y / (B * B), lp.z / (A * A)));
+                float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+                float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+                float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
+                float3 nW = normalize(colX * nL.x + colY * nL.y + colZ * nL.z);
+
+                return SC_ShadeCocoonAt(lp, wp, -nW);
             }
             ENDCG
         }
@@ -294,6 +399,11 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // ================= Pass 1: 通常カメラ（glue＋糸の厚み） =================
         Pass
         {
+            // ForwardBase タグ: これが無いとメインライト（_WorldSpaceLightPos0 /
+            // _LightColor0）と環境光(SH)がバインドされず、直前の描画の残り値で
+            // ライティングされて描画順しだいで不自然になる。
+            Tags { "LightMode" = "ForwardBase" }
+
             ZWrite Off
             ZTest  Always
             Cull   Front
@@ -344,13 +454,9 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 float3 worldPos = _WorldSpaceCameraPos + rayPerZ * eyeZ;
                 float3 localPos = mul(unity_WorldToObject, float4(worldPos, 1.0)).xyz;
 
-                // 床・天井の判定は「ローカル高さのゾーン」で行う（位置ベース）。
-                // 画面微分から表面の向きを推定する方式は、距離・角度に依存して
-                // 不安定だったため廃止。床・天井は水平面＝ボックス内で一定の高さに
-                // あるので、高さゾーンなら視点に一切依存せず決定的に判定できる。
-                //   localPos.y < _GroundLevel  → 床（既定 -0.45 = ボックス最下部 5%）
-                //   localPos.y > _CeilingLevel → 天井（既定 0.5 = 実質無効）
-                bool isFlat = (localPos.y < _GroundLevel) || (localPos.y > _CeilingLevel);
+                // 床・天井の判定: 面の向き（厳密復元した法線が水平面か）で行う。
+                // 高さ不問なので、アバター搭載・段差・ジャンプ中でも床を識別できる。
+                bool isFlat = SC_IsHorizontalSurface(screenUV, rawDepth);
 
                 // 許容距離 _ProjectRange（ワールドm）: 円筒より近い距離にあるメッシュ
                 // 表面には「そこにもメッシュがあるかのように」投影する（腕・肩対策）。
@@ -466,6 +572,9 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // ================= Pass 2: ミラー専用（体表 glue・ハードウェアZで正しく遮蔽） =================
         Pass
         {
+            // ForwardBase タグ: Pass 1 と同じくメインライト・環境光のバインドに必要
+            Tags { "LightMode" = "ForwardBase" }
+
             ZWrite Off
             ZTest  LEqual
             Cull   Back
@@ -525,8 +634,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 float marginR = _ProjectRange / max(sxz, 1e-4);
                 float marginH = _ProjectRange / max(sy, 1e-4);
 
-                bool isFlat = (gl.y < _GroundLevel) || (gl.y > _CeilingLevel);
-                if (isFlat) discard;
+                if (SC_IsHorizontalSurface(screenUV, rawDepth)) discard;   // 床・天井は描かない
                 if (abs(gl.y) > _HeightFit + marginH) discard;
                 if (length(gl.xz) > _RadiusFit + marginR) discard;
 
