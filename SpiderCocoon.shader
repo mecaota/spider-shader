@@ -15,6 +15,11 @@ Shader "mecaota/SpiderCocoon"
 {
     Properties
     {
+        // カテゴリ分け・共通/固有の区別は CustomEditor（SpiderCocoonShaderGUI）が担当。
+        // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
+        // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描くため
+        // 二重表示にはならない。
+        // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
         [Header(Thread Design)]
         _ThreadColor        ("糸の色 (Thread Color)", Color)              = (1, 1, 1, 1)
         _ThreadThickness    ("糸の太さ (Thickness)", Range(0.01, 1.0))     = 0.35
@@ -22,7 +27,7 @@ Shader "mecaota/SpiderCocoon"
         _ThreadFuzz         ("幅の揺らぎ (Fuzz Amount)", Range(0, 1))       = 0.2
         _ThreadFuzzScale    ("揺らぎの細かさ (Fuzz Scale)", Float)          = 8.0
 
-        [Header(Thread Layout)]
+        [Header(Winding Layout)]
         _WindingCount       ("巻き数 (Winding Count)", Float)               = 24
         _ThreadDensity      ("糸の密度倍率 (Density Mult)", Float)          = 1.0
         _FiberAngle         ("基準の糸の角度 (Base Fiber Angle deg)", Range(-89, 89)) = 0
@@ -34,18 +39,18 @@ Shader "mecaota/SpiderCocoon"
         _AmbientBoost       ("環境光の底上げ (Ambient Boost)", Range(0, 1)) = 0.35
         _LightInfluence     ("シーン光の反映度 (Light Influence)", Range(0, 1)) = 0.5
 
-        [Header(Silhouette Rim Light)]
+        [Header(Rim Light)]
         _RimColor           ("リムライト色 (Rim Color)", Color)            = (0.8, 0.9, 1.0, 1)
         _RimPower           ("リム幅 / 鋭さ (Rim Power)", Range(0.5, 16))   = 4.0
         _RimStrength        ("リム強さ (Rim Strength)", Range(0, 4))        = 0.4
         _RimFloor           ("リムの下限/全体発光 (Rim Floor)", Range(0, 1)) = 0.25
 
-        [Header(Per Fiber Shading)]
+        [Header(Fiber Shading)]
         _FiberNormalStrength("糸断面の法線曲げ (Fiber Normal Strength)", Range(0, 1)) = 0.4
         _RimShadowColor     ("ファイバー縁の影色 (Fiber Edge Shadow)", Color) = (0.25, 0.22, 0.22, 1)
         _RimShadowStrength  ("ファイバー縁影の濃さ (Edge Shadow Strength)", Range(0, 1)) = 0.3
 
-        [Header(Layers)]
+        [Header(Layer Stack)]
         _LayerCount         ("レイヤー枚数 (Layer Count)", Range(1, 8))     = 3
         _LayerAngleStep     ("レイヤー角度ステップ (Angle Step deg)", Range(-45, 45)) = 8
         _LayerPosStepX      ("レイヤー位置ステップ X 軸 (Pos Step X)", Float) = 0.0
@@ -56,7 +61,7 @@ Shader "mecaota/SpiderCocoon"
         [Toggle] _Billboard ("ビルボード / 継ぎ目を裏へ (Billboard)", Float) = 0
         _BillboardSeamOffset ("継ぎ目の位置オフセット (Seam Offset deg)", Range(0, 360)) = 0
 
-        [Header(Back Faces and Vision Jack)]
+        [Header(Backface And Vision Jack)]
         [Toggle] _HideBackFibers ("裏面の糸を隠す (Hide Back Fibers)", Float) = 1
         [Toggle] _VisionJackEnable ("視界ジャック有効 (Vision Jack)", Float) = 0
         _VisionJackRadius ("内側判定の半径 (Inside Radius)", Float) = 0.55
@@ -100,6 +105,7 @@ Shader "mecaota/SpiderCocoon"
             #include "CGINC/SpiderCocoon_Common.cginc"
             #include "CGINC/SpiderCocoon_Thread.cginc"
             #include "CGINC/SpiderCocoon_Lighting.cginc"
+            #include "CGINC/SpiderCocoon_Compose.cginc"
             #include "CGINC/SpiderCocoon_VisionJack.cginc"
 
             v2f vert(appdata v)
@@ -155,8 +161,6 @@ Shader "mecaota/SpiderCocoon"
                 if (!jack && _HideBackFibers > 0.5 && facing < 0.0) discard;
 
                 // ---- 基底ベクトル（VFACE で裏面の法線を反転） ----
-                float3 L = normalize(_WorldSpaceLightPos0.xyz);
-                float3 V = normalize(_WorldSpaceCameraPos - i.worldPos);
                 float3 N = normalize(i.worldNormal) * sign(facing);
                 float3 T = normalize(i.worldTangent.xyz);
                 float3 B = normalize(cross(N, T)) * i.worldTangent.w * unity_WorldTransformParams.w;
@@ -164,72 +168,16 @@ Shader "mecaota/SpiderCocoon"
                 // 動的ループ内で fwidth を呼ばないよう、AA 幅はここで一度だけ算出
                 float2 aaUV = float2(fwidth(i.uv.x), fwidth(i.uv.y));
 
-                // 全レイヤー共通の環境光
-                float3 ambient = ShadeSH9(float4(N, 1.0)) + _AmbientBoost;
-
-                // 円周方向の巻き数 W はシーム維持のため整数に丸める（cy 係数）
-                float cy = max(round(_WindingCount * _ThreadDensity), 1.0);
-                int   Lc = (int)round(_LayerCount);
-
-                // ---- 背面 → 前面へ over 合成 ----
-                float3 accumRGB = 0.0;
-                float  accumA   = 0.0;
-
-                [loop]
-                for (int li = 0; li < SC_MAX_LAYERS; ++li)
-                {
-                    if (li >= Lc) break;                 // 実レイヤー数で打ち切り
-
-                    // 偶数/奇数で線対称にオフセット。li=0 は常に 0。
-                    //   li : 0  1   2   3   4 ...
-                    //   lf : 0 +1  -1  +2  -2 ...（左右ミラーでクロスする巻き）
-                    int    grp      = (li + 1) / 2;                       // 0,1,1,2,2,...
-                    float  side     = (li % 2 == 1) ? 1.0 : -1.0;         // 奇数=+ 偶数=-
-                    float  lf       = side * (float)grp;
-                    float  angle    = _FiberAngle + lf * _LayerAngleStep;
-                    float  cx       = tan(radians(clamp(angle, -89.0, 89.0))); // 軸方向シアー(連続)
-                    float2 off      = float2(_LayerPosStepX, _LayerPosStepY) * lf;
-                    float  seed     = (float)li * 19.0 + 3.0;
-                    float  denom    = max((float)(Lc - 1), 1.0);
-                    float  thickMul = 1.0 - _LayerThicknessFalloff * ((float)li / denom);
-
-                    float sgn, rimEdge;
-                    float a = SC_EvalFiber(i.uv, cx, cy, off, seed, thickMul, aaUV, sgn, rimEdge);
-                    a *= _ThreadColor.a;
-                    if (a <= 0.001) continue;            // 隙間はスキップ
-
-                    // 陰影は「面法線 × 光源」を主役にする（カメラ非依存。光の当たる
-                    // 面の裏側が陰る）。各糸ごとの曲げ法線は detail として混ぜる。
-                    float3 fiberN  = SC_PerturbNormal(N, T, B, cx, cy, sgn, _FiberNormalStrength);
-                    float  ndlFace = dot(N, L);
-                    float  ndlFib  = dot(fiberN, L);
-                    float  ndl     = lerp(ndlFace, ndlFib, _FiberNormalStrength);
-                    float  toon    = SC_ToonRamp(ndl * 0.5 + 0.5, _ToonSteps, _ToonSmooth); // half-lambert で裏も真っ黒にしない
-
-                    // 発光的な下地: 明部は糸色そのまま、影部のみ影色まで暗くする。
-                    // ライト「強度」には依存しない（toon でライトの“向き”だけ使う）ので、
-                    // 照明が弱い／OFF でも正面が暗く沈まず、糸色がそのまま出る。
-                    float3 col = _ThreadColor.rgb * lerp(_ShadowColor.rgb, float3(1.0, 1.0, 1.0), toon);
-                    // シーン光・環境光を _LightInfluence ぶんだけ上乗せ（無くても下地が残る）
-                    col *= 1.0 + (_LightColor0.rgb * toon + ambient) * _LightInfluence;
-                    // 糸の縁を暗化
-                    col = lerp(col, col * _RimShadowColor.rgb, rimEdge * _RimShadowStrength);
-
-                    // over 合成（src = このレイヤー）
-                    accumRGB = col * a + accumRGB * (1.0 - a);
-                    accumA   = a       + accumA   * (1.0 - a);
-                }
-
-                if (accumA <= 0.001) discard;            // 完全な隙間はピクセル破棄
-
-                // シルエットのリムライトは合成後に面全体へ加算（糸がある所だけ）
-                accumRGB += SC_RimLight(N, V) * accumA;
-
-                return fixed4(accumRGB, accumA);
+                // レイヤー合成は共通実装（SpiderCocoon_Compose.cginc）へ。
+                // メッシュ版: uv.x=軸（シーム無し）のため角度は連続値のまま
+                // （snapCx=false）、Fuzz 折返し不要、通常ライティング。
+                return SC_CompositeLayers(i.uv, N, T, B, i.worldPos, aaUV,
+                                          false, false, false);
             }
             ENDCG
         }
     }
 
     Fallback Off
+    CustomEditor "SpiderCocoonShaderGUI"
 }

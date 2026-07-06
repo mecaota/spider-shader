@@ -39,9 +39,12 @@ float SC_ToonRamp(float x, float steps, float softness)
 // リムライト（フレネル）＋下限の発光。
 //   fres は輪郭ほど 1、正面中央で 0。_RimFloor を足すと中央にも発光が乗るので、
 //   「縁は光るのに正面だけ発光が切れる」現象を防げる（＝面全体が薄く発光）。
+//   dot に abs を掛けるのは、視線と逆向きの法線（デカール glue の径方向法線が
+//   裏側を向くケース）で fres が 1 に張り付いて全面発光するのを防ぐため。
+//   メッシュ版の N は VFACE で常に視線側を向くため abs は挙動を変えない。
 float3 SC_RimLight(float3 N, float3 V)
 {
-    float fres   = pow(1.0 - saturate(dot(N, V)), _RimPower);
+    float fres   = pow(1.0 - saturate(abs(dot(N, V))), _RimPower);
     float amount = max(fres, _RimFloor);   // 正面中央でも _RimFloor ぶん発光
     return _RimColor.rgb * amount * _RimStrength;
 }
