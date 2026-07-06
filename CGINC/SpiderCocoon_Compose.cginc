@@ -51,9 +51,12 @@ fixed4 SC_CompositeLayers(float2 uv, float3 N, float3 T, float3 B, float3 worldP
         // 偶数/奇数で線対称にオフセット。li=0 は常に 0。
         //   li : 0  1   2   3   4 ...
         //   lf : 0 +1  -1  +2  -2 ...（左右ミラーでクロスする巻き）
-        int    grp      = (li + 1) / 2;                       // 0,1,1,2,2,...
-        float  side     = (li % 2 == 1) ? 1.0 : -1.0;         // 奇数=+ 偶数=-
-        float  lf       = side * (float)grp;
+        // 整数の除算(/2)・剰余(%2)は GPU で遅くコンパイラ警告も出るため、
+        // 非負が保証される uint のビット演算（>>1 = ÷2、&1 = 奇偶）で求める。
+        uint   uli      = (uint)li;
+        float  grp      = (float)((uli + 1u) >> 1);           // 0,1,1,2,2,...
+        float  side     = ((uli & 1u) == 1u) ? 1.0 : -1.0;    // 奇数=+ 偶数=-
+        float  lf       = side * grp;
         float  angle    = _FiberAngle + lf * _LayerAngleStep;
         float  cxRaw    = tan(radians(clamp(angle, -89.0, 89.0)));
         // snapCx: ラップする座標(uv.x)に掛かる場合は「1周でちょうど cx 本ぶん
