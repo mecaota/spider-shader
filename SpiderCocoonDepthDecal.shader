@@ -131,6 +131,31 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #define SC_SAMPLE_DEPTH_LOD(uv) (tex2Dlod(_CameraDepthTexture, float4((uv).x, (uv).y, 0, 0)).r)
         #endif
 
+        // ---------------------------------------------------------------------
+        // ★ VR ステレオの取り扱い（この2つの約束を全パスで統一する）:
+        //   1) 画面 UV は常に「片目ローカル（0..1 がその目の視界全体）」で持ち回る。
+        //      NDC 復元（uv*2-1）や隣接サンプルのオフセット計算はこの空間で行う。
+        //      UNITY_MATRIX_P / _WorldSpaceCameraPos はステレオ時に目ごとの値へ
+        //      差し替わるため、この空間なら左右それぞれで正しい逆射影になり、
+        //      両目が「同一のワールド座標」を復元する＝左右の表示が一致する。
+        //   2) _CameraDepthTexture を読む「瞬間」にだけ SC_DEPTH_UV() で変換する。
+        //      Single-Pass(double-wide) では片目UV→横長テクスチャの半分領域へ、
+        //      Instanced/mono では恒等変換（配列スライスは SC_SAMPLE_DEPTH_LOD が担当）。
+        // ---------------------------------------------------------------------
+        #define SC_DEPTH_UV(uv) UnityStereoTransformScreenSpaceTex(uv)
+
+        // 片目ローカルUVでの 1px サイズ。
+        // Single-Pass(double-wide) の _ScreenParams.x は「両目合計」の幅を返すため、
+        // unity_StereoScaleOffset の scale（=0.5）で片目ぶんへ換算する。
+        float2 SC_EyeTexelSize()
+        {
+            float2 ts = 1.0 / _ScreenParams.xy;
+        #if defined(UNITY_SINGLE_PASS_STEREO)
+            ts.x /= unity_StereoScaleOffset[unity_StereoEyeIndex].x;
+        #endif
+            return ts;
+        }
+
         // 斜交（oblique）投影対応の視線深度復元。
         // ミラーカメラは鏡面に沿った「斜めの近クリップ面」を使うため、通常の
         // LinearEyeDepth（_ZBufferParams）では深度を正しく復元できない。
@@ -195,13 +220,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             float2 px;
             px.x = 0.5 * abs(UNITY_MATRIX_P._m00) * _GroundDetectScale / max(z0, 0.05);
             px.y = 0.5 * abs(UNITY_MATRIX_P._m11) * _GroundDetectScale / max(z0, 0.05);
-            px = max(px, 2.0 / _ScreenParams.xy);
+            px = max(px, 2.0 * SC_EyeTexelSize());   // 最低2px（片目ローカル基準）
 
             // X方向: 左右のうち深度差が小さい側を採用
             float2 uvR = uv + float2(px.x, 0.0);
             float2 uvL = uv - float2(px.x, 0.0);
-            float3 pR = SC_ViewPosAt(uvR, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvR)));
-            float3 pL = SC_ViewPosAt(uvL, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvL)));
+            float3 pR = SC_ViewPosAt(uvR, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvR)));
+            float3 pL = SC_ViewPosAt(uvL, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvL)));
             float dzR = abs(-pR.z - z0);
             float dzL = abs(-pL.z - z0);
             float3 dX = (dzR <= dzL) ? (pR - p0) : (p0 - pL);
@@ -209,8 +234,8 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             // Y方向も同様
             float2 uvU = uv + float2(0.0, px.y);
             float2 uvD = uv - float2(0.0, px.y);
-            float3 pU = SC_ViewPosAt(uvU, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvU)));
-            float3 pD = SC_ViewPosAt(uvD, SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvD)));
+            float3 pU = SC_ViewPosAt(uvU, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvU)));
+            float3 pD = SC_ViewPosAt(uvD, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvD)));
             float dzU = abs(-pU.z - z0);
             float dzD = abs(-pD.z - z0);
             float3 dY = (dzU <= dzD) ? (pU - p0) : (p0 - pD);
@@ -227,12 +252,26 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             return abs(nW.y) > _GroundNormalY;
         }
 
-        // 視界ジャックの発火判定（vert/frag で同一のこの関数を使い、判定を一致させる）
+        // VRの「中央（両目の中点）」カメラ位置。
+        // _WorldSpaceCameraPos はステレオ時に目ごとの位置へ差し替わるため、
+        // 内/外のような二値判定に使うと、境界付近で左目だけ発火するなど
+        // 左右の表示が食い違う。判定には必ずこちらを使う。
+        float3 SC_MonoCameraPos()
+        {
+        #if defined(USING_STEREO_MATRICES)
+            return 0.5 * (unity_StereoWorldSpaceCameraPos[0].xyz + unity_StereoWorldSpaceCameraPos[1].xyz);
+        #else
+            return _WorldSpaceCameraPos;
+        #endif
+        }
+
+        // 視界ジャックの発火判定（vert/frag で同一のこの関数を使い、判定を一致させる。
+        // ★ 中央カメラ位置で判定するため、左右の目でも必ず同じ結果になる）
         bool SC_DecalJackActive()
         {
             if (_VisionJackEnable < 0.5) return false;
             if (SC_IsInMirror() && _VisionJackInMirror < 0.5) return false;
-            float3 camLocal = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos, 1.0)).xyz;
+            float3 camLocal = mul(unity_WorldToObject, float4(SC_MonoCameraPos(), 1.0)).xyz;
             return (length(camLocal.xz) < _RadiusFit) && (abs(camLocal.y) < _HeightFit);
         }
 
@@ -304,7 +343,14 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
             float3 worldVtx = mul(unity_ObjectToWorld, vtx).xyz;
             o.pos       = UnityObjectToClipPos(vtx);
-            o.screenPos = ComputeScreenPos(o.pos);
+            // ★ 必ず「非ステレオ版」を使う（VRの左右ズレ・チラつき対策の核心）。
+            // ComputeScreenPos は Single-Pass(double-wide) VR だと横長テクスチャの
+            // 半分領域へ変換済みの UV を返す。その UV にフラグメント側の
+            // SC_DEPTH_UV（UnityStereoTransformScreenSpaceTex）を重ねると変換が
+            // 二重適用になり、深度の読み先が左右の目で別々にズレてしまう。
+            // さらに NDC 復元（uv*2-1）も壊れ、床/天井判定が左右で食い違う。
+            // 非ステレオ版なら常に「片目ローカル 0..1」となり、上記の約束と一致する。
+            o.screenPos = ComputeNonStereoScreenPos(o.pos);
             o.worldDir  = worldVtx - _WorldSpaceCameraPos;
             return o;
         }
@@ -444,7 +490,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                 float3 camFwd = -UNITY_MATRIX_V[2].xyz;
 
-                float2 duv = UnityStereoTransformScreenSpaceTex(screenUV);
+                float2 duv = SC_DEPTH_UV(screenUV);
                 float rawDepth = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_CameraDepthTexture, duv).r;
                 bool hasDepth;
                 #if defined(UNITY_REVERSED_Z)
@@ -474,10 +520,18 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 float marginR = _ProjectRange / max(sxz, 1e-4);
                 float marginH = _ProjectRange / max(sy, 1e-4);
 
+                // ★ 許容距離を足しても「このボックスの外」へは絶対に出さない。
+                // box ローカルの半幅は 0.5。ここで上限を切ることで、
+                //   ・シェーダーを設定したオブジェクトの中に入ったメッシュにのみ描く
+                //   ・ボックス越しに見えた外のオブジェクトへは一切影響しない
+                // を厳密に保証する（_RadiusFit を小さくした時の腕・肩対策マージンは維持）。
+                float limR = min(_RadiusFit + marginR, 0.5);
+                float limH = min(_HeightFit + marginH, 0.5);
+
                 // 床・天井ゾーンは糸を glue しない（後段でテクスチャ表示へ）
                 bool onGlue = !isFlat
-                           && (abs(localPos.y) <= _HeightFit + marginH)
-                           && (length(localPos.xz) <= _RadiusFit + marginR);
+                           && (abs(localPos.y) <= limH)
+                           && (length(localPos.xz) <= limR);
 
                 float T = _GlueThickness;
                 bool shellHit = false;
@@ -502,7 +556,10 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                     float3 boxW = float3(unity_ObjectToWorld._m03, unity_ObjectToWorld._m13, unity_ObjectToWorld._m23);
                     float  zBox   = max(dot(boxW - _WorldSpaceCameraPos, camFwd), 0.05);
-                    float  aspect = _ScreenParams.x / _ScreenParams.y;
+                    // 片目の縦横比は射影行列から取る（m11/m00 = アスペクト比）。
+                    // _ScreenParams は Single-Pass(double-wide) VR で両目合計の幅を
+                    // 返すため、それで割ると左右の目でオフセット距離が狂う。
+                    float  aspect = abs(UNITY_MATRIX_P._m11 / UNITY_MATRIX_P._m00);
                     float  zStep  = max(T * 0.3, 0.02);   // 段差（輪郭）とみなす深度差
 
                     [loop]
@@ -517,10 +574,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                         {
                             float sA, cA;
                             sincos((float)di * (UNITY_PI * 0.25), sA, cA);
+                            // uvS は片目ローカル 0..1。範囲チェックもこの空間で行う
+                            // ことで、double-wide VR で隣の目の領域の深度を誤って
+                            // 読む（＝左右の描画が食い違う）ことを防ぐ。
                             float2 uvS = screenUV + float2(cA / aspect, sA) * rr;
                             if (uvS.x < 0.0 || uvS.x > 1.0 || uvS.y < 0.0 || uvS.y > 1.0) continue;
 
-                            float rdN = SC_SAMPLE_DEPTH_LOD(UnityStereoTransformScreenSpaceTex(uvS));
+                            float rdN = SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvS));
                             #if defined(UNITY_REVERSED_Z)
                                 if (rdN <= 1e-7) continue;
                             #else
@@ -532,8 +592,8 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                             // 近傍表面が glue 対象（円筒内）かを確認
                             float3 pq = _WorldSpaceCameraPos + rayPerZ * zN;
                             float3 lq = mul(unity_WorldToObject, float4(pq, 1.0)).xyz;
-                            if (abs(lq.y) > _HeightFit + marginH) continue;
-                            if (length(lq.xz) > _RadiusFit + marginR) continue;
+                            if (abs(lq.y) > limH) continue;
+                            if (length(lq.xz) > limR) continue;
 
                             zShell = min(zShell, zN - lift);
                         }
@@ -543,11 +603,11 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                     {
                         float3 p  = _WorldSpaceCameraPos + rayPerZ * zShell;
                         float3 lp = mul(unity_WorldToObject, float4(p, 1.0)).xyz;
-                        // シェルは厚みぶんだけ円筒からはみ出せる
+                        // シェルは厚みぶんだけ円筒からはみ出せる（ただし box の外は不可）
                         float exR = T / max(sxz, 1e-4);
                         float exH = T / max(sy, 1e-4);
-                        if (abs(lp.y) <= _HeightFit + marginH + exH &&
-                            length(lp.xz) <= _RadiusFit + marginR + exR)
+                        if (abs(lp.y) <= min(limH + exH, 0.5) &&
+                            length(lp.xz) <= min(limR + exR, 0.5))
                         {
                             localPos = lp;
                             worldPos = p;
@@ -614,7 +674,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 // ボックス前面（Cull Back + ZTest LEqual）が描画キャンバスなので、
                 // 鏡内の柱・壁など手前の遮蔽物にはハードウェアZテストで正しく隠れる。
                 float2 screenUV = i.screenPos.xy / max(i.screenPos.w, 1e-5);
-                float2 duv = UnityStereoTransformScreenSpaceTex(screenUV);
+                float2 duv = SC_DEPTH_UV(screenUV);
                 float rawDepth = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_CameraDepthTexture, duv).r;
                 bool hasDepth;
                 #if defined(UNITY_REVERSED_Z)
@@ -639,10 +699,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 float sy      = length(colY);
                 float marginR = _ProjectRange / max(sxz, 1e-4);
                 float marginH = _ProjectRange / max(sy, 1e-4);
+                // Pass 1 と同じく box の外へは出さない（対象外オブジェクト保護）
+                float limR = min(_RadiusFit + marginR, 0.5);
+                float limH = min(_HeightFit + marginH, 0.5);
 
                 if (SC_IsHorizontalSurface(screenUV, rawDepth)) discard;   // 床・天井は描かない
-                if (abs(gl.y) > _HeightFit + marginH) discard;
-                if (length(gl.xz) > _RadiusFit + marginR) discard;
+                if (abs(gl.y) > limH) discard;
+                if (length(gl.xz) > limR) discard;
 
                 return SC_ShadeCocoonAt(gl, wp, SC_CylRadialNormal(gl));
             }
