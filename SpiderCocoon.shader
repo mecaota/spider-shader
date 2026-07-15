@@ -9,7 +9,10 @@
 //  - シルエットのリムライト（色・幅・強さ調整可）
 //  - レイヤーを _LayerCount 枚だけ重ね描画。最背面=オフセット0、
 //    追加レイヤーは偶数/奇数で線対称に角度・位置をオフセット
-//  - 裏側（繭の内側）をカメラが覗くと視界ジャック（全画面化）
+//  - カメラが繭の内側に入ると視界ジャック（包まれ演出）: カメラの周囲に
+//    繭の内壁（紡錘形楕円体）を実寸の深度付きで描く。壁より手前にある
+//    自分のアバターの体などは遮られず見える＝繭に包まれている見え方。
+//    実装はデカール版と共通（CGINC/SpiderCocoon_VisionJack.cginc）
 // =============================================================================
 Shader "mecaota/SpiderCocoon"
 {
@@ -63,13 +66,24 @@ Shader "mecaota/SpiderCocoon"
 
         [Header(Backface And Vision Jack)]
         [Toggle] _HideBackFibers ("裏面の糸を隠す (Hide Back Fibers)", Float) = 1
+        // ※ 発火域（半径・高さ）は必ずメッシュの bounds の内側に収めること。
+        //   bounds の外で発火させると、メッシュに背を向けた瞬間にフラスタム
+        //   カリングでレンダラーごと消え、壁が全画面単位で出たり消えたりする
+        //   （頂点シェーダーの×100拡大は CPU のカリング判定に反映されない）。
+        //   既定値は標準 Cylinder（半径0.5・半高1.0）の内側に設定してある。
         [Toggle] _VisionJackEnable ("視界ジャック有効 (Vision Jack)", Float) = 0
-        _VisionJackRadius ("内側判定の半径 (Inside Radius)", Float) = 0.55
-        _VisionJackHeight ("内側判定の高さ (Inside Height)", Float) = 1.1
+        _VisionJackRadius ("内側判定の半径 (Inside Radius)", Float) = 0.45
+        _VisionJackHeight ("内側判定の高さ (Inside Height)", Float) = 0.9
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
+        _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
+        _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
 
         [Header(Render State)]
         [Enum(Off,0,On,1)] _ZWrite ("ZWrite", Float) = 0
+        // ジャック壁の目印に使うステンシルビット。他のステンシル利用シェーダー
+        // （アバター等）と衝突する場合にワールド側で付け替えられるようにする。
+        // 本体とデカールの両マテリアルで同じ値に揃えること。
+        [IntRange] _StencilRef ("ステンシル ビット (Stencil Bit)", Range(0, 255)) = 128
     }
 
     SubShader
@@ -80,8 +94,104 @@ Shader "mecaota/SpiderCocoon"
             "RenderType"       = "Transparent"
             "IgnoreProjector"  = "True"
             "VRCFallback"      = "Hidden"
+            // 静的/動的バッチングされると unity_ObjectToWorld が単位行列相当になり、
+            // オブジェクト空間依存の発火判定・投影がすべて壊れる（例: ワールド原点
+            // 付近を通っただけで無関係の繭がジャック誤発火）。必ず無効化する。
+            "DisableBatching"  = "True"
         }
 
+        // ================= Pass 0: 視界ジャック＝包まれ演出（デカール版と共通実装） =================
+        // カメラ（VRでは両目の中点）が繭の内側に入ったときだけ、カメラを囲む
+        // 繭の内壁（紡錘形楕円体）を「実寸の深度付き」で描く。
+        //   半径 = _VisionJackRadius × _JackRadius
+        //   半高 = _VisionJackHeight × _JackStretch
+        // ZTest LEqual ＋ 実深度の書き込みにより、壁より手前にあるもの
+        // （自分のアバターの体など）は遮られず見える＝「包まれている」見え方。
+        // 非発火時は頂点を縮退させ、フラグメントを一切発生させない（通常描画へ影響ゼロ）。
+        // ステンシル [_StencilRef]（既定128）はデカール版と共通の目印
+        // （デカールの glue が上塗りしない。両マテリアルで同値に揃えること）。
+        Pass
+        {
+            Name "VISIONJACK"
+            // ForwardBase タグ: メインライト・環境光を確実にバインドする
+            Tags { "LightMode" = "ForwardBase" }
+
+            ZWrite On
+            ZTest  LEqual
+            Cull   Front
+            Blend  SrcAlpha OneMinusSrcAlpha
+            Stencil
+            {
+                Ref       [_StencilRef]
+                ReadMask  [_StencilRef]
+                WriteMask [_StencilRef]
+                Comp      Always
+                Pass      Replace
+            }
+
+            CGPROGRAM
+            #pragma vertex   vertJack
+            #pragma fragment fragJack
+            #pragma target   3.5
+            #pragma multi_compile_instancing
+
+            #include "UnityCG.cginc"
+            #include "Lighting.cginc"
+
+            #include "CGINC/SpiderCocoon_Noise.cginc"
+            #include "CGINC/SpiderCocoon_Common.cginc"
+            #include "CGINC/SpiderCocoon_Thread.cginc"
+            #include "CGINC/SpiderCocoon_Lighting.cginc"
+            #include "CGINC/SpiderCocoon_Compose.cginc"
+            #include "CGINC/SpiderCocoon_VisionJack.cginc"
+
+            struct v2f_jack
+            {
+                float4 pos      : SV_POSITION;
+                float3 worldDir : TEXCOORD0; // カメラ→頂点のワールドレイ
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
+
+            v2f_jack vertJack(appdata v)
+            {
+                v2f_jack o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_OUTPUT(v2f_jack, o);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+
+                bool active = SC_VisionJackActive();
+
+                // 発火中はメッシュを大きく膨らませる（壁が近クリップ面に切られて
+                // 画面に穴が開くのを防ぐ）。非発火時は縮退させ完全に無効化する。
+                float4 vtx = v.vertex;
+                if (active) vtx.xyz *= 100.0;
+
+                float3 worldVtx = mul(unity_ObjectToWorld, vtx).xyz;
+                o.pos      = active ? UnityObjectToClipPos(vtx) : float4(0.0, 0.0, 0.0, 0.0);
+                o.worldDir = worldVtx - _WorldSpaceCameraPos;
+                return o;
+            }
+
+            fixed4 fragJack(v2f_jack i, out float outDepth : SV_Depth) : SV_Target
+            {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
+                outDepth = UNITY_NEAR_CLIP_VALUE;   // 仮値（discard 経路では書き込まれない）
+
+                if (!SC_VisionJackActive()) discard;
+
+                return SC_VisionJackWallShade(i.worldDir,
+                                              _VisionJackRadius * _JackRadius,
+                                              _VisionJackHeight * _JackStretch,
+                                              outDepth);
+            }
+            ENDCG
+        }
+
+        // ================= Pass 1: 通常の繭メッシュ描画 =================
         Pass
         {
             Name "FORWARD"
@@ -141,11 +251,9 @@ Shader "mecaota/SpiderCocoon"
                 o.worldNormal  = worldNormal;
                 o.worldTangent = float4(UnityObjectToWorldDir(vtan), v.tangent.w);
 
-                // 視界ジャック: カメラが繭の内側に入ったら、頂点を全画面へ展開。
-                bool jack = SC_VisionJackActive();
-                o.visionJack = jack ? 1.0 : 0.0;
-                o.pos = jack ? SC_VisionJackClipPos(v.uv)
-                             : UnityObjectToClipPos(float4(vpos, 1.0));
+                // 視界ジャック（包まれ演出）は専用の Pass 0 が実寸の壁として描く。
+                // （旧実装の「頂点を全画面へ展開」はここから廃止した）
+                o.pos = UnityObjectToClipPos(float4(vpos, 1.0));
                 return o;
             }
 
@@ -153,12 +261,11 @@ Shader "mecaota/SpiderCocoon"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                bool jack = i.visionJack > 0.5;
-
                 // 裏面（カメラに背を向けた面＝奥の内壁）は通常 discard する。
                 // これで手前の糸の隙間から「奥の暗い糸」が透けて見えなくなる。
-                // ただし視界ジャック発火中は、その裏面を全画面カバーに使うので描く。
-                if (!jack && _HideBackFibers > 0.5 && facing < 0.0) discard;
+                // （視界ジャック中にカメラから見える繭の内側はすべて裏面なので、
+                //   既定ではメッシュは消え、Pass 0 の内壁だけが描かれる）
+                if (_HideBackFibers > 0.5 && facing < 0.0) discard;
 
                 // ---- 基底ベクトル（VFACE で裏面の法線を反転） ----
                 float3 N = normalize(i.worldNormal) * sign(facing);

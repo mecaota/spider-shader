@@ -28,12 +28,34 @@
 #define SC_JITTER_GAIN 2.5
 #define SC_FUZZ_GAIN   2.5
 
+// 糸の太さ倍率（乱雑性）: 糸ごとの個体差（Jitter）× 糸長方向のうねり（Fuzz）。
+//   idxMod    : 糸を識別する番号（シームを跨ぐ座標系なら巡回済みの値を渡す）
+//   seed      : 乱数パターンを切り替えるオフセット
+//   fuzzCoord : 糸に沿った座標（この方向に太さがうねる）
+// SC_EvalFiberEx（平行糸）と SpiderWeb.shader（放射糸・リング糸）の両方から
+// 使う共通部品。糸の並び方が違っても「1本ごとの太さの個性」は同じ式で出す。
+float SC_ThreadWidthMul(float idxMod, float seed, float fuzzCoord)
+{
+    float jit   = SC_Hash11Signed(idxMod + seed);
+    float fuzzN = SC_ValueNoise1(fuzzCoord * _ThreadFuzzScale + (idxMod + seed) * 7.0); // 0..1
+    return (1.0 + _ThreadJitter * SC_JITTER_GAIN * jit)
+         * (1.0 + _ThreadFuzz   * SC_FUZZ_GAIN   * (fuzzN * 2.0 - 1.0));
+}
+
 // fuzzCoord: Fuzz（糸長方向の太さうねり）ノイズに使う「糸に沿った座標」。
 // 通常はそのまま p.x を渡せばよい（ラッパー SC_EvalFiber がそうしている）。
 // 円周がラップする座標系（デカール等）では、シームで連続する折返し座標を
 // 呼び出し側で作って渡すことで、継ぎ目の太さ段差を防げる。
+//
+// wrapPeriod: 糸インデックスのハッシュ巡回周期。「ラップする座標に掛かる係数」
+// を渡すこと（シームを跨ぐと idx がその係数ぶんずれるため、その値で巡回させる
+// と Jitter/Fuzz がシームで連続する）。
+//   メッシュ版（uv.y=円周・係数 cy）        → cy
+//   円筒マッピング版（uv.x=円周・係数 cx） → |cx|（cx=0 の閉リングは巡回不要
+//                                             なので大きな周期で素通しにする）
 float SC_EvalFiberEx(float2 uv, float cx, float cy, float2 posOffset,
                      float seed, float thickMul, float2 aaUV, float fuzzCoord,
+                     float wrapPeriod,
                      out float outSigned, out float outRim)
 {
     float2 p = uv + posOffset;                 // レイヤー位置オフセット
@@ -48,16 +70,12 @@ float SC_EvalFiberEx(float2 uv, float cx, float cy, float2 posOffset,
     float hw = _ThreadThickness * 0.5 * thickMul;
 
     // 太さの乱雑性: 糸ごとの差（Jitter）＋ 糸長方向のうねり（Fuzz）。
-    //   円周シーム（uv.y 0/1）をまたいでも連続するよう、糸インデックスを巻き数 W=cy で巡回。
+    //   円周シームをまたいでも連続するよう、糸インデックスを wrapPeriod で巡回。
     //   HLSL の fmod は負数で結果が負になり巡回が壊れるため、フロア剰余を使う
     //   （例: fmod(-1,24)=-1 だがフロア剰余なら 23 ＝ シーム両側で一致）。
-    float period = max(abs(cy), 1.0);
+    float period = max(abs(wrapPeriod), 1.0);
     float idxMod = idx - period * floor(idx / period);
-    float jit    = SC_Hash11Signed(idxMod + seed);
-    float fuzzN  = SC_ValueNoise1(fuzzCoord * _ThreadFuzzScale + (idxMod + seed) * 7.0); // 0..1
-    float widthMul = (1.0 + _ThreadJitter * SC_JITTER_GAIN * jit)
-                   * (1.0 + _ThreadFuzz   * SC_FUZZ_GAIN   * (fuzzN * 2.0 - 1.0));
-    hw = max(hw * widthMul, 1e-4);
+    hw = max(hw * SC_ThreadWidthMul(idxMod, seed, fuzzCoord), 1e-4);
 
     // アンチエイリアス幅。t の偏微分 = (cx, cy) なので画面微分を解析的に合成。
     // （動的ループ内で fwidth を呼ばないため、aaUV はループ前に算出して渡す）
@@ -73,13 +91,13 @@ float SC_EvalFiberEx(float2 uv, float cx, float cy, float2 posOffset,
     return alpha;
 }
 
-// 従来シグネチャのラッパー（fuzz 座標 = p.x。メッシュ版はこちらで十分）
+// 従来シグネチャのラッパー（fuzz 座標 = p.x、巡回周期 = cy。メッシュ版はこちらで十分）
 float SC_EvalFiber(float2 uv, float cx, float cy, float2 posOffset,
                    float seed, float thickMul, float2 aaUV,
                    out float outSigned, out float outRim)
 {
     return SC_EvalFiberEx(uv, cx, cy, posOffset, seed, thickMul, aaUV,
-                          uv.x + posOffset.x, outSigned, outRim);
+                          uv.x + posOffset.x, cy, outSigned, outRim);
 }
 
 #endif // SPIDERCOCOON_THREAD_INCLUDED

@@ -21,7 +21,10 @@
 //     専用の解析的復元（SC_EyeDepthOblique）で視線深度を求める。
 //     ZTest LEqual なので鏡内の遮蔽物に正しく隠れる。
 //
-//  ★ 視界ジャック: カメラが殻円筒の内側に入ると、糸を画面全体に描く。
+//  ★ 視界ジャック（包まれ演出）: カメラが殻円筒の内側に入ると、カメラの周囲に
+//     繭の内壁（紡錘形楕円体）を「実寸の深度付き」で描く。壁より手前にある
+//     自分のアバターの体などは遮られず見える＝繭に包まれている見え方。
+//     実装は SpiderCocoon 本体と共通（CGINC/SpiderCocoon_VisionJack.cginc）。
 //     （近クリップ対策として、ジャック中はボックスを頂点で拡大する）
 //
 //  ★ 必須前提:
@@ -93,11 +96,19 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
         _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
         _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
+
+        [Header(Render State)]
+        // ジャック壁の目印に使うステンシルビット。他のステンシル利用シェーダー
+        // （アバター等）と衝突する場合にワールド側で付け替えられるようにする。
+        // 本体とデカールの両マテリアルで同じ値に揃えること。
+        [IntRange] _StencilRef ("ステンシル ビット (Stencil Bit)", Range(0, 255)) = 128
     }
 
     SubShader
     {
-        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "IgnoreProjector" = "True" }
+        // DisableBatching: 静的/動的バッチングされると unity_ObjectToWorld が単位行列
+        // 相当になり、オブジェクト空間依存の glue 円筒判定・発火判定がすべて壊れるため必須。
+        Tags { "Queue" = "Transparent" "RenderType" = "Transparent" "IgnoreProjector" = "True" "DisableBatching" = "True" }
 
         CGINCLUDE
         #include "UnityCG.cginc"
@@ -108,15 +119,15 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         #include "CGINC/SpiderCocoon_Thread.cginc"
         #include "CGINC/SpiderCocoon_Lighting.cginc"
         #include "CGINC/SpiderCocoon_Compose.cginc"
+        #include "CGINC/SpiderCocoon_VisionJack.cginc"
 
         UNITY_DECLARE_SCREENSPACE_TEXTURE(_CameraDepthTexture);
 
+        // ※ _JackRadius / _JackStretch は共通化に伴い Common.cginc 側で宣言
         float _RadiusFit;
         float _HeightFit;
         float _ProjectRange;
         float _GlueThickness;
-        float _JackRadius;
-        float _JackStretch;
 
         sampler2D _GroundTex;
         float4    _GroundTex_ST;
@@ -221,23 +232,42 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             px.x = 0.5 * abs(UNITY_MATRIX_P._m00) * _GroundDetectScale / max(z0, 0.05);
             px.y = 0.5 * abs(UNITY_MATRIX_P._m11) * _GroundDetectScale / max(z0, 0.05);
             px = max(px, 2.0 * SC_EyeTexelSize());   // 最低2px（片目ローカル基準）
+            px = min(px, 0.1);                       // 近距離で間隔が画面を覆うほど暴走しない上限
 
-            // X方向: 左右のうち深度差が小さい側を採用
+            // 片目ローカル 0..1 を出た隣接サンプルは「その側を選択候補から外す」。
+            //  ・範囲外UVのままだと、深度はクランプ（double-wide はステレオ変換の
+            //    saturate、mono/Instanced はサンプラー）される一方で NDC は画面外へ
+            //    外挿され、表面上に存在しない偽の点が復元される
+            //  ・しかもクランプで深度差≈0 になるため「深度差が小さい側を採用」の
+            //    ロジックが偽の点を優先選択してしまう
+            //  → dz を無限大扱いにし、必ず画面内の側の差分で法線を作る。
+            //    両側とも範囲外なら後段の maxStep 判定が false（水平面でない）を返す。
+            float2 uvMax = 1.0 - SC_EyeTexelSize();  // 1.0丁度は隣の目の先頭テクセルに触れる
+
+            // X方向: 画面内かつ深度差が小さい側を採用。
+            // 範囲判定は「オフセットした軸のみ」を見る（フラグメント自身の uv は
+            // 必ず画面内。動かしていない軸まで検査すると、ピクセル中心が
+            // 1-0.5px の最終行/列で両側とも除外され、その1px帯の床判定が
+            // 常に false になってしまう）。
             float2 uvR = uv + float2(px.x, 0.0);
             float2 uvL = uv - float2(px.x, 0.0);
+            bool   inR = (uvR.x <= uvMax.x);
+            bool   inL = (uvL.x >= 0.0);
             float3 pR = SC_ViewPosAt(uvR, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvR)));
             float3 pL = SC_ViewPosAt(uvL, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvL)));
-            float dzR = abs(-pR.z - z0);
-            float dzL = abs(-pL.z - z0);
+            float dzR = inR ? abs(-pR.z - z0) : 1e9;
+            float dzL = inL ? abs(-pL.z - z0) : 1e9;
             float3 dX = (dzR <= dzL) ? (pR - p0) : (p0 - pL);
 
             // Y方向も同様
             float2 uvU = uv + float2(0.0, px.y);
             float2 uvD = uv - float2(0.0, px.y);
+            bool   inU = (uvU.y <= uvMax.y);
+            bool   inD = (uvD.y >= 0.0);
             float3 pU = SC_ViewPosAt(uvU, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvU)));
             float3 pD = SC_ViewPosAt(uvD, SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvD)));
-            float dzU = abs(-pU.z - z0);
-            float dzD = abs(-pD.z - z0);
+            float dzU = inU ? abs(-pU.z - z0) : 1e9;
+            float dzD = inD ? abs(-pD.z - z0) : 1e9;
             float3 dY = (dzU <= dzD) ? (pU - p0) : (p0 - pD);
 
             // 両側とも大きな深度跳び＝輪郭画素 → 水平面ではない扱い
@@ -247,70 +277,24 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
             // view 空間の法線 → 世界空間へ（V の回転部の転置＝逆変換）
             float3 nV = cross(dX, dY);
+            // 画面端のクランプ等で隣接点が中心と一致し法線が構成できない画素は、
+            // 「水平面ではない」扱い（＝糸を描く従来既定）にフォールバックする。
+            // ここで (0,1,0) に正規化してしまうと床と誤判定し、画面端に
+            // 糸の消える帯が出る（VRでは左右で帯の位置が違い、チラつく）。
+            if (dot(nV, nV) < 1e-14) return false;
             float3 nW = mul(nV, (float3x3)UNITY_MATRIX_V);
             nW = normalize(nW + float3(0.0, 1e-6, 0.0));
             return abs(nW.y) > _GroundNormalY;
         }
 
-        // VRの「中央（両目の中点）」カメラ位置。
-        // _WorldSpaceCameraPos はステレオ時に目ごとの位置へ差し替わるため、
-        // 内/外のような二値判定に使うと、境界付近で左目だけ発火するなど
-        // 左右の表示が食い違う。判定には必ずこちらを使う。
-        float3 SC_MonoCameraPos()
-        {
-        #if defined(USING_STEREO_MATRICES)
-            return 0.5 * (unity_StereoWorldSpaceCameraPos[0].xyz + unity_StereoWorldSpaceCameraPos[1].xyz);
-        #else
-            return _WorldSpaceCameraPos;
-        #endif
-        }
-
-        // 視界ジャックの発火判定（vert/frag で同一のこの関数を使い、判定を一致させる。
-        // ★ 中央カメラ位置で判定するため、左右の目でも必ず同じ結果になる）
+        // 視界ジャック（包まれ演出）の発火判定。vert/frag で同一のこの関数を使い、
+        // 判定を一致させる。実体は共通実装（SpiderCocoon_VisionJack.cginc）で、
+        // 中央カメラ位置により左右の目で必ず同じ結果になる。
+        // ※ SC_CylRadialNormal / SC_ShadeCocoonAt も共通化に伴い
+        //    SpiderCocoon_Compose.cginc へ移動した。
         bool SC_DecalJackActive()
         {
-            if (_VisionJackEnable < 0.5) return false;
-            if (SC_IsInMirror() && _VisionJackInMirror < 0.5) return false;
-            float3 camLocal = mul(unity_WorldToObject, float4(SC_MonoCameraPos(), 1.0)).xyz;
-            return (length(camLocal.xz) < _RadiusFit) && (abs(camLocal.y) < _HeightFit);
-        }
-
-        // ローカル点の「円筒の径方向」法線（陰影用）
-        float3 SC_CylRadialNormal(float3 lp)
-        {
-            float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
-            float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
-            float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
-            float3 radialW = colX * lp.x + colZ * lp.z;
-            return (length(lp.xz) > 1e-5) ? normalize(radialW) : normalize(colY);
-        }
-
-        // ローカル点 localPos（＝繭の上の点）を、本体 SpiderCocoon と同じ
-        // 手続き糸＋トゥーン＋リムで着色して返す。糸の隙間なら discard。
-        fixed4 SC_ShadeCocoonAt(float3 localPos, float3 worldPos, float3 N)
-        {
-            float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
-            float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
-
-            float ang = atan2(localPos.z, localPos.x);
-            // 横リング: uv.x=円周(糸が走る方向), uv.y=軸(巻き数 cy が並ぶ方向)
-            float2 uv = float2(ang / (UNITY_PI * 2.0) + 0.5, localPos.y + 0.5);
-
-            float3 axisDir = normalize(colY);   // 体軸
-            // N はワールド固定の径方向のまま使う（視線による反転はしない）。
-            // 反転すると法線が常にカメラを向き、陰影がカメラ追従になって
-            // 正対時に白飛びする（ライト方向ベースの自然な陰影にならない）。
-            // 裏向き法線でのリム暴走は SC_RimLight 側の abs で防いでいる。
-            float3 nt = cross(axisDir, N);
-            float3 T = (length(nt) > 1e-5) ? normalize(nt) : normalize(colX); // uv.x=円周方向
-            float3 B = axisDir;                                               // uv.y=軸方向
-
-            float2 aaUV = float2(fwidth(uv.x), fwidth(uv.y));
-
-            // レイヤー合成は共通実装（SpiderCocoon_Compose.cginc）へ。
-            // デカール版: uv.x=円周（ラップ）のため角度は整数スナップ（snapCx=true）、
-            // Fuzz 折返しあり、通常ライティング。
-            return SC_CompositeLayers(uv, N, T, B, worldPos, aaUV, true, true, false);
+            return SC_VisionJackActiveEx(_RadiusFit, _HeightFit);
         }
 
         struct appdata_d
@@ -368,22 +352,33 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         }
         ENDCG
 
-        // ================= Pass 0: 視界ジャック専用（常に最優先で全画面に糸） =================
-        // ジャック中のみ描画。深度＝近クリップ面を書き込み、後から描かれる通常の
-        // オブジェクトを Z テストで遮断する。さらにステンシル bit128 を立て、
-        // 同じシェーダーの別インスタンス（ZTest Always で Z を無視する）が後から
-        // 描かれてもジャックを塗り潰せないようにする（Pass 1/2 は bit128 を避ける）。
+        // ================= Pass 0: 視界ジャック＝包まれ演出（共通実装） =================
+        // ジャック中のみ描画。カメラを囲む繭の内壁（紡錘形楕円体）を「実寸の深度
+        // 付き」で描く（実体は SpiderCocoon_VisionJack.cginc / 本体シェーダーと共通）。
+        //   半径 = _RadiusFit × _JackRadius（実円筒より小さくできる）
+        //   半高 = _HeightFit × _JackStretch（閉じるまでの縦距離）
+        // ZTest LEqual ＋ 実深度の書き込みにより、壁より手前にあるもの
+        // （自分のアバターの体・同じ繭の中の他プレイヤー）は遮られず見える。
+        // 壁より奥の世界は糸に覆われ、隙間からだけ覗ける＝「包まれている」見え方。
+        // ZWrite On なので、後から描かれる透明オブジェクトも壁と正しく前後判定される。
+        // ステンシル bit128 を立て、後続の glue（Pass 1/2、ZTest Always で Z を
+        // 無視する）が壁の糸を上塗りしないようにする。壁より手前で glue 対象の
+        // 体表には Pass 1 が引き続き糸を描く（体も巻かれたまま包まれる）。
         Pass
         {
+            // ForwardBase タグ: メインライト・環境光を確実にバインドする
+            // （無いと直前の描画の残り値でライティングされ、描画順で見た目が揺れる）
+            Tags { "LightMode" = "ForwardBase" }
+
             ZWrite On
-            ZTest  Always
+            ZTest  LEqual
             Cull   Front
             Blend  SrcAlpha OneMinusSrcAlpha
             Stencil
             {
-                Ref       128
-                ReadMask  128
-                WriteMask 128
+                Ref       [_StencilRef]
+                ReadMask  [_StencilRef]
+                WriteMask [_StencilRef]
                 Comp      Always
                 Pass      Replace
             }
@@ -399,51 +394,14 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                outDepth = UNITY_NEAR_CLIP_VALUE;   // 後続オブジェクトを Z テストで遮断
+                outDepth = UNITY_NEAR_CLIP_VALUE;   // 仮値（discard 経路では書き込まれない）
 
                 if (!SC_DecalJackActive()) discard;
 
-                // 視界ジャック: カメラを囲む繭の「内壁」を、体表 glue と同じ描画処理で描く。
-                // 交差先は無限円筒ではなく「上下が閉じた紡錘形（楕円体）」。
-                // 上下に遠ざかるほど糸のリングの半径が縮み、極で 0 に収束して閉じる。
-                //   半径 = _RadiusFit × _JackRadius（実円筒より小さくできる）
-                //   半高 = _HeightFit × _JackStretch（閉じるまでの縦距離）
-                // 内壁を小さくするとカメラが楕円体の外に出得るため、レイ原点を
-                // 楕円体内へ連続的に引き込み、常に「内側から奥壁を見る」状態を保証する。
-                // 糸のパラメータもライティングも通常の繭と完全に同一。隙間は共通
-                // 実装内の discard で素通し（色・深度・ステンシルとも書かない）。
-                float3 rdW = normalize(i.worldDir);
-                float3 o = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos, 1.0)).xyz;
-                float3 d = mul((float3x3)unity_WorldToObject, rdW);
-
-                float A = _RadiusFit * _JackRadius;                  // 内壁の半径
-                float B = _HeightFit * _JackStretch;                 // 半高（閉じるまでの距離）
-
-                // 楕円体を単位球へスケールしてレイ-球交差（奥側解）
-                float3 os = float3(o.x / A, o.y / B, o.z / A);
-                float3 ds = float3(d.x / A, d.y / B, d.z / A);
-
-                // 原点の引き込み: 楕円体の外（または縁ぎりぎり）なら内側へ寄せる
-                float osLen = length(os);
-                if (osLen > 0.9) os *= 0.9 / osLen;
-
-                float a2 = max(dot(ds, ds), 1e-9);
-                float b2 = 2.0 * dot(os, ds);
-                float c2 = dot(os, os) - 1.0;                        // 引き込み後は常に負
-                float t  = (-b2 + sqrt(max(b2 * b2 - 4.0 * a2 * c2, 0.0))) / (2.0 * a2);
-
-                float3 oc = float3(os.x * A, os.y * B, os.z * A);    // 引き込み後のローカル原点
-                float3 lp = oc + d * t;
-                float3 wp = mul(unity_ObjectToWorld, float4(lp, 1.0)).xyz;
-
-                // 楕円体の内向き法線（勾配ベース。ローカル→ワールドへ方向変換）
-                float3 nL = normalize(float3(lp.x / (A * A), lp.y / (B * B), lp.z / (A * A)));
-                float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
-                float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
-                float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
-                float3 nW = normalize(colX * nL.x + colY * nL.y + colZ * nL.z);
-
-                return SC_ShadeCocoonAt(lp, wp, -nW);
+                return SC_VisionJackWallShade(i.worldDir,
+                                              _RadiusFit * _JackRadius,
+                                              _HeightFit * _JackStretch,
+                                              outDepth);
             }
             ENDCG
         }
@@ -464,8 +422,8 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             // 同じシェーダーの別インスタンスが後から描かれても上書きできない）
             Stencil
             {
-                Ref      128
-                ReadMask 128
+                Ref      [_StencilRef]
+                ReadMask [_StencilRef]
                 Comp     NotEqual
             }
 
@@ -574,11 +532,14 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                         {
                             float sA, cA;
                             sincos((float)di * (UNITY_PI * 0.25), sA, cA);
-                            // uvS は片目ローカル 0..1。範囲チェックもこの空間で行う
-                            // ことで、double-wide VR で隣の目の領域の深度を誤って
-                            // 読む（＝左右の描画が食い違う）ことを防ぐ。
+                            // uvS は片目ローカル 0..1。画面外は「棄却」ではなく
+                            // 端へクランプしてサンプルする（mono のサンプラーの
+                            // エッジクランプと同じ連続的な劣化になり、棄却の有無と
+                            // いう二値差が左右の目で食い違ってチラつくのを防ぐ。
+                            // 上限 1-1px は double-wide で隣の目の先頭テクセルを
+                            // 踏まないため）。
                             float2 uvS = screenUV + float2(cA / aspect, sA) * rr;
-                            if (uvS.x < 0.0 || uvS.x > 1.0 || uvS.y < 0.0 || uvS.y > 1.0) continue;
+                            uvS = clamp(uvS, 0.0, 1.0 - SC_EyeTexelSize());
 
                             float rdN = SC_SAMPLE_DEPTH_LOD(SC_DEPTH_UV(uvS));
                             #if defined(UNITY_REVERSED_Z)
@@ -589,8 +550,12 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                             float zN = LinearEyeDepth(rdN);
                             if (zN >= eyeZ - zStep) continue;               // 段差（輪郭）のみ対象
 
-                            // 近傍表面が glue 対象（円筒内）かを確認
-                            float3 pq = _WorldSpaceCameraPos + rayPerZ * zN;
+                            // 近傍表面が glue 対象（円筒内）かを確認。
+                            // 近傍点は「そのピクセル(uvS)のレイ」上で厳密復元する。
+                            // 中心ピクセルのレイ×近傍の深度で代用すると、点が横に
+                            // 最大 _GlueThickness ぶんずれ、円筒境界での採否が狂う。
+                            float3 vq = SC_ViewPosAt(uvS, rdN);
+                            float3 pq = mul(UNITY_MATRIX_I_V, float4(vq, 1.0)).xyz;
                             float3 lq = mul(unity_WorldToObject, float4(pq, 1.0)).xyz;
                             if (abs(lq.y) > limH) continue;
                             if (length(lq.xz) > limR) continue;
@@ -648,8 +613,8 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             // ジャック（bit128）が描かれた画素には描かない（ジャック優先）
             Stencil
             {
-                Ref      128
-                ReadMask 128
+                Ref      [_StencilRef]
+                ReadMask [_StencilRef]
                 Comp     NotEqual
             }
 
@@ -666,7 +631,14 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                 // このパスはミラー内でのみ描く
                 if (!SC_IsInMirror()) discard;
-                if (SC_DecalJackActive()) discard;   // ミラー内ジャック時は重ねない
+                // ミラー内ジャック時は重ねない。
+                // 既知の制限: _VisionJackInMirror=1 でミラー内ジャックが発火して
+                // いる間、鏡の中では壁の隙間から見える体表の glue が描かれない
+                // （直視では Pass 1 が体表に糸を描き続けるが、このパスは全体を
+                //   discard するため）。挙動を直視と完全一致させるには oblique
+                //   深度復元での glue 描画をこの分岐に実装する必要がある。
+                //   既定値（_VisionJackInMirror=0）では発生しない。
+                if (SC_DecalJackActive()) discard;
 
                 // ==== ミラーでも通常視点と同じ体表 glue ====
                 // ミラーカメラは自前の深度を持つが、鏡面に沿った斜交（oblique）投影の

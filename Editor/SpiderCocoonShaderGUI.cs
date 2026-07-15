@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEngine;
 
 // =============================================================================
-// SpiderCocoon / SpiderCocoonDepthDecal / SpiderThreadTrail 共用のカスタムインスペクタ。
+// SpiderCocoon / SpiderCocoonDepthDecal / SpiderThreadTrail / SpiderWeb 共用のカスタムインスペクタ。
 // lilToon 風にカテゴリごとの折りたたみボックスで整理し、
 // 「共通（本体とデカールで同じ見た目パラメータ・青系）」と
 // 「固有（そのシェーダー専用・オレンジ系）」を色分けして表示する。
@@ -42,9 +42,10 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         new Category{ Title = "ビルボード", Common = false, Require = "_Billboard",
             Props = new[]{ "_Billboard", "_BillboardSeamOffset" } },
         new Category{ Title = "裏面と視界ジャック", Common = false, Require = "_VisionJackRadius",
-            Props = new[]{ "_HideBackFibers", "_VisionJackEnable", "_VisionJackRadius", "_VisionJackHeight", "_VisionJackInMirror" } },
-        new Category{ Title = "レンダーステート", Common = false, Require = "_ZWrite",
-            Props = new[]{ "_ZWrite" } },
+            Props = new[]{ "_HideBackFibers", "_VisionJackEnable", "_VisionJackRadius", "_VisionJackHeight", "_VisionJackInMirror", "_JackRadius", "_JackStretch" } },
+        // _StencilRef は本体・デカール両方が持つ（実在するプロパティだけが描画される）
+        new Category{ Title = "レンダーステート", Common = false, Require = "_StencilRef",
+            Props = new[]{ "_ZWrite", "_StencilRef" } },
 
         // ---- デカール版（SpiderCocoonDepthDecal）固有 ----
         new Category{ Title = "投影フィット", Common = false, Require = "_RadiusFit",
@@ -53,12 +54,20 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_GlueThickness" } },
         new Category{ Title = "床・天井", Common = false, Require = "_GroundTex",
             Props = new[]{ "_GroundTex", "_GroundColor", "_GroundDetectScale", "_GroundNormalY" } },
-        new Category{ Title = "視界ジャック", Common = false, Require = "_JackRadius",
+        // Require はデカール専用プロパティにする（_JackRadius は本体シェーダーにも
+        // 追加されたため、それを条件にすると本体側で重複表示されてしまう）
+        new Category{ Title = "視界ジャック", Common = false, Require = "_RadiusFit",
             Props = new[]{ "_VisionJackEnable", "_VisionJackInMirror", "_JackRadius", "_JackStretch" } },
 
         // ---- トレイル版（SpiderThreadTrail）固有 ----
         new Category{ Title = "トレイルの揺れ", Common = false, Require = "_SwayAmount",
             Props = new[]{ "_SwayAmount", "_SwaySpeed", "_SwayWaves", "_SwayAnchor", "_TrailEdgeSoft" } },
+
+        // ---- 蜘蛛の巣版（SpiderWeb）固有 ----
+        new Category{ Title = "蜘蛛の巣カスタマイズ(個別)", Common = false, Require = "_WebRadius",
+            Props = new[]{ "_HubOffsetX", "_HubOffsetY", "_WebRadius", "_Thickness",
+                           "_RadialCount", "_RingCount", "_Sag", "_SpokeExtend",
+                           "_Irregular", "_Seed", "_HideBackFibers" } },
     };
 
     public override void OnGUI(MaterialEditor materialEditor, MaterialProperty[] properties)

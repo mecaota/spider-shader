@@ -72,8 +72,16 @@ fixed4 SC_CompositeLayers(float2 uv, float3 N, float3 T, float3 B, float3 worldP
         float fuzzX = uv.x + off.x;
         if (foldFuzz) fuzzX = abs(frac(fuzzX) - 0.5) * 2.0;
 
+        // Jitter/Fuzz ハッシュの巡回周期は「ラップする座標に掛かる係数」。
+        //   メッシュ版（snapCx=false, uv.y=円周）: 係数 cy
+        //   円筒版（snapCx=true, uv.x=円周）:      係数 cx（シームで idx が cx ずれる）
+        // cy を使い回すと、円筒版では atan2 シーム（ローカル-X方位）で糸ごとの
+        // 太さがリング単位で段差状にジャンプする。cx=0 の閉リングはシームで
+        // idx が変わらないため巡回不要＝大周期で素通し（リングごとの差を保つ）。
+        float wrapPeriod = snapCx ? ((abs(cx) > 0.5) ? abs(cx) : 1048576.0) : cy;
+
         float sgn, rimEdge;
-        float a = SC_EvalFiberEx(uv, cx, cy, off, seed, thickMul, aaUV, fuzzX, sgn, rimEdge);
+        float a = SC_EvalFiberEx(uv, cx, cy, off, seed, thickMul, aaUV, fuzzX, wrapPeriod, sgn, rimEdge);
         a *= _ThreadColor.a;
         if (a <= 0.001) continue;            // 隙間はスキップ
 
@@ -86,22 +94,9 @@ fixed4 SC_CompositeLayers(float2 uv, float3 N, float3 T, float3 B, float3 worldP
         }
         else
         {
-            // 陰影は「面法線 × 光源」を主役にする（カメラ非依存。光の当たる
-            // 面の裏側が陰る）。各糸ごとの曲げ法線は detail として混ぜる。
-            float3 fiberN  = SC_PerturbNormal(N, T, B, cx, cy, sgn, _FiberNormalStrength);
-            float  ndlFace = dot(N, L);
-            float  ndlFib  = dot(fiberN, L);
-            float  ndl     = lerp(ndlFace, ndlFib, _FiberNormalStrength);
-            float  toon    = SC_ToonRamp(ndl * 0.5 + 0.5, _ToonSteps, _ToonSmooth); // half-lambert で裏も真っ黒にしない
-
-            // 発光的な下地: 明部は糸色そのまま、影部のみ影色まで暗くする。
-            // ライト「強度」には依存しない（toon でライトの“向き”だけ使う）ので、
-            // 照明が弱い／OFF でも正面が暗く沈まず、糸色がそのまま出る。
-            col = _ThreadColor.rgb * lerp(_ShadowColor.rgb, float3(1.0, 1.0, 1.0), toon);
-            // シーン光・環境光を _LightInfluence ぶんだけ上乗せ（無くても下地が残る）
-            col *= 1.0 + (_LightColor0.rgb * toon + ambient) * _LightInfluence;
-            // 糸の縁を暗化
-            col = lerp(col, col * _RimShadowColor.rgb, rimEdge * _RimShadowStrength);
+            // トゥーン陰影は共通実装へ（SpiderCocoon_Lighting.cginc）。
+            // SpiderWeb.shader と同じ質感をここでも使う。
+            col = SC_ShadeFiberToon(N, T, B, cx, cy, sgn, rimEdge, L, ambient);
         }
 
         // over 合成（src = このレイヤー）
@@ -117,6 +112,50 @@ fixed4 SC_CompositeLayers(float2 uv, float3 N, float3 T, float3 B, float3 worldP
     // over 合成の蓄積は事前乗算済み。Blend SrcAlpha で α が再度掛かるため
     // ここで割り戻す（半透明の縁が暗く沈むのを防ぐ）。
     return fixed4(accumRGB / max(accumA, 1e-4), accumA);
+}
+
+// ---------------------------------------------------------------------------
+// 円筒マッピングの共通シェーディングヘルパー
+// 「メッシュUVを持たない任意のローカル点」を、本体 SpiderCocoon と同じ
+// 手続き糸＋トゥーン＋リムで着色する。デカールの glue（深度復元した体表点）と
+// 視界ジャックの内壁（レイ交差点）の両方から使う共用部品。
+// ---------------------------------------------------------------------------
+
+// ローカル点の「円筒の径方向」ワールド法線（陰影用）
+float3 SC_CylRadialNormal(float3 lp)
+{
+    float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+    float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+    float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
+    float3 radialW = colX * lp.x + colZ * lp.z;
+    return (length(lp.xz) > 1e-5) ? normalize(radialW) : normalize(colY);
+}
+
+// ローカル点 localPos（＝繭の上の点）を手続き糸＋トゥーン＋リムで着色して返す。
+// 糸の隙間なら discard（SC_CompositeLayers 内）。
+fixed4 SC_ShadeCocoonAt(float3 localPos, float3 worldPos, float3 N)
+{
+    float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+    float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+
+    float ang = atan2(localPos.z, localPos.x);
+    // 横リング: uv.x=円周(糸が走る方向), uv.y=軸(巻き数 cy が並ぶ方向)
+    float2 uv = float2(ang / (UNITY_PI * 2.0) + 0.5, localPos.y + 0.5);
+
+    float3 axisDir = normalize(colY);   // 体軸
+    // N はワールド固定の径方向のまま使う（視線による反転はしない）。
+    // 反転すると法線が常にカメラを向き、陰影がカメラ追従になって
+    // 正対時に白飛びする（ライト方向ベースの自然な陰影にならない）。
+    // 裏向き法線でのリム暴走は SC_RimLight 側の abs で防いでいる。
+    float3 nt = cross(axisDir, N);
+    float3 T = (length(nt) > 1e-5) ? normalize(nt) : normalize(colX); // uv.x=円周方向
+    float3 B = axisDir;                                               // uv.y=軸方向
+
+    float2 aaUV = float2(fwidth(uv.x), fwidth(uv.y));
+
+    // 円筒マッピング版: uv.x=円周（ラップ）のため角度は整数スナップ（snapCx=true）、
+    // Fuzz 折返しあり、通常ライティング。
+    return SC_CompositeLayers(uv, N, T, B, worldPos, aaUV, true, true, false);
 }
 
 #endif // SPIDERCOCOON_COMPOSE_INCLUDED

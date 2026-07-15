@@ -53,12 +53,14 @@ float  _LayerThicknessFalloff;// 奥（index大）ほど糸を細くする量
 float  _Billboard;            // 0/1。Y軸まわりに回して UV シームを常に裏へ
 float  _BillboardSeamOffset;  // シーム位置の微調整（度）
 
-// ---- 裏面の扱い / 視界ジャック --------------------------------------------
+// ---- 裏面の扱い / 視界ジャック（包まれ演出） ------------------------------
 float  _HideBackFibers;       // 1=裏面の糸を描かない（奥の暗い糸の透けを防ぐ）
-float  _VisionJackEnable;     // 0/1。カメラが繭の内側に入ったら全画面ジャック
+float  _VisionJackEnable;     // 0/1。カメラが繭の内側に入ったら包まれ演出を発火
 float  _VisionJackRadius;     // 内側判定の半径（オブジェクト空間。軸からの距離がこれ未満で発火）
 float  _VisionJackHeight;     // 内側判定の高さ（オブジェクト空間。|y| がこれ未満で発火）
 float  _VisionJackInMirror;   // ミラー内でも発火するか 0/1
+float  _JackRadius;           // 内壁（楕円体）の半径倍率（発火判定半径に乗算）
+float  _JackStretch;          // 内壁が上下に閉じるまでの縦距離の倍率
 
 float  _ZWrite;
 
@@ -79,7 +81,6 @@ struct v2f
     float3 worldPos     : TEXCOORD1;
     float3 worldNormal  : TEXCOORD2;
     float4 worldTangent : TEXCOORD3; // xyz=tangent, w=ハンドネス符号
-    float  visionJack   : TEXCOORD4; // 1=視界ジャック発火中
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
 };
@@ -88,6 +89,19 @@ struct v2f
 bool SC_IsInMirror()
 {
     return unity_CameraProjection[2][0] != 0.0f || unity_CameraProjection[2][1] != 0.0f;
+}
+
+// VRの「中央（両目の中点）」カメラ位置。
+// _WorldSpaceCameraPos はステレオ時に目ごとの位置へ差し替わるため、
+// 内/外のような二値判定に使うと、境界付近で左目だけ発火するなど
+// 左右の表示が食い違う。二値判定には必ずこちらを使う。
+float3 SC_MonoCameraPos()
+{
+#if defined(USING_STEREO_MATRICES)
+    return 0.5 * (unity_StereoWorldSpaceCameraPos[0].xyz + unity_StereoWorldSpaceCameraPos[1].xyz);
+#else
+    return _WorldSpaceCameraPos;
+#endif
 }
 
 #endif // SPIDERCOCOON_COMMON_INCLUDED
