@@ -9,6 +9,8 @@
 //  - シルエットのリムライト（色・幅・強さ調整可）
 //  - レイヤーを _LayerCount 枚だけ重ね描画。最背面=オフセット0、
 //    追加レイヤーは偶数/奇数で線対称に角度・位置をオフセット
+//  - 揺れアニメ（_SwayAnimEnable）: UVドメインを歪ませて糸を揺らす。
+//    円周シームでも連続・軸の両端は固定可（SpiderWeb と共通の SC_SwayOffset）
 //  - カメラが繭の内側に入ると視界ジャック（包まれ演出）: カメラの周囲に
 //    繭の内壁（紡錘形楕円体）を実寸の深度付きで描く。壁より手前にある
 //    自分のアバターの体などは遮られず見える＝繭に包まれている見え方。
@@ -59,6 +61,13 @@ Shader "mecaota/SpiderCocoon"
         _LayerPosStepX      ("レイヤー位置ステップ X 軸 (Pos Step X)", Float) = 0.0
         _LayerPosStepY      ("レイヤー位置ステップ Y 円周 (Pos Step Y)", Float) = 0.02
         _LayerThicknessFalloff ("奥レイヤーの減衰 (Thickness Falloff)", Range(0, 1)) = 0.0
+
+        [Header(Sway Animation)]
+        [ToggleUI] _SwayAnimEnable ("揺れアニメ有効 (Sway Enable)", Float) = 0
+        _SwayAnimAmount ("揺れ幅 (Sway Amount)", Range(0, 0.05)) = 0.012
+        _SwayAnimSpeed  ("揺れの速さ (Sway Speed)", Range(0, 10)) = 1.5
+        _SwayAnimWaves  ("波の細かさ (Sway Waves)", Range(0, 10)) = 2.0
+        _SwayAnimAnchor ("端の固定幅 0で固定なし (Edge Anchor)", Range(0, 0.5)) = 0.15
 
         [Header(Billboard)]
         [Toggle] _Billboard ("ビルボード / 継ぎ目を裏へ (Billboard)", Float) = 0
@@ -272,13 +281,29 @@ Shader "mecaota/SpiderCocoon"
                 float3 T = normalize(i.worldTangent.xyz);
                 float3 B = normalize(cross(N, T)) * i.worldTangent.w * unity_WorldTransformParams.w;
 
+                // ---- 揺れアニメ: UVドメインを歪ませて糸を揺らす ----
+                // uv.y（円周）方向の波数は SC_SwayOffset 内で整数に丸められる
+                // ため、円周の継ぎ目でも揺れは連続（シームに裂け目は出ない）。
+                // 端の固定幅は uv.x（軸）の両端に効かせ、繭の口元を留める。
+                float2 uvS = i.uv;
+                if (_SwayAnimEnable > 0.5)
+                {
+                    float endD = min(i.uv.x, 1.0 - i.uv.x);
+                    // 固定帯が振幅より狭いと帯内で歪みが折り返るため下限を設ける
+                    float anc = max(_SwayAnimAnchor, 3.0 * SC_SwayAmp());
+                    float aw  = (_SwayAnimAnchor > 1e-4)
+                              ? smoothstep(0.0, anc, endD) : 1.0;
+                    uvS -= SC_SwayOffset(i.uv, true) * aw;
+                }
+
                 // 動的ループ内で fwidth を呼ばないよう、AA 幅はここで一度だけ算出
-                float2 aaUV = float2(fwidth(i.uv.x), fwidth(i.uv.y));
+                //（揺れ変形後の座標で取ることで、変形分も含めた正しい AA になる）
+                float2 aaUV = float2(fwidth(uvS.x), fwidth(uvS.y));
 
                 // レイヤー合成は共通実装（SpiderCocoon_Compose.cginc）へ。
                 // メッシュ版: uv.x=軸（シーム無し）のため角度は連続値のまま
                 // （snapCx=false）、Fuzz 折返し不要、通常ライティング。
-                return SC_CompositeLayers(i.uv, N, T, B, i.worldPos, aaUV,
+                return SC_CompositeLayers(uvS, N, T, B, i.worldPos, aaUV,
                                           false, false, false);
             }
             ENDCG

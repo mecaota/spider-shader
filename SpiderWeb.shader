@@ -30,6 +30,12 @@
 //    見える。OFF は同じ直線の外周円から外側を透明にしているだけなので、
 //    ON/OFF やハブ操作で縦糸の向き・終端位置は変わらない（横糸は延長しない）。
 //
+//  ■ 揺れアニメ（_SwayAnimEnable）
+//    距離場を評価する UV ドメインを時間で歪ませ、風でたわむ網のように
+//    揺らす（SC_SwayOffset・繭本体と共通実装）。糸の接続は揺れでも
+//    構造的に切れない。端の固定幅 > 0 なら係留部（メッシュ端）は厳密に
+//    動かない。0 にすると端も一緒に揺れる（係留固定なし）。
+//
 //  ■ 質感・照明
 //    糸の太さの乱雑性（SC_ThreadWidthMul）・断面の法線曲げ（SC_PerturbNormal）・
 //    トゥーン陰影（SC_ShadeFiberToon）・リムライト（SC_RimLight）はすべて
@@ -58,6 +64,13 @@ Shader "mecaota/SpiderWeb"
         [Header(Irregularity)]
         _Irregular ("揺らぎの強さ (Irregularity)", Range(0, 1)) = 0.35
         _Seed      ("揺らぎシード (Seed)", Float) = 0
+
+        [Header(Sway Animation)]
+        [ToggleUI] _SwayAnimEnable ("揺れアニメ有効 (Sway Enable)", Float) = 0
+        _SwayAnimAmount ("揺れ幅 (Sway Amount)", Range(0, 0.05)) = 0.012
+        _SwayAnimSpeed  ("揺れの速さ (Sway Speed)", Range(0, 10)) = 1.5
+        _SwayAnimWaves  ("波の細かさ (Sway Waves)", Range(0, 10)) = 2.0
+        _SwayAnimAnchor ("端の固定幅 0で固定なし (Edge Anchor)", Range(0, 0.5)) = 0.15
 
         [Header(Thread Design)]
         _ThreadColor     ("糸の色 (Thread Color)", Color) = (0.92, 0.96, 1.0, 1.0)
@@ -216,6 +229,22 @@ Shader "mecaota/SpiderWeb"
                 float N  = max(3.0, round(_RadialCount));
                 float NR = max(1.0, round(_RingCount));
 
+                // ============ 揺れアニメ（ドメインワープ） ============
+                // 距離場を評価する UV 座標そのものを時間で連続的に歪ませる。
+                // パターン全体が一緒にたわむため、縦糸と横糸の接続や縦糸の
+                // 終端固定はそのまま保たれる（風でたわむ網の見え方）。
+                // 端の固定重みでメッシュ端（係留部）は動かさない。
+                float2 uvW = i.uv;
+                if (_SwayAnimEnable > 0.5)
+                {
+                    float edgeD = 0.5 - max(abs(i.uv.x - 0.5), abs(i.uv.y - 0.5));
+                    // 固定帯が振幅より狭いと帯内で歪みが折り返るため下限を設ける
+                    float anc = max(_SwayAnimAnchor, 3.0 * SC_SwayAmp());
+                    float aw  = (_SwayAnimAnchor > 1e-4)
+                              ? smoothstep(0.0, anc, edgeD) : 1.0;
+                    uvW -= SC_SwayOffset(i.uv, false) * aw;
+                }
+
                 // ============ ハブ（中心結節点）の偏心幾何 ============
                 // 外周円（UV中央・半径 _WebRadius）は固定のまま、糸が
                 // 集まるハブだけを _HubOffset（半径に対する比）でずらす。
@@ -227,7 +256,7 @@ Shader "mecaota/SpiderWeb"
                 float hLen = length(h);
                 h *= (hLen > 0.45) ? 0.45 / hLen : 1.0;
 
-                float2 p   = (i.uv - 0.5) - h;                  // ハブ基準の座標（巣はUV中央）
+                float2 p   = (uvW - 0.5) - h;                   // ハブ基準の座標（巣はUV中央）
                 float  r   = length(p);
                 float2 u   = (r > 1e-5) ? p / r : float2(1.0, 0.0);
                 float2 radialDir = u;                           // ハブ→外向き
