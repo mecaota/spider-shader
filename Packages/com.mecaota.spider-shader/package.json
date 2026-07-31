@@ -1,6 +1,6 @@
 {
-  "name": "com.mecaota.spider-cocoon",
-  "displayName": "Spider Cocoon Shaders",
+  "name": "com.mecaota.spider-shader",
+  "displayName": "Spider Shaders",
   "description": "蜘蛛の巣・繭による拘束表現を行うVRChatワールド向けシェーダー集（Unity Built-in RP専用）",
   "version": "0.1.0",
   "author": {

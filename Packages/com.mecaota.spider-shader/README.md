@@ -56,7 +56,7 @@ Runtime/
 
 ## 導入
 
-1. VCCでVPMパッケージ「Spider Cocoon Shaders」を追加（またはリポジトリのReleasesから `Packages/com.mecaota.spider-cocoon/` へ展開）。VRChat World SDK3・Built-in RPのプロジェクトが前提。
+1. VCCでVPMパッケージ「Spider Shaders」を追加（またはリポジトリのReleasesから `Packages/com.mecaota.spider-shader/` へ展開）。VRChat World SDK3・Built-in RPのプロジェクトが前提。
 2. マテリアルを作成し Shader に `mecaota/SpiderCocoon` を選択。
 3. **円柱メッシュ**（UV が `uv.x=軸 / uv.y=円周 0→1` でラップ）に割り当て。
    - メッシュに正しい **tangent** が含まれていること（各糸の法線曲げに使用）。Unity 標準の Cylinder はタンジェントを持ちます。
