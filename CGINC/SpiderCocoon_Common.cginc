@@ -62,6 +62,13 @@ float  _VisionJackInMirror;   // ミラー内でも発火するか 0/1
 float  _JackRadius;           // 内壁（楕円体）の半径倍率（発火判定半径に乗算）
 float  _JackStretch;          // 内壁が上下に閉じるまでの縦距離の倍率
 
+// ---- 揺れアニメ（SpiderWeb / SpiderCocoon 本体で共有） --------------------
+float  _SwayAnimEnable;       // 0/1。UVドメインを歪ませて糸を揺らす
+float  _SwayAnimAmount;       // 揺れ幅（UV単位）
+float  _SwayAnimSpeed;        // 揺れの速さ
+float  _SwayAnimWaves;        // 空間的な波の細かさ
+float  _SwayAnimAnchor;       // 端を固定する幅（0で固定なし）
+
 float  _ZWrite;
 
 // ---------------------------------------------------------------------------
@@ -102,6 +109,41 @@ float3 SC_MonoCameraPos()
 #else
     return _WorldSpaceCameraPos;
 #endif
+}
+
+// 揺れの実効振幅。振幅×波数（＝変位の空間勾配）が大きすぎるとドメインの
+// 歪みが折り返り、糸が鏡像状に複製されたり太さが爆発したりする。
+// 勾配が約0.5（太さ変動2倍以内）に収まるよう、波数に応じて振幅をクランプ。
+// wrapY モードでは波数が round() で整数化され大きくなり得るため（例:
+// 1.6→2）、未丸め値と丸め値の大きい方＝実効波数で勾配を見積もる。
+// 既定値（Amount 0.012 × Waves 2）ではクランプに掛からない。
+float SC_SwayAmp()
+{
+    float wEff = max(max(_SwayAnimWaves, round(_SwayAnimWaves)), 1.0);
+    return min(_SwayAnimAmount, 0.058 / wEff);
+}
+
+// 揺れアニメの変位。距離場を評価する UV ドメインそのものを時間で歪ませる。
+// パターン全体が一緒に連続変形するため、糸同士の接続は構造的に切れない。
+//   coord : 位相に使う元の UV
+//   wrapY : uv.y が円周（0 と 1 が同じ線）のメッシュなら true。
+//           y 方向の波数を整数に丸め、継ぎ目でも揺れを連続にする
+// 戻り値: UV から差し引く変位（呼び出し側で端の固定重みを掛けること）
+float2 SC_SwayOffset(float2 coord, bool wrapY)
+{
+    if (_SwayAnimEnable < 0.5) return float2(0.0, 0.0);
+    float tt = _Time.y * _SwayAnimSpeed;
+    float wx = _SwayAnimWaves * UNITY_TWO_PI;
+    // 波数が 0 に丸まった場合は y 方向に均一な揺れになる（定数変位も
+    // 円周シームで自明に連続なので下限は設けない＝スライダーの 0 と一致）
+    float wy = wrapY ? round(_SwayAnimWaves) * UNITY_TWO_PI : wx;
+    // 周期比をずらした2つの波を重ね、「同じ動きの繰り返し」感を消す
+    float2 d;
+    d.x = sin(tt          + coord.y * wy       + coord.x * wx * 0.70)
+        + 0.6 * sin(tt * 1.73 + coord.y * wy * 2.0 + 1.7);
+    d.y = sin(tt * 0.87   + coord.x * wx       + 2.3)
+        + 0.6 * sin(tt * 1.31 + coord.y * wy       + coord.x * wx * 0.50 + 4.1);
+    return d * (SC_SwayAmp() * 0.625);      // 合成振幅1.6を±実効振幅へ正規化
 }
 
 #endif // SPIDERCOCOON_COMMON_INCLUDED

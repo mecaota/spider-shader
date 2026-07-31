@@ -37,6 +37,9 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_FiberNormalStrength", "_RimShadowColor", "_RimShadowStrength" } },
         new Category{ Title = "レイヤー", Common = true,
             Props = new[]{ "_LayerCount", "_LayerAngleStep", "_LayerPosStepX", "_LayerPosStepY", "_LayerThicknessFalloff" } },
+        // 揺れアニメは対応シェーダー（SpiderWeb / SpiderCocoon 本体）だけに表示
+        new Category{ Title = "揺れアニメ", Common = true, Require = "_SwayAnimEnable",
+            Props = new[]{ "_SwayAnimEnable", "_SwayAnimAmount", "_SwayAnimSpeed", "_SwayAnimWaves", "_SwayAnimAnchor" } },
 
         // ---- メッシュ版（SpiderCocoon）固有 ----
         new Category{ Title = "ビルボード", Common = false, Require = "_Billboard",
