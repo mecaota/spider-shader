@@ -81,9 +81,9 @@ const setTheme = () => {
     const vccUrlField = document.getElementById('vccListingInfoUrlField');
     vccUrlField.select();
     navigator.clipboard.writeText(vccUrlField.value);
-    vccUrlFieldCopy.appearance = 'accent';
+    vccListingInfoUrlFieldCopy.appearance = 'accent';
     setTimeout(() => {
-      vccUrlFieldCopy.appearance = 'neutral';
+      vccListingInfoUrlFieldCopy.appearance = 'neutral';
     }, 1000);
   });
 
@@ -108,22 +108,23 @@ const setTheme = () => {
     rowMoreMenu.hidden = true;
   }
 
+  // The download menu item gets a single listener; the URL of the row whose
+  // menu is open is kept in a variable so listeners don't pile up per open.
+  const rowMoreMenuDownload = rowMoreMenu.querySelector('#rowMoreMenuDownload');
+  let rowMoreMenuPackageUrl = null;
+  rowMoreMenuDownload.addEventListener('change', () => {
+    if (rowMoreMenuPackageUrl) window.open(rowMoreMenuPackageUrl, '_blank');
+  });
+
   const rowMenuButtons = document.querySelectorAll('.rowMenuButton');
   rowMenuButtons.forEach(button => {
     button.addEventListener('click', e => {
       if (rowMoreMenu?.hidden) {
-        rowMoreMenu.style.top = `${e.clientY + e.target.clientHeight}px`;
+        // Use the button itself, not e.target: clicks can land on the nested SVG
+        rowMoreMenu.style.top = `${e.clientY + button.clientHeight}px`;
         rowMoreMenu.style.left = `${e.clientX - 120}px`;
         rowMoreMenu.hidden = false;
-
-        const downloadLink = rowMoreMenu.querySelector('#rowMoreMenuDownload');
-        const downloadListener = () => {
-          window.open(e?.target?.dataset?.packageUrl, '_blank');
-        }
-        downloadLink.addEventListener('change', () => {
-          downloadListener();
-          downloadLink.removeEventListener('change', downloadListener);
-        });
+        rowMoreMenuPackageUrl = button.dataset?.packageUrl;
 
         setTimeout(() => {
           document.addEventListener('click', hideRowMoreMenu);
@@ -160,8 +161,9 @@ const setTheme = () => {
 
   const rowPackageInfoButton = document.querySelectorAll('.rowPackageInfoButton');
   rowPackageInfoButton.forEach((button) => {
-    button.addEventListener('click', e => {
-      const packageId = e.target.dataset?.packageId;
+    button.addEventListener('click', () => {
+      // Use the button itself, not e.target: clicks can land on the nested SVG
+      const packageId = button.dataset?.packageId;
       const packageInfo = PACKAGES?.[packageId];
       if (!packageInfo) {
         console.error(`Did not find package ${packageId}. Packages available:`, PACKAGES);
