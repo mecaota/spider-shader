@@ -1,0 +1,14 @@
+{
+  "name": "com.mecaota.spider-cocoon",
+  "displayName": "Spider Cocoon Shaders",
+  "description": "蜘蛛の巣・繭による拘束表現を行うVRChatワールド向けシェーダー集（Unity Built-in RP専用）",
+  "version": "0.1.0",
+  "author": {
+    "name": "mecaota",
+    "url": "https://github.com/mecaota/"
+  },
+  "unity": "2022.3",
+  "license": "MIT",
+  "documentationUrl": "https://github.com/mecaota/spider-shader",
+  "changelogUrl": "https://github.com/mecaota/spider-shader/releases"
+}

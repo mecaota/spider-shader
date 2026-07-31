@@ -1,2 +1,4 @@
 .agents
 *.meta
+# VPMパッケージ内のmetaはGUID維持（マテリアル参照の保持）のため追跡する
+!Packages/**/*.meta
