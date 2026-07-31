@@ -114,10 +114,13 @@ float3 SC_MonoCameraPos()
 // 揺れの実効振幅。振幅×波数（＝変位の空間勾配）が大きすぎるとドメインの
 // 歪みが折り返り、糸が鏡像状に複製されたり太さが爆発したりする。
 // 勾配が約0.5（太さ変動2倍以内）に収まるよう、波数に応じて振幅をクランプ。
+// wrapY モードでは波数が round() で整数化され大きくなり得るため（例:
+// 1.6→2）、未丸め値と丸め値の大きい方＝実効波数で勾配を見積もる。
 // 既定値（Amount 0.012 × Waves 2）ではクランプに掛からない。
 float SC_SwayAmp()
 {
-    return min(_SwayAnimAmount, 0.058 / max(_SwayAnimWaves, 1.0));
+    float wEff = max(max(_SwayAnimWaves, round(_SwayAnimWaves)), 1.0);
+    return min(_SwayAnimAmount, 0.058 / wEff);
 }
 
 // 揺れアニメの変位。距離場を評価する UV ドメインそのものを時間で歪ませる。
@@ -131,7 +134,9 @@ float2 SC_SwayOffset(float2 coord, bool wrapY)
     if (_SwayAnimEnable < 0.5) return float2(0.0, 0.0);
     float tt = _Time.y * _SwayAnimSpeed;
     float wx = _SwayAnimWaves * UNITY_TWO_PI;
-    float wy = wrapY ? max(round(_SwayAnimWaves), 1.0) * UNITY_TWO_PI : wx;
+    // 波数が 0 に丸まった場合は y 方向に均一な揺れになる（定数変位も
+    // 円周シームで自明に連続なので下限は設けない＝スライダーの 0 と一致）
+    float wy = wrapY ? round(_SwayAnimWaves) * UNITY_TWO_PI : wx;
     // 周期比をずらした2つの波を重ね、「同じ動きの繰り返し」感を消す
     float2 d;
     d.x = sin(tt          + coord.y * wy       + coord.x * wx * 0.70)
