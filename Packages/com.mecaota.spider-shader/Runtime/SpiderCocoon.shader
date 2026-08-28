@@ -87,6 +87,22 @@ Shader "mecaota/SpiderCocoon"
         _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
         _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
 
+        // 接触追従の変形。捕縛点・追従先は Udon（SurfaceContactDeformer）が
+        // MaterialPropertyBlock の配列で毎フレーム渡す。実装は巣シェーダーと共通
+        // （CGINC/SpiderCocoon_Pull.cginc）。
+        // 細かい変形には細分化したメッシュが必要（標準 Cylinder は粗い）。
+        [Header(Contact Deform)]
+        [ToggleUI] _PullEnable ("接触追従の変形 有効 (Pull Enable)", Float) = 0
+        _PullRadius     ("引っ張り半径 m (Pull Radius)", Range(0.05, 2)) = 0.3
+        _PullFalloff    ("減衰の鋭さ (Pull Falloff)", Range(0.25, 4)) = 1.5
+        _PullStrength   ("引っ張り強さ (Pull Strength)", Range(0, 1)) = 1
+        _PullMaxStretch ("千切れ開始距離 m 0で無効 (Max Stretch)", Range(0, 5)) = 0
+        _PullTearFade   ("千切れフェード幅 m (Tear Fade)", Range(0.01, 2)) = 0.3
+        // 捕縛点・追従先は配列 uniform（_PullAnchors[16]/_PullTargets[16]）で、Udon が
+        // MaterialPropertyBlock.SetVectorArray で渡す（Properties には書けない）。
+        // _PullCount は有効スロット数。0 のままなら頂点シェーダーは従来と同じ
+        _PullCount      ("有効スロット数 Udonが設定 (Pull Count)", Float) = 0
+
         [Header(Render State)]
         [Enum(Off,0,On,1)] _ZWrite ("ZWrite", Float) = 0
         // ジャック壁の目印に使うステンシルビット。他のステンシル利用シェーダー
@@ -226,6 +242,7 @@ Shader "mecaota/SpiderCocoon"
             #include "CGINC/SpiderCocoon_Lighting.cginc"
             #include "CGINC/SpiderCocoon_Compose.cginc"
             #include "CGINC/SpiderCocoon_VisionJack.cginc"
+            #include "CGINC/SpiderCocoon_Pull.cginc"
 
             v2f vert(appdata v)
             {
@@ -254,15 +271,27 @@ Shader "mecaota/SpiderCocoon"
 
                 float3 worldPos    = mul(unity_ObjectToWorld, float4(vpos, 1.0)).xyz;
                 float3 worldNormal = UnityObjectToWorldNormal(vnrm);
+                float3 worldTan    = UnityObjectToWorldDir(vtan);
+
+                // 接触追従の変形（巣と共通）: 手足が触れた場所が追従して伸びる／凹む。
+                // ワールド空間で計算し、法線・接線は変位後の面から求め直す
+                UNITY_BRANCH
+                if (SC_PullActive())
+                {
+                    SC_PullDeform(worldPos, worldNormal, worldTan);
+                    o.pos = UnityWorldToClipPos(worldPos);
+                }
+                else
+                {
+                    // 視界ジャック（包まれ演出）は専用の Pass 0 が実寸の壁として描く。
+                    // （旧実装の「頂点を全画面へ展開」はここから廃止した）
+                    o.pos = UnityObjectToClipPos(float4(vpos, 1.0));
+                }
 
                 o.uv           = v.uv;
                 o.worldPos     = worldPos;
                 o.worldNormal  = worldNormal;
-                o.worldTangent = float4(UnityObjectToWorldDir(vtan), v.tangent.w);
-
-                // 視界ジャック（包まれ演出）は専用の Pass 0 が実寸の壁として描く。
-                // （旧実装の「頂点を全画面へ展開」はここから廃止した）
-                o.pos = UnityObjectToClipPos(float4(vpos, 1.0));
+                o.worldTangent = float4(worldTan, v.tangent.w);
                 return o;
             }
 

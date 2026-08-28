@@ -334,3 +334,72 @@ SpiderCocoonDepthDecal.shader  深度復元＋円筒シルク（CGINC/* を流�
 
 - 帯はカメラ正対（トレイルの標準挙動）を前提に、法線をカメラ向きで近似しています。Alignment を変えても描画はされますが、陰影が薄い帯の割に立体的に見えすぎることがあります。
 - `Cull Off`・`ZWrite Off`・半透明キューで描くため、糸同士が激しく交差すると前後関係が不正確になることがあります（半透明の一般的な制約）。
+
+---
+
+# 接触追従の変形（SpiderWeb／SpiderCocoon＋SurfaceContactDeformer）
+
+地面に張った蜘蛛の巣に足を踏み入れると足が捕らわれ、**足を上げると巣がその部分だけ伸びる**表現です。巣のメッシュ端（地面の係留）は動きません。プレイヤーの移動は拘束せず、足が捕縛点から一定距離離れると「千切れて」元に戻ります。
+
+## 仕組み（シェーダー初心者向け解説）
+
+- **PhysBoneでは作れない理由**: ワールド側のPhysBoneはアバターのコライダーに「押しのけられる」だけで、足に付着・追従しません。そこで「Udonが足ボーンの位置を読み、シェーダーが頂点を動かす」方式にしています。
+- **頂点シェーダーの変位**: 共通の`CGINC/SpiderCocoon_Pull.cginc`（`SpiderWeb.shader`と`SpiderCocoon.shader`の両方が使用）が、ワールド空間で「捕縛点（`_PullAnchorN.xyz`）→追従先（`_PullTargetN.xyz`）のずれ」を、捕縛点から`_PullRadius`以内の頂点に距離減衰つきで足します。ずれの向きは問わないので、面から離せば伸び、押し込めば凹みます。半径の外は厳密に0なので、メッシュ端は動きません。スロットは最大16本（複数プレイヤーの両足・両手・腰・頭など）で、影響圏が重なる所は重みの和で正規化します。
+- **模様はUVで決まる**ため、頂点が動いても糸は面に貼りついたまま伸びます（テクスチャを貼った布を引っぱるのと同じ）。
+- **法線の再計算**: 陰影はワールド法線で決まるので、変位後の面の傾きを「少しずらした2点を同じ変位関数に通した差分（有限差分）」から求め直し、トゥーン陰影を斜面に沿わせます。
+- **駆動はUdon**（`com.mecaota.restraint`パッケージの`SurfaceContactDeformer`）: 追従ボーン（配列で任意本数）が面に触れた場所をその場で捕縛点として同期。複数プレイヤー同時対応。以後は全クライアントが毎フレーム各スロットのボーン位置を読み、`MaterialPropertyBlock.SetVectorArray`でシェーダーへ渡します。
+
+## 構成ファイル
+
+```
+Runtime/CGINC/SpiderCocoon_Pull.cginc  配列uniform（_PullAnchors[16]／_PullTargets[16]／_PullCount）と頂点変位（SC_PullOffset／SC_PullDeform）
+Runtime/SpiderWeb.shader              _PullEnable以下のプロパティと頂点シェーダーからの呼び出し
+Runtime/SpiderCocoon.shader           同上（繭。細かい変形には細分化した円柱メッシュが必要）
+Editor/WebPlaneMeshGenerator.cs       細分化平面メッシュ生成（Tools/SpiderShader/Generate WebPlane Mesh...）
+（別パッケージ）com.mecaota.restraint/Runtime/SurfaceContactDeformer/SurfaceContactDeformer.cs   Udon駆動
+```
+
+## セットアップ手順
+
+1. `Tools/SpiderShader/Generate WebPlane Mesh...`で`Assets/mecaota/models/WebPlane.asset`を生成します（1unit角・64×64分割・XZ平面・法線+Y・UV0..1）。Unity標準のPlaneは10×10分割で粗すぎます。
+2. 空のGameObjectを地面に置き（回転0、スケールで巣の大きさを調整）、`MeshFilter`に`WebPlane`、`MeshRenderer`に`mecaota/SpiderWeb`のマテリアルを割り当て、マテリアルで`_PullEnable`をONにします。
+3. 同じGameObjectにトリガーコライダーと`SurfaceContactDeformer`を付け、`Target Renderer`にそのRendererを設定します。
+4. マテリアルの**GPU InstancingはOFF**、GameObjectの**Batching StaticはOFF**にします（下記注意）。
+
+## MaterialPropertyBlockで渡すプロパティ
+
+| プロパティ | 内容 |
+|---|---|
+| `_PullAnchors[16]` | 捕縛点（ワールド座標xyz）。**wが1のときスロット有効**。配列uniformなのでMPB専用（インスペクターには出ない） |
+| `_PullTargets[16]` | 追従先＝手足の現在位置（ワールド座標xyz）。MPB専用 |
+| `_PullCount` | 有効スロット数。Udonが設定する。0なら頂点シェーダーは従来と同じ |
+
+配列uniformはマテリアルに保存できないため、Udonを使わずに確認するときはエディタースクリプトから`MaterialPropertyBlock.SetVectorArray`で渡します。
+
+## パラメータ
+
+| プロパティ | 説明 |
+|---|---|
+| `_PullEnable` | 接触追従の変形を有効にする。OFFなら頂点シェーダーは従来と完全に同じ |
+| `_PullRadius` | 捕縛点からこの距離（m）以内の頂点が引かれる。外は不動 |
+| `_PullFalloff` | 減衰の鋭さ。大きいほど捕縛点の近くだけが鋭く持ち上がる |
+| `_PullStrength` | 引っ張り強さ（1で捕縛点が手足に完全追従） |
+| `_PullMaxStretch` | 伸びがこの距離（m）を超えると糸が千切れて戻り始める。0で無効 |
+| `_PullTearFade` | 千切れの戻りにかかる距離幅（m） |
+
+## 注意・制約
+
+- **Batching Static禁止**: 頂点変位はRendererのバウンズを広げないため、`WebPlane.asset`はバウンズを法線方向±2unit・横+0.5unitに拡張して保存しています。静的バッチで結合されるとこのバウンズが失われ、足を上げた部分が画面端で消えます。
+- **GPU Instancing OFF**: 捕縛点はインスタンス化されない通常のuniformで、`MaterialPropertyBlock`から渡します。
+- **バウンズの限界**: 足を2m以上持ち上げる、または`_PullRadius`を大きくしてスケール1で使う場合は、生成ツールの`boundsUp`／`boundsLateral`を上げて再生成してください。
+- **伸びた領域の糸**: 糸の太さはUV基準なので、引き伸ばした方向に太く見えます（AAは画面微分基準なので破綻はしません）。
+- **足ボーンの無いアバター**: プレイヤーの足元原点で代用します（持ち上げ表現は出ませんが破綻しません）。
+- **ClientSim**ではボーン情報が不完全なため、足の持ち上げは実機（Build & Test）で確認してください。
+
+## 検証チェックリスト
+
+1. マテリアルで`_PullEnable`ON、`_PullAnchor0=(x,y,z,1)`、`_PullTarget0=(x,y+0.4,z,0)`を直接入れ、巣が円錐状に持ち上がり、半径の外とメッシュ端が動かないこと。トゥーン陰影が斜面に沿うこと。
+2. `_PullMaxStretch`を小さくすると、伸びすぎた部分が平面に戻ること。
+3. `SurfaceContactDeformer`を付けた巣に踏み込む・手をつくとその場所が捕縛され、上げると追従して伸び、押し込むと凹むこと。一定距離離れると千切れて平面に戻ること。複数人が同時に触れてもそれぞれの手足に追従すること。
+4. 実機2台で、片方が足を上げるともう片方の画面でも同じ位置が持ち上がること（捕縛点の同期）。遅入室者にも復元されること。ミラー内でも変形して見えること。
+5. 巣の端の外側からカメラを向け、持ち上げた頂点がフラスタム端で消えないこと（バウンズ）。
