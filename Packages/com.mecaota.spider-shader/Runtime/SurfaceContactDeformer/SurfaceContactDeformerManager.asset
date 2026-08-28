@@ -61,7 +61,7 @@ MonoBehaviour:
       Data: 3|System.RuntimeType, mscorlib
     - Name: 
       Entry: 1
-      Data: SurfaceContactDeformer[], com.mecaota.restraint
+      Data: SurfaceContactDeformer[], com.mecaota.spider-shader
     - Name: 
       Entry: 8
       Data: 
