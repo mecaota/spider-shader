@@ -40,6 +40,18 @@
 //    糸の太さの乱雑性（SC_ThreadWidthMul）・断面の法線曲げ（SC_PerturbNormal）・
 //    トゥーン陰影（SC_ShadeFiberToon）・リムライト（SC_RimLight）はすべて
 //    繭シェーダー（SpiderCocoon）と共通の CGINC 実装を使用。
+//
+//  ■ 接触追従の変形（_PullEnable）
+//    巣に手足が触れた場所をその手足に追従させ、上げれば伸び・押せば凹む表現。
+//    実装は繭シェーダーと共通（CGINC/SpiderCocoon_Pull.cginc）。最大 16 スロット
+//    （複数プレイヤーの両足・両手・腰・頭など）の捕縛点 _PullAnchors[]／追従先
+//    _PullTargets[] を Udon（SurfaceContactDeformer）が MaterialPropertyBlock の
+//    SetVectorArray で毎フレーム渡す（配列は MPB 専用。_PullCount が有効本数）。
+//    半径の外は厳密に 0 なのでメッシュ端（係留）は不動。模様は UV で決まるため、
+//    頂点が動いても糸は面に貼りついたまま伸びる。法線・接線は変位後の面から
+//    有限差分で求め直す。_PullMaxStretch>0 なら伸びすぎた糸が千切れて戻る。
+//    細かい変形には細分化した平面メッシュが必要（Tools/SpiderShader/Generate
+//    WebPlane Mesh で生成。バウンズも拡張済み）。
 // =============================================================================
 Shader "mecaota/SpiderWeb"
 {
@@ -95,6 +107,20 @@ Shader "mecaota/SpiderWeb"
         _FiberNormalStrength ("糸断面の法線曲げ (Fiber Normal Strength)", Range(0, 1)) = 0.6
         _RimShadowColor      ("ファイバー縁の影色 (Fiber Edge Shadow)", Color) = (0.25, 0.22, 0.22, 1)
         _RimShadowStrength   ("ファイバー縁影の濃さ (Edge Shadow Strength)", Range(0, 1)) = 0.3
+
+        // 接触追従の変形。捕縛点・追従先は Udon（SurfaceContactDeformer）が
+        // MaterialPropertyBlock の配列で毎フレーム渡す
+        [Header(Contact Deform)]
+        [ToggleUI] _PullEnable ("接触追従の変形 有効 (Pull Enable)", Float) = 0
+        _PullRadius     ("引っ張り半径 m (Pull Radius)", Range(0.05, 2)) = 0.5
+        _PullFalloff    ("減衰の鋭さ (Pull Falloff)", Range(0.25, 4)) = 1.5
+        _PullStrength   ("引っ張り強さ (Pull Strength)", Range(0, 1)) = 1
+        _PullMaxStretch ("千切れ開始距離 m 0で無効 (Max Stretch)", Range(0, 5)) = 0
+        _PullTearFade   ("千切れフェード幅 m (Tear Fade)", Range(0.01, 2)) = 0.3
+        // 捕縛点・追従先は配列 uniform（_PullAnchors[16]/_PullTargets[16]）で、Udon が
+        // MaterialPropertyBlock.SetVectorArray で渡す（Properties には書けない）。
+        // _PullCount は有効スロット数。0 のままなら頂点シェーダーは従来と同じ
+        _PullCount      ("有効スロット数 Udonが設定 (Pull Count)", Float) = 0
     }
 
     SubShader
@@ -149,6 +175,9 @@ Shader "mecaota/SpiderWeb"
             float  _SpokeExtend;
             float  _Irregular;
             float  _Seed;
+
+            // ---- 接触追従の変形（uniform と変位関数は繭と共通の Pull.cginc） ----
+            #include "CGINC/SpiderCocoon_Pull.cginc"
 
             // 縦糸番号を 0..N-1 に折り返す（フロア剰余）。
             // 角度は atan2 で -180°..+180° として得られ、±180° の継ぎ目で
@@ -206,11 +235,30 @@ Shader "mecaota/SpiderWeb"
                 UNITY_TRANSFER_INSTANCE_ID(v, o);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-                o.pos          = UnityObjectToClipPos(v.vertex);
-                o.uv           = v.uv;
-                o.worldPos     = mul(unity_ObjectToWorld, v.vertex).xyz;
-                o.worldNormal  = UnityObjectToWorldNormal(v.normal);
-                o.worldTangent = float4(UnityObjectToWorldDir(v.tangent.xyz), v.tangent.w);
+                float3 wp = mul(unity_ObjectToWorld, v.vertex).xyz;
+                float3 N0 = UnityObjectToWorldNormal(v.normal);
+                float3 T0 = UnityObjectToWorldDir(v.tangent.xyz);
+                o.uv = v.uv;
+
+                // 変形が無効（またはどのスロットも未使用）なら従来どおりのパススルー
+                UNITY_BRANCH
+                if (!SC_PullActive())
+                {
+                    o.pos          = UnityObjectToClipPos(v.vertex);
+                    o.worldPos     = wp;
+                    o.worldNormal  = N0;
+                    o.worldTangent = float4(T0, v.tangent.w);
+                    return o;
+                }
+
+                // ---- 接触追従の変形（ワールド空間。法線・接線は変位後の面から再計算） ----
+                float3 pD = wp, N = N0, Tn = T0;
+                SC_PullDeform(pD, N, Tn);
+
+                o.pos          = UnityWorldToClipPos(pD);
+                o.worldPos     = pD;
+                o.worldNormal  = N;
+                o.worldTangent = float4(Tn, v.tangent.w);
                 return o;
             }
 

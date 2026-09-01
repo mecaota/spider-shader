@@ -71,6 +71,12 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_HubOffsetX", "_HubOffsetY", "_WebRadius", "_Thickness",
                            "_RadialCount", "_RingCount", "_Sag", "_SpokeExtend",
                            "_Irregular", "_Seed", "_HideBackFibers" } },
+        // 足捕縛の変形（Anchor/Target は通常 Udon の MaterialPropertyBlock が上書きする。
+        // インスペクタで直接入れれば Udon 無しの見た目確認に使える）
+        // 捕縛点・追従先の配列（_PullAnchors/_PullTargets）は MPB 専用でインスペクターに出ない
+        new Category{ Title = "接触追従の変形", Common = false, Require = "_PullEnable",
+            Props = new[]{ "_PullEnable", "_PullRadius", "_PullFalloff", "_PullStrength",
+                           "_PullMaxStretch", "_PullTearFade", "_PullCount" } },
     };
 
     public override void OnGUI(MaterialEditor materialEditor, MaterialProperty[] properties)
