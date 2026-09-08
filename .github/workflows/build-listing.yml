@@ -19,6 +19,7 @@ on:
     branches: [main]
     paths:
       - README.md
+      - Packages/*/package.json
       - Website/**
       - .github/scripts/**
       - .github/workflows/build-listing.yml
@@ -33,9 +34,10 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deployment
+# Allow one concurrent run per ref: runs on main (the only ref that deploys) are
+# serialized, while a test run on another branch does not cancel a main deployment.
 concurrency:
-  group: "pages"
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

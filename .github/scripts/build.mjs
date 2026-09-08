@@ -4,8 +4,9 @@
 // Environment variables:
 //   GITHUB_REPOSITORY  owner/name of the repository (set automatically on GitHub Actions)
 //   GITHUB_TOKEN       token used for the GitHub API (optional, raises the rate limit)
-//   PACKAGE_NAME       VPM package id shown on the landing page, e.g. com.mecaota.restraint
-//   LISTING_URL        public URL of index.json (default: https://<owner>.github.io/<repo>/index.json)
+//   PACKAGE_NAME       VPM package id shown on the landing page, e.g. com.mecaota.spider-shader
+//   LISTING_URL        public URL of index.json (required, e.g. https://github.pito.run/spider-shader/index.json;
+//                      the github.io URL is not usable here because it redirects to http)
 //   SITE_DIR           output directory relative to the repository root (default: _site)
 //   DEFAULT_BRANCH     branch used to resolve relative links in README.md (default: main)
 
@@ -21,7 +22,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const repo = requireEnv('GITHUB_REPOSITORY');
 const [owner, repoName] = repo.split('/');
 const packageName = process.env.PACKAGE_NAME || '';
-const listingUrl = process.env.LISTING_URL || `https://${owner}.github.io/${repoName}/index.json`;
+const listingUrl = requireEnv('LISTING_URL');
 const siteDir = path.resolve(root, process.env.SITE_DIR || '_site');
 const defaultBranch = process.env.DEFAULT_BRANCH || 'main';
 const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
@@ -240,6 +241,9 @@ function renderReadme() {
     walkTokens(token) {
       if (token.type === 'link' || token.type === 'image') {
         token.href = absolutizeLink(token.href, token.type === 'image');
+      } else if (token.type === 'html') {
+        // Raw HTML such as <img src="img/x.png" width="600"> is passed through by marked.
+        token.text = absolutizeHtmlUrls(token.text);
       }
     },
   });
@@ -255,6 +259,12 @@ function absolutizeLink(href, isImage) {
   return isImage
     ? `https://raw.githubusercontent.com/${repo}/${defaultBranch}/${filePath}`
     : `${repoUrl}/blob/${defaultBranch}/${filePath}`;
+}
+
+// Rewrites src/href attributes inside raw HTML the same way as Markdown links and images.
+function absolutizeHtmlUrls(html) {
+  return html.replace(/\b(src|href)=("|')([^"']*)\2/gi, (match, attr, quote, value) =>
+    `${attr}=${quote}${absolutizeLink(value, attr.toLowerCase() === 'src')}${quote}`);
 }
 
 function escapeHtml(value) {

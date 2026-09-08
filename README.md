@@ -29,8 +29,8 @@
 ```text
 Packages/com.mecaota.spider-shader/   パッケージ本体
   package.json                        VPMパッケージ定義
-  Runtime/                            シェーダー本体（*.shader, CGINC/*.cginc）
-  Editor/                             カスタムインスペクタ（Editor専用・ビルド非含有）
+  Runtime/                            シェーダー本体（*.shader, CGINC/*.cginc）とUdonギミック（SurfaceContactDeformer/）
+  Editor/                             カスタムインスペクタとメッシュ生成ツール（Editor専用・ビルド非含有）
 .github/workflows/                    リリース＆VPMリスティング自動生成
 .github/scripts/                      リスティング（index.json）と配布ページの生成スクリプト
 Website/                              配布ページのテンプレート（README.mdを埋め込んでGitHub Pagesへ公開）

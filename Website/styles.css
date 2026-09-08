@@ -5,9 +5,12 @@
   --text: #1f2328;
   --muted: #59636e;
   --border: #d1d9e0;
-  --accent: #1f6feb;
-  --accent-hover: #175cd3;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
   --accent-text: #ffffff;
+  /* Button backgrounds need >= 4.5:1 against white text, unlike link colors on the page background. */
+  --button-bg: #0969da;
+  --button-bg-hover: #0550ae;
   --code-bg: #eff2f5;
   --header-bg: #ffffff;
 }
@@ -22,6 +25,8 @@
     --accent: #388bfd;
     --accent-hover: #58a6ff;
     --accent-text: #ffffff;
+    --button-bg: #1f6feb;
+    --button-bg-hover: #0969da;
     --code-bg: #1c2129;
     --header-bg: #161b22;
   }
@@ -157,15 +162,15 @@ a:hover {
 }
 
 .button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--button-bg);
+  border-color: var(--button-bg);
   color: var(--accent-text);
   font-size: 1.05rem;
 }
 
 .button.primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--button-bg-hover);
+  border-color: var(--button-bg-hover);
 }
 
 .hint {
@@ -229,6 +234,11 @@ main.container {
 
 .markdown-body li + li {
   margin-top: 0.25rem;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin: 0.25rem 0 0;
 }
 
 .markdown-body code {
