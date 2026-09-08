@@ -15,7 +15,7 @@
 ### VCC（VRChat Creator Companion）/ ALCOMから
 
 1. [配布ページ](https://github.pito.run/spider-shader/)を開き、上部の「Add to VCC」ボタンを押してリポジトリを追加
-   ボタンが反応しない場合は、VCCの`Settings` → `Packages` → `Add Repository`にリポジトリリスティング`https://github.pito.run/spider-shader/index.json`を貼り付け
+   - ボタンが反応しない場合は、VCCの`Settings` → `Packages` → `Add Repository`にリポジトリリスティング`https://github.pito.run/spider-shader/index.json`を貼り付け
 2. プロジェクトに「Spider Shaders」を追加
 
 ### 手動インストール
