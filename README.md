@@ -14,7 +14,8 @@
 
 ### VCC（VRChat Creator Companion）/ ALCOMから
 
-1. リポジトリリスティング`https://mecaota.github.io/spider-shader/index.json`をVCCに追加（または<https://mecaota.github.io/spider-shader/>の「Add to VCC」ボタン）
+1. [配布ページ](https://github.pito.run/spider-shader/)を開き、上部の「Add to VCC」ボタンを押してリポジトリを追加
+   - ボタンが反応しない場合は、VCCの`Settings` → `Packages` → `Add Repository`にリポジトリリスティング`https://github.pito.run/spider-shader/index.json`を貼り付け
 2. プロジェクトに「Spider Shaders」を追加
 
 ### 手動インストール
@@ -28,10 +29,11 @@
 ```text
 Packages/com.mecaota.spider-shader/   パッケージ本体
   package.json                        VPMパッケージ定義
-  Runtime/                            シェーダー本体（*.shader, CGINC/*.cginc）
-  Editor/                             カスタムインスペクタ（Editor専用・ビルド非含有）
+  Runtime/                            シェーダー本体（*.shader, CGINC/*.cginc）とUdonギミック（SurfaceContactDeformer/）
+  Editor/                             カスタムインスペクタとメッシュ生成ツール（Editor専用・ビルド非含有）
 .github/workflows/                    リリース＆VPMリスティング自動生成
-Website/                              リスティングのランディングページ（GitHub Pages）
+.github/scripts/                      リスティング（index.json）と配布ページの生成スクリプト
+Website/                              配布ページのテンプレート（README.mdを埋め込んでGitHub Pagesへ公開）
 ```
 
 ### リリース手順（メンテナ向け）
@@ -39,7 +41,8 @@ Website/                              リスティングのランディングペ
 1. GitHubリポジトリの「Settings > Secrets and variables > Actions」で、リポジトリ変数`PACKAGE_NAME`に`com.mecaota.spider-shader`を設定（初回のみ）
 2. 「Settings > Pages > Source」を「GitHub Actions」に設定（初回のみ）
 3. `package.json`の`version`を上げてコミット
-4. Actionsタブから「Build Release」workflowを手動実行→zip / unitypackage付きのReleaseが作成され、続けて「Build Repo Listing」がGitHub Pagesのリスティングを更新
+4. Actionsタブから「Build Release」workflowを手動実行→zip / unitypackage付きのReleaseが作成され、続けて「Build Repo Listing」がGitHub Pagesのリスティングと配布ページを更新
+5. README.mdやWebsite/の変更をmainにpushした場合も「Build Repo Listing」が自動実行され、配布ページが更新される（GitHub上で手動作成・編集したReleaseを反映するには「Build Repo Listing」を手動実行）
 
 ## ライセンス
 
