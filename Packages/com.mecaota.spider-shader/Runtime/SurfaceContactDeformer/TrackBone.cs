@@ -35,4 +35,5 @@ public enum SurfaceShape
     Plane = 0,    // ローカル XZ 平面、法線 +Y（WebPlane メッシュ）
     Sphere = 1,   // 原点中心の球（標準 Sphere は半径 0.5）
     Cylinder = 2, // Y 軸の円柱（標準 Cylinder は半径 0.5・半高 1）
+    TreeFan = 3,  // 木の幹（ローカル Y 軸）に張り付き地面へ扇形に広がる巣（TreeWebFanBuilder のメッシュ）
 }

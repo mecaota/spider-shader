@@ -4,7 +4,7 @@
 
 蜘蛛の巣や繭（`mecaota/SpiderWeb`／`mecaota/SpiderCocoon`シェーダー、`_PullEnable`ON）に手足が触れた場所を、その手足に追従させて伸ばしたり凹ませたりするギミックです。見た目だけで、プレイヤーの移動は拘束しません。
 
-`Bones`配列に指定したボーンが面から`Contact Distance`以内に来るとその場で捕縛され、触れた点をスロットに記録します。以後は全クライアントが毎フレーム各スロットのボーン位置を読み、`MaterialPropertyBlock`の配列でシェーダーへ「捕縛点（`_PullAnchors`）」「追従先（`_PullTargets`）」「有効数（`_PullCount`）」を渡します。触れた瞬間は変位ゼロで、手足を上げれば伸び、押し込めば凹みます。捕縛点から一定距離離れたスロットは「千切れた」として個別に解放します。
+`Bones`配列に指定したボーンが面から`Contact Distance`以内に来るとその場で捕縛され、触れた点をスロットに記録します。以後は全クライアントが毎フレーム各スロットのボーン位置を読み、`MaterialPropertyBlock`の配列でシェーダーへ「捕縛点（`_PullAnchors`）」「追従先（`_PullTargets`）」「有効数（`_PullCount`）」を渡します。触れた瞬間は変位ゼロで、手足を上げれば伸び、押し込めば凹みます（`Pull Only` ON なら凹まず、引っ張る向きにだけ追従します）。捕縛点から一定距離離れたスロットは「千切れた」として個別に解放します。
 
 複数プレイヤーが同時に触れられます（スロットは最大16本を全員で先着共有）。同期はオーナー集約方式で、各クライアントは自分のボーンだけ判定し、`[NetworkCallable]`の`ClaimSlot`／`ReleaseSlot`をオーナーへ送ります。オーナーだけが同期配列を書くので、更新の取りこぼしが起きません。
 
@@ -35,7 +35,7 @@ SpiderWeb／SpiderCocoonマテリアルを付けたRendererです。
 
 #### Shape
 
-`Plane`（ローカルXZ平面・法線+Y）／`Sphere`（原点中心）／`Cylinder`（Y軸）。
+`Plane`（ローカルXZ平面・法線+Y）／`Sphere`（原点中心）／`Cylinder`（Y軸）／`TreeFan`（木の幹＝ローカルY軸に張り付き、+Z側の地面へ扇形に広がる曲面。`Tree*` の項目で形を指定し、`TreeWebFanBuilder` が木ごとに書き込む）。
 
 #### Capture Radius Local
 
@@ -81,7 +81,38 @@ ONのとき、トリガー内にいる間だけ新しい接触を捕縛します
 
 #### Contact Distance By Bone
 
-`bones` と並行の接触距離配列。足首・手首など末端より1つ根側のボーン（すね・前腕）は面から離れるので、ボーンごとに広げられます。null／長さ不一致なら共通の `Contact Distance` を使います。
+`bones` と並行の接触距離配列。`Segment Contact` がOFFのときは、足首・手首など末端より1つ根側のボーン（すね・前腕）は面から離れるので、ボーンごとに広げられます。null／長さ不一致なら共通の `Contact Distance` を使います。
+
+### くっつき方
+
+#### Segment Contact
+
+ONのとき、ボーンの「点」ではなく「区間」（そのボーン→子ボーン。すねなら膝→足首、前腕なら肘→手首）と面の距離で判定します。区間を9点で調べ、面に一番近い点が接触距離以内になった瞬間（手足の表面が初めて触れた瞬間）にくっつきます。区間のどこが触れたか（0〜1の割合）も同期し、以後はその点に面を追従させ、巻き付き円柱（Wrap）もその点に付けます。接触距離は「区間の中心線から面まで」なので、手足の太さ＋少しの余裕にします。
+
+#### Pull Only
+
+ONのとき、くっついた後は「くっついた側へ引っ張る向き」と面に沿った向きにだけ追従します。手足を面に近づけても面の奥へは凹みません（追従先から「面の奥へ押し込む向き」の成分を取り除きます）。手足を離す向きへ動かすと伸び、`Auto Release Distance` を超えると千切れます。
+
+#### Slow Local When Stuck／Stuck Speed Ratio
+
+ONのとき、ローカルプレイヤーがどこか1か所でもくっついている間、歩き・走り・横歩きの速度を `Stuck Speed Ratio` 倍（既定 1/3）にします。どのボーンがくっついていても同じです。適用と解除は `SurfaceContactDeformerManager` がまとめて行うので、`Manager` の設定が必要です。複数の巣にくっついても重ね掛けせず、解除は「自分が設定した値のままのとき」だけ元に戻します（他のギミックが後から変えた速度は上書きしません）。
+
+### 効果音
+
+#### Contact Audio／Contact Audio Interval
+
+手足がくっついた瞬間に鳴らす `AudioSource`（任意）。くっついた場所へ移して `clip` を `PlayOneShot` します。同期済みのスロットが増えたのを各クライアントが見て鳴らすので、周りの人にも同じ場所で聞こえます（本人はオーナーへの捕縛要求が往復するぶん少し遅れて鳴ります）。すね→もも→腰…と続けてくっつくので、`Contact Audio Interval` 秒（既定 0.4）に1回までにしています。途中入室した人には、入室直後に届いた既存の捕縛ぶんは鳴らしません。木のステーション（TreeWebStation.prefab）は子の `StickySE`（`audios/sticky.wav`、3D）を指定しています。
+
+### 固定設置の巣の共通設定
+
+全ての固定設置の巣（木のステーション・Web/WebPlane・Nest/WebPlane・Web/WebSphere・フォトコーナーの足元/手の巣）は次の設定で揃えています（`Tools/SpiderPhoto` の Unit9／10／11 も同じ設定で生成します）。飛ばした網（StickyNet）はこの対象外です。
+
+| 項目 | 値 |
+|---|---|
+| Bones | 左右のすね（LowerLeg）・もも（UpperLeg）・前腕（LowerArm）・上腕（UpperArm）、腰（Hips）、首（Neck） |
+| Contact Distance By Bone | すね 0.09 / もも 0.12 / 前腕 0.07 / 上腕 0.08 / 腰 0.15 / 首 0.08（m、区間の中心線から） |
+| Segment Contact / Pull Only / Slow Local When Stuck | ON / ON / ON（速度 1/3） |
+| Capture Only Below Surface | OFF（初めて触れた時にくっつく） |
 
 ## 注意
 

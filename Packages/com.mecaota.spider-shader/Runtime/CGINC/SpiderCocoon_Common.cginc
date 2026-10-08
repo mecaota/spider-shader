@@ -24,18 +24,26 @@ float  _WindingCount;         // 円周方向に巻く本数 W。シーム維持
 float  _ThreadDensity;        // 巻き数の倍率（_WindingCount に乗算してから丸め）
 float  _FiberAngle;           // 基準の糸の角度（度）。0=軸に平行、±で傾く（連続値）
 
-// ---- トゥーン -------------------------------------------------------------
-float  _ToonSteps;            // 陰影の段階数 1..8
-float  _ToonSmooth;           // 段差の柔らかさ
-float4 _ShadowColor;          // 影部の着色
-float  _AmbientBoost;         // 環境光の底上げ
-float  _LightInfluence;       // シーン光の反映度（0=完全発光, 1=光に大きく依存）
+// ---- 質感（トゥーン・リム・粘液の色と光沢。4 シェーダー共通） ------------
+// 宣言は SpiderSilk_Look.cginc の 1 か所だけ。巣・繭・デカールはこの値を
+// 「継承元の蜘蛛糸マテリアル」から受け継ぐ（Editor/SpiderSilkLook.cs）。
+#include "SpiderSilk_Look.cginc"
 
-// ---- シルエットのリムライト ----------------------------------------------
-float4 _RimColor;             // リムライト色
-float  _RimPower;             // リムの幅／鋭さ（大きいほど細い）
-float  _RimStrength;          // リムの強さ
-float  _RimFloor;             // リムの下限（>0で正面中央にも発光を乗せる）
+// ---- 乾いた糸モード（SpiderThreadTrail の _GOO_ON オフ）専用の陰影 --------
+float4 _ShadowColor;          // 影部の着色（質感の継承はしない）
+
+// ---- 粘液の「形」: 複数のシェーダーが同じ名前で使うが、単位・意味はシェーダーごとに違う
+// 例: _GooBeadFreq は 吐いた糸=uv.x 1 あたり / 巣=UV 1 あたり / 繭=糸方向 UV 1 あたり。
+// 単位が違うので質感の継承はしない（各マテリアルの値をそのまま使う）。
+// 同じ名前を 2 回宣言するとコンパイルエラーになるため、ここで 1 回だけ宣言する
+// （使わないシェーダーではコンパイラが削るのでコストは無い）。
+// 各シェーダーでの意味は SpiderThread_Goo.cginc / SpiderCocoon_Goo.cginc / SpiderWeb.shader のコメント。
+float  _GooThick;
+float  _GooBeads;
+float  _GooBeadFreq;
+float  _GooWebFill;
+float  _GooWebScale;
+float  _GooFiberMix;
 
 // ---- 各糸ごとの陰影 -------------------------------------------------------
 float  _FiberNormalStrength;  // 糸断面に沿った法線の曲げ量 0..1
