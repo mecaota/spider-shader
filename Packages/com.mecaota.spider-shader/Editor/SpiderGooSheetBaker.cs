@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -310,10 +312,11 @@ public static class SpiderGooSheetBaker
                 encoding.distanceRange[slice] = distanceRange;
                 encoding.radiusRange[slice] = radiusRange;
             }
-            // 手作業のミップを上書きしない。CPUコピーを解放し、配列だけを保存する。
-            shape.Apply(false, true);
-            detail.Apply(false, true);
-            coverage.Apply(false, true);
+            // 手作業のミップを上書きしない。.assetへの保存はCPU側の画素から書くので、
+            // CPUコピーは解放しない（解放すると画素の無いアセットが保存される）。
+            shape.Apply(false, false);
+            detail.Apply(false, false);
+            coverage.Apply(false, false);
         }
         catch
         {
@@ -370,6 +373,50 @@ public static class SpiderGooSheetBaker
         EditorUtility.SetDirty(existing);
         AssetDatabase.SaveAssetIfDirty(existing);
         return existing;
+    }
+
+    private static readonly string[] BakedTextureNames = { "_BakedShape", "_BakedDetail", "_BakedCoverage" };
+    private static readonly Regex BakedFileName = new Regex("^[0-9a-f]{64}-(shape|detail|coverage)\\.asset$");
+
+    /// <summary>
+    /// 読み取りのみ。生成先フォルダーの焼き込み配列のうち、どのマテリアル・Prefab・シーンからも
+    /// 参照されていないものを返す。焼き直すと古いハッシュの配列が残るため、その掃除に使う。
+    /// </summary>
+    public static List<string> FindUnused(string folder = DefaultFolder)
+    {
+        var unused = new List<string>();
+        if (!AssetDatabase.IsValidFolder(folder)) return unused;
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string type in new[] { "t:Material", "t:Prefab", "t:Scene" })
+            foreach (string guid in AssetDatabase.FindAssets(type))
+                foreach (string dependency in AssetDatabase.GetDependencies(AssetDatabase.GUIDToAssetPath(guid), false))
+                    used.Add(dependency);
+        // 保存前の変更やシーン内のマテリアルは、ファイルの依存関係に出ないので直接見る。
+        foreach (var material in Resources.FindObjectsOfTypeAll<Material>())
+        {
+            if (!IsBaked(material)) continue;
+            foreach (string name in BakedTextureNames)
+            {
+                var texture = material.GetTexture(name);
+                if (texture != null) used.Add(AssetDatabase.GetAssetPath(texture));
+            }
+        }
+        foreach (string guid in AssetDatabase.FindAssets("t:Texture2DArray", new[] { folder }))
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            if (BakedFileName.IsMatch(Path.GetFileName(path)) && !used.Contains(path)) unused.Add(path);
+        }
+        return unused;
+    }
+
+    /// <summary>FindUnused の結果をゴミ箱へ移す（OS のゴミ箱から戻せる）。移せた数を返す。</summary>
+    public static int MoveToTrash(List<string> paths)
+    {
+        if (paths.Count == 0) return 0;
+        var failed = new List<string>();
+        AssetDatabase.MoveAssetsToTrash(paths.ToArray(), failed);
+        foreach (string path in failed) Debug.LogWarning("焼き込み配列をゴミ箱へ移せませんでした: " + path);
+        return paths.Count - failed.Count;
     }
 
     private static void DestroyTransient(UnityEngine.Object obj)

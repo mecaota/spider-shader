@@ -117,9 +117,6 @@ Shader "mecaota/SpiderGooSilkSheet"
         _PullStrength   ("引っ張り強さ (Pull Strength)", Range(0, 1)) = 1
         _PullMaxStretch ("千切れ開始距離 m 0で無効 (Max Stretch)", Range(0, 5)) = 0
         _PullTearFade   ("千切れフェード幅 m (Tear Fade)", Range(0.01, 2)) = 0.3
-        [ToggleUI] _PullAdhesion ("ボーンへの粘着追従 (Sticky Contact)", Float) = 0
-        _PullContactSize ("密着する範囲 m (Contact Size)", Range(0.01, 0.5)) = 0.16
-        _PullEdgePin ("メッシュ端の固定幅 UV (Edge Pin)", Range(0, 0.2)) = 0.025
         // 捕縛点・追従先は配列 uniform（_PullAnchors[16]/_PullTargets[16]）で、Udon が
         // MaterialPropertyBlock.SetVectorArray で渡す（Properties には書けない）。
         // _PullCount は有効スロット数。0 のままなら頂点シェーダーは従来と同じ
@@ -209,7 +206,6 @@ Shader "mecaota/SpiderGooSilkSheet"
 
             // ---- 接触追従の変形（uniform と変位関数は繭と共通の Pull.cginc） ----
             #include "CGINC/SpiderCocoon_Pull.cginc"
-            #include "CGINC/SpiderWeb_Adhesion.cginc"
             // ---- 投げつけた網が体に覆いかぶさる変形 ----
             #include "CGINC/SpiderWeb_Drape.cginc"
 
@@ -232,7 +228,6 @@ Shader "mecaota/SpiderGooSilkSheet"
                 float3 worldPos : TEXCOORD1;
                 float3 worldNormal : TEXCOORD2;
                 float4 worldTangent : TEXCOORD3;
-                float contact : TEXCOORD4;
                 float fanRim : TEXCOORD5;   // ハブ→扇の外周の UV 距離（メッシュ提供時のみ）
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
@@ -459,7 +454,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -477,7 +471,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -495,7 +488,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -513,7 +505,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -531,7 +522,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -549,7 +539,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -567,7 +556,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -585,7 +573,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 
@@ -603,7 +590,6 @@ Shader "mecaota/SpiderGooSilkSheet"
             #pragma target 3.5
             #pragma require 2darray
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             ENDCG
         }
 

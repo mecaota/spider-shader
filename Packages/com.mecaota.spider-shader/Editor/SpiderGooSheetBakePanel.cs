@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 
@@ -46,7 +47,26 @@ internal static class SpiderGooSheetBakePanel
                     if (SpiderGooSheetBaker.IsBaked(target as Material)) targets.Add((Material)target);
                 EditorApplication.delayCall += () => BakeSelected(targets);
             }
+            if (GUILayout.Button("使われていない焼き込みを削除…"))
+                EditorApplication.delayCall += DeleteUnused;
         }
+    }
+
+    private static void DeleteUnused()
+    {
+        List<string> unused = SpiderGooSheetBaker.FindUnused();
+        if (unused.Count == 0)
+        {
+            EditorUtility.DisplayDialog("使われていない焼き込み", "削除できる焼き込み配列はありません。", "OK");
+            return;
+        }
+        long bytes = 0;
+        foreach (string path in unused) bytes += new FileInfo(path).Length;
+        string message = SpiderGooSheetBaker.DefaultFolder + " の焼き込み配列のうち、どのマテリアル・Prefab・シーンからも使われていない "
+            + unused.Count + " 個（" + (bytes / (1024.0 * 1024.0)).ToString("F1") + " MiB）をゴミ箱へ移します。";
+        if (!EditorUtility.DisplayDialog("使われていない焼き込みを削除", message, "ゴミ箱へ移す", "キャンセル")) return;
+        int moved = SpiderGooSheetBaker.MoveToTrash(unused);
+        Debug.Log("使われていない焼き込み配列を " + moved + " 個ゴミ箱へ移しました。");
     }
 
     private static void BakeSelected(List<Material> materials)
