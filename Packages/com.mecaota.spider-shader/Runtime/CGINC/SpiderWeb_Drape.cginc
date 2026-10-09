@@ -490,7 +490,8 @@ void SW_DrapeFallDeform(float2 uv, out float3 p, out float3 N, out float3 T, flo
     float3 Y  = float3(-X.z, 0.0, X.x);                 // X×Y = 下向き（従来の D と同じ約束）
     float2 q   = (uv - 0.5) * 2.0 * R;
     float  rho = max(length(q), 1e-3);
-    float  phi = atan2(q.y, q.x);
+    // 網の中心（q = 0）では atan2(0, 0) が NaN（数でない値）になる。中心では向きに意味がないので 0 にする
+    float  phi = (dot(q, q) > 1e-10) ? atan2(q.y, q.x) : 0.0;
     const float dphi = 0.03;                            // 周方向の接線を差分で求める幅 (rad)
     float3 w0 = X * cos(phi) + Y * sin(phi);
     float3 w1 = X * cos(phi + dphi) + Y * sin(phi + dphi);

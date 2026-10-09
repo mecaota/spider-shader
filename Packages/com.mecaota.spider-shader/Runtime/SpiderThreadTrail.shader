@@ -11,6 +11,7 @@
 //    トレイルの軌跡そのものは崩れない）。
 //  - Gravity Sag > 0 は頂点をワールド下方向へたわませる。両端は固定。
 //    Particle streams: Position, Color, UV, StableRandomXYZW。Color.b に経路比率。
+//    経路上の位置が分からないマテリアル（_GravityUseUV と _GravityTrailColor が両方 0）ではたわませない。
 //
 //  UV の前提（Unity のトレイルが生成する標準の UV）:
 //    uv.x = 軌跡に沿った方向（Texture Mode: Stretch なら 0..1、Tile なら連続増加）
@@ -138,6 +139,7 @@ Shader "mecaota/SpiderThreadTrail"
         // 糸の芯が立てるステンシルビット。繭デカール（SpiderCocoonDepthDecal）と
         // ねばねばネット系のデカール（SpiderGooQuadNetDecal / SpiderGooWrapDecal）は、このビットが立った画素へ
         // 体表の glue を上塗りしない（手前を通る糸が繭の下へ潜って見えないように）。
+        // ※ ねばねばネット系はこのパッケージに含まれない（作者のワールド側にある）。
         // 付け替えたらデカール側の Glue Skip Mask も合わせること。
         [Header(Render Order)]
         [IntRange] _SilkStencilBit ("糸のステンシル ビット (Silk Stencil Bit)", Range(0, 255)) = 64
@@ -221,13 +223,16 @@ Shader "mecaota/SpiderThreadTrail"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                // 経路上の位置（0..1）が分かるのは、UV を正規化したとき（_GravityUseUV）か、
+                // 頂点色の青に位置を入れたとき（_GravityTrailColor）だけ。どちらも無ければたわませない
+                bool hasSpan = (_GravityUseUV > 0.5) || (_GravityTrailColor > 0.5);
                 float along = (_GravityUseUV > 0.5) ? v.uv.x : v.color.b;
                 // Particle color is converted from gamma to linear by Unity.
                 #ifndef UNITY_COLORSPACE_GAMMA
                 if (_GravityUseUV < 0.5) along = LinearToGammaSpaceExact(along);
                 #endif
                 // Tile distance / normalized span estimates trail length without a CPU update.
-                float sagAmount = _GravitySag;
+                float sagAmount = hasSpan ? _GravitySag : 0.0;
                 if (_GravityTrailColor > 0.5 && _GravityUseUV < 0.5)
                     sagAmount = min(sagAmount, max(v.uv.x, 0.0) / max(along, 1e-4) * 0.08);
                 // Move the ribbon itself, independently of camera orientation.
@@ -261,7 +266,10 @@ Shader "mecaota/SpiderThreadTrail"
                 // 大きくなっても saturate で 1 に張り付くだけなので破綻しない。
                 sway *= saturate(i.uv.x / max(_SwayAnchor, 1e-4));
 
-                float2 suv = float2(i.uv.x, i.uv.y + sway * ((_GravitySag > 0.0) ? 0.0 : 1.0));
+                // たわみが実際に効いているときだけ揺れを止める（vert と同じ条件）
+                bool hasSpan = (_GravityUseUV > 0.5) || (_GravityTrailColor > 0.5);
+                float swayMul = (hasSpan && _GravitySag > 0.0) ? 0.0 : 1.0;
+                float2 suv = float2(i.uv.x, i.uv.y + sway * swayMul);
 
                 // ==== 陰影用の基底（トレイルには法線・接線が無いので導出する） ====
                 // N: トレイルはカメラ正対の帯なので「カメラへ向く法線」で近似。

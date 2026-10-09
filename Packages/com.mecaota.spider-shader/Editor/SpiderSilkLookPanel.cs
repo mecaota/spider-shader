@@ -85,6 +85,9 @@ internal static class SpiderSilkLookPanel
                 EditorGUILayout.HelpBox("書き込めないマテリアル（読み取り専用パッケージ・VCS のロックなど）なので、質感を同期できません。", MessageType.Warning);
             else if (LockedLook(first))
                 EditorGUILayout.HelpBox("質感の項目が親マテリアルでロックされているため、同期できない値があります。", MessageType.Warning);
+            else if (!SpiderSilkLook.IsAutoSyncTarget(first))
+                EditorGUILayout.HelpBox("Assets フォルダの外にあるので、自動では同期しません。" +
+                                        "メニュー「Tools/SpiderShader/質感の継承を同期」で合わせられます。", MessageType.None);
             else
                 EditorGUILayout.LabelField("（継承元と値がずれています。まもなく同期されます）", EditorStyles.miniLabel);
         }

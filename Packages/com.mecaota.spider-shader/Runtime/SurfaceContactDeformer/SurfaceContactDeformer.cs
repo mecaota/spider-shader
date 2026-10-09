@@ -187,6 +187,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private Vector4[] _targetsV4;
     private float[] _pendingUntil;
     private float[] _cooldownUntil;
+    private float[] _releaseUntil;               // 千切れの解放要求を送ってから同期待ちの間は再送しない
     private bool _localInside = false;
     private Vector3 _tmpAnchor;
     private float _tmpParam;
@@ -217,6 +218,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private float _webStrength = 1f, _webMaxStretch, _webTearFade = 1e-3f, _webRadius = .45f, _webFalloff = 1.5f;
     private bool _webPullEnabled, _externalCaptureUsed, _externalCaptureActive;
     private float _nextExternalClaim, _nextExternalRelease;
+    private const float ExternalCleanupWait = 2f; // 外部捕縛の解除後、遅れて届く claim を待つ秒数（再送待ちの 1 秒の後）
     private Vector3[] _threadEnds;
     private int[] _threadPullIndices;
     private Vector3[] _pullAnchors3, _pullDeltas3;   // threadFromDeformedWeb: 今フレームの接点と変位（WebFollow 用）
@@ -238,13 +240,19 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         if (bones == null) { bones = new TrackBone[0]; }
         _pendingUntil = new float[bones.Length];
         _cooldownUntil = new float[bones.Length];
+        _releaseUntil = new float[bones.Length];
         _wrapPlayer = new int[bones.Length];
-        for (int i = 0; i < bones.Length; i++) { _pendingUntil[i] = -999f; _cooldownUntil[i] = -999f; _wrapPlayer[i] = 0; }
+        for (int i = 0; i < bones.Length; i++) { _pendingUntil[i] = -999f; _cooldownUntil[i] = -999f; _releaseUntil[i] = -999f; _wrapPlayer[i] = 0; }
         _mpb = new MaterialPropertyBlock();
         _anchorsV4 = new Vector4[MaxSlots];
         _targetsV4 = new Vector4[MaxSlots];
         _threadMpb = new MaterialPropertyBlock();
         _threadOn = new bool[MaxSlots];
+        // シーンで有効のまま置かれた糸も、使うまで消しておく
+        if (threadBySlot != null)
+        {
+            for (int i = 0; i < threadBySlot.Length; i++) { if (threadBySlot[i] != null) { threadBySlot[i].enabled = false; } }
+        }
         _threadDrawn = new bool[MaxSlots];
         _threadPts = new Vector3[ThreadPoints];
         _threadEnds = new Vector3[MaxSlots];
@@ -383,23 +391,22 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private void UpdateLocalContacts(VRCPlayerApi local)
     {
         int localId = local.playerId;
-        // 外部捕縛の解除後に遅れて届いた claim も取り除く。通常の木の巣ではこの分岐へ入らない。
+        float now = Time.time;
+        // 外部捕縛の解除後しばらくは、遅れて届いた claim を取り除くだけにする。通常の木の巣ではこの分岐へ入らない。
+        // 最後の解除から約 3 秒、自分のスロットが無ければ自動の接触判定に戻す
         if (_externalCaptureUsed && !_externalCaptureActive)
         {
-            if (Time.time >= _nextExternalRelease)
+            if (now < _nextExternalRelease) { return; }
+            if (HasSlotOf(localId))
             {
-                for (int i = 0; i < MaxSlots; i++)
-                {
-                    if (_slotPlayer[i] != localId) { continue; }
-                    _nextExternalRelease = Time.time + 1f;
-                    SendReleasePlayer(localId);
-                    break;
-                }
+                _nextExternalRelease = now + 1f;
+                SendReleasePlayer(localId);
+                return;
             }
-            return;
+            if (now < _nextExternalRelease + ExternalCleanupWait) { return; }
+            _externalCaptureUsed = false;
         }
         bool canCapture = !requireTrigger || _localInside;
-        float now = Time.time;
         int sends = 0; // 1フレームの送信数上限（レート制限対策）
 
         for (int b = 0; b < bones.Length; b++)
@@ -416,7 +423,9 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
                 Vector3 t = bp - OffsetWorld(b, _slotAnchor[slot]);
                 if (Vector3.Distance(a, t) > autoReleaseDistance)
                 {
+                    if (now < _releaseUntil[b]) { continue; } // 送った解放の同期待ち。再送しない
                     SendRelease(localId, b);
+                    _releaseUntil[b] = now + pendingTimeout;
                     if (_externalAnchorSet != null) { _externalAnchorSet[b] = false; }
                     _cooldownUntil[b] = now + recaptureCooldown;
                     sends++;
@@ -430,6 +439,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
                 if (!TryContact(local, b)) { continue; }
                 SendClaim(localId, b, _tmpAnchor, _tmpParam);
                 _pendingUntil[b] = now + pendingTimeout;
+                _releaseUntil[b] = -999f;
                 sends++;
             }
         }
@@ -461,34 +471,60 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         }
         _nextExternalClaim = now + .05f;
         _pendingUntil[boneIndex] = now + Mathf.Max(pendingTimeout, .05f);
+        _releaseUntil[boneIndex] = -999f;
         SendClaim(local.playerId, boneIndex, _externalAnchors[boneIndex], _externalParams[boneIndex]);
     }
 
     // ================= オーナー処理（NetworkCallable）=================
+    // スクリプト内からは *Core を直接呼ぶ。入口（ClaimSlot など）を通すと、他のネットワークイベントの
+    // 処理中に呼ばれたとき、送信者がその外側のイベントの送り主のままなので弾かれる
     private void SendClaim(int playerId, int boneIndex, Vector3 anchorLocal, float param)
     {
-        if (Networking.IsOwner(gameObject)) { ClaimSlot(playerId, boneIndex, anchorLocal, param); }
+        if (Networking.IsOwner(gameObject)) { ClaimSlotCore(playerId, boneIndex, anchorLocal, param); }
         else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ClaimSlot), playerId, boneIndex, anchorLocal, param); }
     }
 
     private void SendRelease(int playerId, int boneIndex)
     {
-        if (Networking.IsOwner(gameObject)) { ReleaseSlot(playerId, boneIndex); }
+        if (Networking.IsOwner(gameObject)) { ReleaseSlotCore(playerId, boneIndex); }
         else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ReleaseSlot), playerId, boneIndex); }
     }
 
     private void SendReleasePlayer(int playerId)
     {
-        if (Networking.IsOwner(gameObject)) { ReleasePlayer(playerId); }
+        if (Networking.IsOwner(gameObject)) { ReleasePlayerCore(playerId); }
         else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ReleasePlayer), playerId); }
     }
 
+    // ネットワークの入口。送信者が自分の分を送ったときだけ通す（改造クライアントが他人のボーンを付け外しできないように）。
+    // ネットワーク外からの直接呼び出しは送信者が無いのでそのまま通る
     [NetworkCallable(20)]
     public void ClaimSlot(int playerId, int boneIndex, Vector3 anchorLocal, float param)
     {
-        // 自分の分だけ（改造クライアントが他人のボーンを付け外しできないように）。オーナーが自分で呼ぶ片付けはそのまま通る
         VRCPlayerApi caller = NetworkCalling.CallingPlayer;
         if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
+        ClaimSlotCore(playerId, boneIndex, anchorLocal, param);
+    }
+
+    [NetworkCallable(20)]
+    public void ReleaseSlot(int playerId, int boneIndex)
+    {
+        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
+        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
+        ReleaseSlotCore(playerId, boneIndex);
+    }
+
+    [NetworkCallable]
+    public void ReleasePlayer(int playerId)
+    {
+        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
+        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
+        ReleasePlayerCore(playerId);
+    }
+
+    // 以下は実処理（オーナーのみ）。private なのでネットワークからは呼べない
+    private void ClaimSlotCore(int playerId, int boneIndex, Vector3 anchorLocal, float param)
+    {
         EnsureInit();
         if (!Networking.IsOwner(gameObject)) { return; }
         if (playerId <= 0 || boneIndex < 0 || boneIndex >= bones.Length) { return; }
@@ -509,12 +545,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         UpdateRegistration(); // オーナーは OnDeserialization を受けないので自分で反映
     }
 
-    [NetworkCallable(20)]
-    public void ReleaseSlot(int playerId, int boneIndex)
+    private void ReleaseSlotCore(int playerId, int boneIndex)
     {
-        // 自分の分だけ（改造クライアントが他人のボーンを付け外しできないように）。オーナーが自分で呼ぶ片付けはそのまま通る
-        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
-        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
         EnsureInit();
         if (!Networking.IsOwner(gameObject)) { return; }
         int slot = FindSlot(playerId, boneIndex);
@@ -524,12 +556,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         UpdateRegistration();
     }
 
-    [NetworkCallable]
-    public void ReleasePlayer(int playerId)
+    private void ReleasePlayerCore(int playerId)
     {
-        // 自分の分だけ（改造クライアントが他人のボーンを付け外しできないように）。オーナーが自分で呼ぶ片付けはそのまま通る
-        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
-        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
         EnsureInit();
         if (!Networking.IsOwner(gameObject)) { return; }
         bool changed = false;
@@ -592,7 +620,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         EnsureInit();
         if (player == null) { return; }
-        if (Networking.IsOwner(gameObject)) { ReleasePlayer(player.playerId); }
+        if (Networking.IsOwner(gameObject)) { ReleasePlayerCore(player.playerId); }
     }
 
     public override void OnPlayerRespawn(VRCPlayerApi player)
@@ -608,13 +636,17 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         EnsureInit();
         VRCPlayerApi player = Networking.LocalPlayer;
         if (player == null || !player.IsValid()) { return; }
-        _externalCaptureActive = false;
-        _nextExternalRelease = Time.time + 1f;
-        SendReleasePlayer(player.playerId);
         float now = Time.time;
+        // くっついている・要求の応答待ち・外部捕縛中の巣だけ送る（リスポーンで全部の巣が送らないように）
+        bool send = _externalCaptureActive || HasSlotOf(player.playerId);
+        for (int b = 0; b < bones.Length && !send; b++) { if (now < _pendingUntil[b]) { send = true; } }
+        _externalCaptureActive = false;
+        _nextExternalRelease = now + 1f;
+        if (send) { SendReleasePlayer(player.playerId); }
         for (int b = 0; b < bones.Length; b++)
         {
             _cooldownUntil[b] = now + recaptureCooldown; _pendingUntil[b] = -999f;
+            _releaseUntil[b] = send ? now + pendingTimeout : -999f; // 送った解放の同期待ちに ReleaseSlot を重ねない
             if (_externalAnchorSet != null) { _externalAnchorSet[b] = false; }
         }
     }
@@ -939,6 +971,15 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         Vector3 cp = segmentContact ? ChildPos(player, b) : Vector3.zero;
         int samples = (cp == Vector3.zero) ? 1 : SegmentSamples;
         Transform f = Face(b);
+        // Plane では面からの高さが区間に沿って直線的に変わる。両端が面の同じ側にあり、
+        // 近い方の端も接触距離より遠ければ、どの点も届かないので調べない
+        if (samples > 1 && shape == SurfaceShape.Plane)
+        {
+            float yb = f.InverseTransformPoint(bp).y;
+            float yc = f.InverseTransformPoint(cp).y;
+            float unit = f.TransformVector(Vector3.up).magnitude;
+            if (yb * yc > 0f && Mathf.Min(Mathf.Abs(yb), Mathf.Abs(yc)) * unit > ContactDistanceOf(b)) { return false; }
+        }
         float best = float.MaxValue;
         for (int k = 0; k < samples; k++)
         {
@@ -986,10 +1027,14 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         VRCPlayerApi local = Networking.LocalPlayer;
         if (local == null) { return false; }
-        int id = local.playerId;
+        return HasSlotOf(local.playerId);
+    }
+
+    private bool HasSlotOf(int playerId)
+    {
         for (int i = 0; i < MaxSlots; i++)
         {
-            if (_slotPlayer[i] == id) { return true; }
+            if (_slotPlayer[i] == playerId) { return true; }
         }
         return false;
     }

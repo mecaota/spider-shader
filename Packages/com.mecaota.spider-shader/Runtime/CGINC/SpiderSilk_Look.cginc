@@ -8,6 +8,7 @@
 // SpiderThreadTrail（継承元の蜘蛛糸）/ SpiderWeb / SpiderCocoon /
 // SpiderCocoonDepthDecal / ねばねばネット系（SpiderGooQuadNet / SpiderGooQuadNetDecal /
 // SpiderGooWrapDecal / SpiderGooDotWeb）が同じ意味で使う値。
+// ※ ねばねばネット系はこのパッケージに含まれない（作者のワールド側にある）。
 // 巣・繭・デカール・ねばねばネットのマテリアルには、エディタ拡張が「継承元の蜘蛛糸マテリアル」の
 // 値をそのまま書き写す（実行時の処理は無い。Editor/SpiderSilkLook.cs）。
 //

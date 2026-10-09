@@ -12,7 +12,8 @@ using UnityEngine;
 //  蜘蛛シェーダーの GUID を探して絞り込み、当たったものだけを読み込む。
 //  まだ保存していない変更（インスペクタでシェーダーを切り替えた直後など）も拾うため、
 //  読み込み済みで未保存（dirty）のマテリアルはメモリ上のシェーダーで判定して足す。
-//  .mat が追加・変更・削除されたら（postprocessor / ObjectChangeEvents）作り直す。
+//  .mat の取り込み・削除・移動（postprocessor）は、その .mat だけを反映する。
+//  蜘蛛シェーダーの取り込みや、シェーダーの切り替え（ObjectChangeEvents）では全体を作り直す。
 // =============================================================================
 public static class SpiderSilkLookIndex
 {
@@ -20,10 +21,19 @@ public static class SpiderSilkLookIndex
     static List<Material> s_Inheritors;
     static HashSet<Material> s_All;
     static Dictionary<string, Material> s_SourceByPrefix;
+    static List<string> s_ShaderGuids = new List<string>();
     static readonly HashSet<string> s_Missing = new HashSet<string>();   // 作り直しても見つからなかった GUID 先頭
+    static readonly HashSet<string> s_Changed = new HashSet<string>();   // 取り込み・削除・移動された .mat（次に使うときに反映）
     static bool s_Dirty = true;
 
     public static void Invalidate() { s_Dirty = true; s_Missing.Clear(); }
+
+    /// <summary>取り込み・削除・移動された .mat を、次に使うときに一覧へ反映する（全体は作り直さない）。</summary>
+    public static void MarkChanged(IEnumerable<string> paths)
+    {
+        if (s_Dirty || s_Sources == null) return;   // どのみち全体を作り直す
+        foreach (var p in paths) s_Changed.Add(p);
+    }
 
     public static IReadOnlyList<Material> Sources    { get { Ensure(); return s_Sources; } }
     public static IReadOnlyList<Material> Inheritors { get { Ensure(); return s_Inheritors; } }
@@ -76,28 +86,29 @@ public static class SpiderSilkLookIndex
 
     static void Ensure()
     {
-        if (!s_Dirty && s_Sources != null) return;
+        if (!s_Dirty && s_Sources != null)
+        {
+            if (s_Changed.Count > 0) ApplyChanges();
+            return;
+        }
         s_Sources = new List<Material>();
         s_Inheritors = new List<Material>();
         s_All = new HashSet<Material>();
         s_SourceByPrefix = new Dictionary<string, Material>();
+        s_Changed.Clear();
         s_Dirty = false;
 
-        var shaderGuids = new List<string>();
+        s_ShaderGuids = new List<string>();
         var srcGuid = ShaderGuid(SpiderSilkLook.SourceShaderName);
-        if (srcGuid != null) shaderGuids.Add(srcGuid);
-        foreach (var n in SpiderSilkLook.InheritorShaderNames) { var g = ShaderGuid(n); if (g != null) shaderGuids.Add(g); }
+        if (srcGuid != null) s_ShaderGuids.Add(srcGuid);
+        foreach (var n in SpiderSilkLook.InheritorShaderNames) { var g = ShaderGuid(n); if (g != null) s_ShaderGuids.Add(g); }
 
-        if (shaderGuids.Count > 0)
+        if (s_ShaderGuids.Count > 0)
             foreach (var guid in AssetDatabase.FindAssets("t:Material"))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
-                if (!path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase)) continue;
-                string shaderLine = ReadShaderLine(path);
-                if (shaderLine == null) continue;
-                bool hit = false;
-                foreach (var g in shaderGuids) if (shaderLine.Contains(g)) { hit = true; break; }
-                if (hit) Add(AssetDatabase.LoadAssetAtPath<Material>(path));
+                if (path.EndsWith(".mat", StringComparison.OrdinalIgnoreCase) && UsesSpiderShader(path))
+                    Add(AssetDatabase.LoadAssetAtPath<Material>(path));
             }
 
         // 未保存の変更（ディスクの m_Shader がまだ古い）を、読み込み済みのマテリアルで補う
@@ -108,6 +119,46 @@ public static class SpiderSilkLookIndex
             Add(m);
         }
 
+        Sort();
+    }
+
+    // 変わった .mat だけを反映する
+    static void ApplyChanges()
+    {
+        // 削除されたもの（パスが無い）と、取り込み・移動されたもの（一覧にある、または蜘蛛シェーダーを使う .mat）を集める
+        var byPath = new Dictionary<string, Material>();
+        var gone = new List<Material>();
+        foreach (var m in s_All)
+        {
+            string p = m != null ? AssetDatabase.GetAssetPath(m) : null;
+            if (string.IsNullOrEmpty(p)) gone.Add(m);
+            else byPath[p] = m;
+        }
+        var touched = new List<Material>();
+        foreach (var path in s_Changed)
+        {
+            if (byPath.TryGetValue(path, out var m)) touched.Add(m);
+            else if (UsesSpiderShader(path))
+            {
+                m = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (m != null) touched.Add(m);
+            }
+        }
+        s_Changed.Clear();
+        if (gone.Count == 0 && touched.Count == 0) return;
+
+        // 呼び出し元が一覧を反復中かもしれないので、書き換えずに複製して差し替える
+        s_Sources        = new List<Material>(s_Sources);
+        s_Inheritors     = new List<Material>(s_Inheritors);
+        s_All            = new HashSet<Material>(s_All);
+        s_SourceByPrefix = new Dictionary<string, Material>(s_SourceByPrefix);
+        foreach (var m in gone) Remove(m);
+        foreach (var m in touched) { Remove(m); Add(m); }   // メモリ上のシェーダーで役割を決め直す
+        Sort();
+    }
+
+    static void Sort()
+    {
         s_Sources.Sort((a, b) => string.CompareOrdinal(AssetDatabase.GetAssetPath(a), AssetDatabase.GetAssetPath(b)));
         s_Inheritors.Sort((a, b) => string.CompareOrdinal(AssetDatabase.GetAssetPath(a), AssetDatabase.GetAssetPath(b)));
     }
@@ -124,6 +175,26 @@ public static class SpiderSilkLookIndex
             if (prefix != null) s_SourceByPrefix[prefix] = m;
         }
         else if (role == SpiderSilkLook.Role.Inheritor) { s_Inheritors.Add(m); s_All.Add(m); }
+    }
+
+    // 一覧から外す（削除済みで null 扱いのマテリアルも外せるよう、参照で比べる）
+    static void Remove(Material m)
+    {
+        if (ReferenceEquals(m, null) || !s_All.Remove(m)) return;
+        s_Sources.Remove(m);
+        s_Inheritors.Remove(m);
+        string key = null;
+        foreach (var kv in s_SourceByPrefix) if (ReferenceEquals(kv.Value, m)) { key = kv.Key; break; }
+        if (key != null) s_SourceByPrefix.Remove(key);
+    }
+
+    // .mat の m_Shader 行が蜘蛛シェーダーの GUID か（マテリアルは読み込まない）
+    static bool UsesSpiderShader(string path)
+    {
+        string line = ReadShaderLine(path);
+        if (line == null) return false;
+        foreach (var g in s_ShaderGuids) if (line.Contains(g)) return true;
+        return false;
     }
 
     // .mat の先頭だけを読んで m_Shader の行を返す（全文を読まない。バイナリ形式などは null）

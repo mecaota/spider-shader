@@ -19,6 +19,7 @@ using UnityEngine;
 //  同期しないとき: Play 中（CocoonMaterialTuner が実行時に .mat を書くため）・コンパイル中・
 //  インポート中・質感プロパティの一致チェックに失敗している間。
 //  自動の同期は SetDirty だけで、保存は Ctrl+S / Save Project のとき（明示操作とビルド前は保存する）。
+//  自動の同期で書くのは Assets/ 配下だけ（VPM などで入れた他のパッケージの .mat は書かない）。
 //
 //  安全装置: リンク（継承元）が、そのマテリアル自身で SetSource 以外の方法で外れたり変わったりした
 //  （Revert all overrides・Reset・スクリプトの丸ごと上書きなど）ときは、値を書き換えずに止めて警告する。
@@ -119,7 +120,7 @@ internal static class SpiderSilkLookAutoSync
         {
             var inheritors = SpiderSilkLookIndex.Inheritors;
             if (inheritors.Count == 0) return;
-            var report = SpiderSilkLook.SyncAll(new SpiderSilkLook.SyncOptions { Hold = Hold });
+            var report = SpiderSilkLook.SyncAll(new SpiderSilkLook.SyncOptions { Hold = Hold, AssetsOnly = true });
             Remember(inheritors);
             foreach (var p in report.Problems)
                 if (s_Reported.Add(p)) Debug.LogWarning("[蜘蛛糸の質感] " + p);

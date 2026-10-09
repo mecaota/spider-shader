@@ -172,7 +172,11 @@ public class CocoonGroupLinker : UdonSharpBehaviour
                 continue;
             }
 
+            // 仲間のままなら書き直さない（仲間は _GroupRole だけで、毎フレーム書く値が無い）
+            if (role < 0 && _role[i] < 0) { continue; }
             Renderer r = decals[i];
+            // 代表から仲間に変わったら、代表のときに広げた描画範囲（箱）を戻す
+            if (role < 0 && _role[i] > 0) { r.localBounds = _originalBounds[i]; }
             r.GetPropertyBlock(_mpb);
             _mpb.SetFloat("_GroupRole", role);
             if (role > 0) { WriteBundle(i); }

@@ -205,6 +205,7 @@ fixed4 SCG_ShadeGroupShell(float2 screenUV, float3 worldDir, out float rawOut)
     float alpha = lerp(color.a, capAlpha, capWeight);
     color.rgb = lerp(color.rgb * color.a, capPremul, capWeight) / max(alpha, 1e-5);
     color.a = alpha;
+    // ほぼ透明な所は捨てる。深度を書くのは、さらに濃い所だけ（GROUP_SHELL_DEPTH パス）
     clip(color.a - 0.06);
     float4 cp = UnityWorldToClipPos(wp);
     rawOut = cp.z / cp.w;
