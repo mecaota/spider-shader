@@ -179,7 +179,18 @@ internal static class SpiderShaderPresetPanel
     // 保存するグループは今のプリセットと同じ（シェーダーに足された新しい値も一緒に入る）
     private static void Overwrite(SpiderShaderPreset p, Material source)
     {
-        if (!EditorUtility.DisplayDialog("プリセットの上書き",
+        // 同梱の標準プリセットは、パッケージを更新すると元に戻るので別名保存をすすめる
+        if (AssetDatabase.GetAssetPath(p).StartsWith(SpiderShaderPresetLibrary.StandardFolder + "/", System.StringComparison.Ordinal))
+        {
+            int choice = EditorUtility.DisplayDialogComplex("標準プリセットの上書き",
+                $"「{p.Label}」はパッケージに同梱の標準プリセットです。\n" +
+                "上書きしても、パッケージを更新すると元に戻ります。\n" +
+                "自分用のプリセットとして別名で保存しますか？",
+                "別名で保存…", "キャンセル", "それでも上書き");
+            if (choice == 0) SpiderShaderPresetSaveWindow.Open(source, p);
+            if (choice != 2) return;
+        }
+        else if (!EditorUtility.DisplayDialog("プリセットの上書き",
                 $"「{p.Label}」を、マテリアル「{source.name}」の今の値で上書きします。\n" +
                 "保存する項目は今のプリセットと同じです。",
                 "上書き", "キャンセル"))
@@ -217,12 +228,22 @@ internal class SpiderShaderPresetSaveWindow : EditorWindow
     [SerializeField] private List<string> _excluded    = new List<string>();
     private Vector2 _scroll;
 
-    public static void Open(Material source)
+    // from を渡すと、その名前・カテゴリ・説明と保存する項目を引き継ぐ（標準プリセットの別名保存）
+    public static void Open(Material source, SpiderShaderPreset from = null)
     {
         var w = CreateInstance<SpiderShaderPresetSaveWindow>();
         w.titleContent = new GUIContent("プリセットを保存");
         w._source      = source;
         w._displayName = source.name;
+        if (from != null)
+        {
+            w._displayName = from.Label;
+            w._category    = from.category ?? "";
+            w._description = from.description ?? "";
+            var stored = from.StoredGroups();
+            foreach (var g in SpiderCocoonShaderGUI.GetPresetGroups(source.shader))
+                if (!stored.Contains(g.Title)) w._excluded.Add(g.Title);
+        }
         w.minSize      = new Vector2(380f, 460f);
         w.ShowUtility();
     }

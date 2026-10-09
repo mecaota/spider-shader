@@ -31,7 +31,8 @@
 //
 // 前提 include（.shader 側でこの順に読み込むこと）:
 //   Noise → Common（SC_IsInMirror / SC_MonoCameraPos / uniforms）
-//         → Thread → Lighting → Compose（SC_ShadeCocoonAt）→ 本ファイル
+//         → Thread → Lighting → Compose → SpiderGoo_Shading
+//         → SpiderCocoon_Goo（SC_ShadeCocoonAt）→ 本ファイル
 // ---------------------------------------------------------------------------
 
 // 内壁の深度を書く不透明度の境目。0.9 未満の膜や帯は（ほぼ不透明に見える膜もこの範囲）、奥の蜘蛛の巣や糸を遮らない。

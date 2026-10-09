@@ -17,8 +17,9 @@ using VRC.SDKBase;
 /// くっついている間の減速:
 /// ・slowLocalWhenStuck が ON の Deformer のどれかにローカルプレイヤーがくっついている間、
 ///   歩き・走り・横歩きの速度を stuckSpeedRatio 倍にする（どのボーンがくっついていても同じ）。
-///   複数の巣にくっついても重ね掛けしない（一番小さい倍率を 1 回だけ掛ける）
-/// ・解除は「自分が設定した値のままのとき」だけ元に戻す（他のギミックが後から速度を
+///   複数の巣にくっついても重ね掛けしない（くっついている巣のうち一番小さい倍率を 1 回だけ掛ける）。
+///   くっついている巣が変わって倍率が変われば掛け直す
+/// ・解除・掛け直しは「自分が設定した値のままのとき」だけ書き換える（他のギミックが後から速度を
 ///   変えていたら上書きしない。BossStickyNetManager と同じ作法）
 /// </summary>
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
@@ -80,7 +81,7 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
         UpdateSlow(ratio);
     }
 
-    // ratio < 1 の間だけ移動速度を ratio 倍にする
+    // ratio < 1 の間だけ移動速度を ratio 倍にする。ratio が変われば掛け直す
     private void UpdateSlow(float ratio)
     {
         VRCPlayerApi local = Networking.LocalPlayer;
@@ -91,11 +92,13 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
             _baseWalk = local.GetWalkSpeed();
             _baseRun = local.GetRunSpeed();
             _baseStrafe = local.GetStrafeSpeed();
-            _slowRatio = ratio;
-            local.SetWalkSpeed(_baseWalk * _slowRatio);
-            local.SetRunSpeed(_baseRun * _slowRatio);
-            local.SetStrafeSpeed(_baseStrafe * _slowRatio);
+            _slowRatio = 1f; // 今の速度＝元の速度なので、次の SetRatio で 3 つとも書き換わる
+            SetRatio(local, ratio);
             _slowed = true;
+        }
+        else if (want && Mathf.Abs(ratio - _slowRatio) > 1e-4f)
+        {
+            SetRatio(local, ratio);
         }
         else if (!want && _slowed)
         {
@@ -103,16 +106,22 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
         }
     }
 
-    // 自分が設定した値のままのときだけ元に戻す（後から他のギミックが変えた速度は触らない）
+    // 速度を「元の速度 × ratio」にする。自分が設定した値のままの速度だけ書き換える（後から他のギミックが変えた速度は触らない）
+    private void SetRatio(VRCPlayerApi local, float ratio)
+    {
+        if (Mathf.Abs(local.GetWalkSpeed() - _baseWalk * _slowRatio) < 0.001f) { local.SetWalkSpeed(_baseWalk * ratio); }
+        if (Mathf.Abs(local.GetRunSpeed() - _baseRun * _slowRatio) < 0.001f) { local.SetRunSpeed(_baseRun * ratio); }
+        if (Mathf.Abs(local.GetStrafeSpeed() - _baseStrafe * _slowRatio) < 0.001f) { local.SetStrafeSpeed(_baseStrafe * ratio); }
+        _slowRatio = ratio;
+    }
+
     private void RestoreSpeed()
     {
         if (!_slowed) { return; }
         _slowed = false;
         VRCPlayerApi local = Networking.LocalPlayer;
         if (!Utilities.IsValid(local)) { return; }
-        if (Mathf.Abs(local.GetWalkSpeed() - _baseWalk * _slowRatio) < 0.001f) { local.SetWalkSpeed(_baseWalk); }
-        if (Mathf.Abs(local.GetRunSpeed() - _baseRun * _slowRatio) < 0.001f) { local.SetRunSpeed(_baseRun); }
-        if (Mathf.Abs(local.GetStrafeSpeed() - _baseStrafe * _slowRatio) < 0.001f) { local.SetStrafeSpeed(_baseStrafe); }
+        SetRatio(local, 1f);
     }
 
     public override void OnPlayerRespawn(VRCPlayerApi player)

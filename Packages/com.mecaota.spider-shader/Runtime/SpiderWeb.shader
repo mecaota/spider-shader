@@ -41,7 +41,8 @@
 //  ■ 揺れアニメ（_SwayAnimEnable）
 //    緯糸（リング）のみ揺らす。縦糸・ハブ・接続点は固定。
 //    弾性の波形は吐いた糸と SpiderSilk_Motion.cginc で共通化。
-//    接触中の領域では揺れを抑制。接触追従による網の変形は別処理。
+//    横糸は区間ごとに弧全体を動かすので、波の細かさ（_SwayAnimWaves）は使わない。
+//    接触追従の変形（_PullEnable）とは別の処理で、触れていても揺れは止めない。
 //
 //  ■ 質感（粘液）
 //    縦糸・横糸の距離場を smooth-min で融合し、すき間の角を水かき状の膜で
@@ -152,7 +153,8 @@ Shader "mecaota/SpiderWeb"
         [ToggleUI] _SwayAnimEnable ("緯糸の揺れ有効 (Ring Sway Enable)", Float) = 0
         _SwayAnimAmount ("揺れ幅 (Sway Amount)", Range(0, 0.05)) = 0.012
         _SwayAnimSpeed  ("揺れの速さ (Sway Speed)", Range(0, 10)) = 1.5
-        _SwayAnimWaves  ("波の細かさ (Sway Waves)", Range(0, 10)) = 2.0
+        // 巣では効かない（横糸は弧全体を動かすため）。インスペクタには出さない
+        [HideInInspector] _SwayAnimWaves  ("波の細かさ (Sway Waves)", Range(0, 10)) = 2.0
         _SwayAnimAnchor ("端の固定幅 0で固定なし (Edge Anchor)", Range(0, 0.5)) = 0.15
 
         [Header(Thread Design)]
@@ -182,10 +184,6 @@ Shader "mecaota/SpiderWeb"
         _PullStrength   ("引っ張り強さ (Pull Strength)", Range(0, 1)) = 1
         _PullMaxStretch ("千切れ開始距離 m 0で無効 (Max Stretch)", Range(0, 5)) = 0
         _PullTearFade   ("千切れフェード幅 m (Tear Fade)", Range(0.01, 2)) = 0.3
-        [ToggleUI] _PullAdhesion ("ボーンへの粘着追従 (Sticky Contact)", Float) = 0
-        _PullContactSize ("密着する範囲 m (Contact Size)", Range(0.01, 0.5)) = 0.16
-        _PullContactThicken ("接触部の糸だまり (Contact Silk)", Range(0, 2)) = 0.6
-        _PullEdgePin ("メッシュ端の固定幅 UV (Edge Pin)", Range(0, 0.2)) = 0.025
         // 捕縛点・追従先は配列 uniform（_PullAnchors[16]/_PullTargets[16]）で、Udon が
         // MaterialPropertyBlock.SetVectorArray で渡す（Properties には書けない）。
         // _PullCount は有効スロット数。0 のままなら頂点シェーダーは従来と同じ
@@ -292,7 +290,6 @@ Shader "mecaota/SpiderWeb"
 
             // ---- 接触追従の変形（uniform と変位関数は繭と共通の Pull.cginc） ----
             #include "CGINC/SpiderCocoon_Pull.cginc"
-            #include "CGINC/SpiderWeb_Adhesion.cginc"
             // ---- 投げつけた網が体に覆いかぶさる変形 ----
             #include "CGINC/SpiderWeb_Drape.cginc"
             #if defined(SW_REVEAL)
@@ -330,8 +327,7 @@ Shader "mecaota/SpiderWeb"
                 float3 worldPos : TEXCOORD1;
                 float3 worldNormal : TEXCOORD2;
                 float4 worldTangent : TEXCOORD3;
-                float contact : TEXCOORD4;
-                float fanRim : TEXCOORD5;   // ハブ→扇の外周の UV 距離（メッシュ提供時のみ）
+                float fanRim : TEXCOORD4;   // ハブ→扇の外周の UV 距離（メッシュ提供時のみ）
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -427,8 +423,6 @@ Shader "mecaota/SpiderWeb"
 
                 // ---- 接触追従の変形（ワールド空間。法線・接線は変位後の面から再計算） ----
                 float3 pD = wp, N = N0, Tn = T0;
-                // Preserve contact slots/targets; restore the original smooth
-                // distance falloff without a rigid translating contact core.
                 SC_PullDeform(pD, N, Tn);
 
                 o.pos          = UnityWorldToClipPos(pD);
@@ -464,8 +458,7 @@ Shader "mecaota/SpiderWeb"
                 float edgeD = 0.5 - max(abs(i.uv.x - 0.5), abs(i.uv.y - 0.5));
                 float edgePin = (_SwayAnimAnchor > 1e-4)
                     ? smoothstep(0.0, max(_SwayAnimAnchor, 1e-4), edgeD) : 1.0;
-                float ringMotion = (_SwayAnimEnable > 0.5 ? 1.0 : 0.0)
-                    * edgePin * (1.0 - saturate(i.contact));
+                float ringMotion = (_SwayAnimEnable > 0.5 ? 1.0 : 0.0) * edgePin;
 
                 // ============ ハブ（中心結節点）の偏心幾何 ============
                 // 外周円（UV中央・半径 _WebRadius）は固定のまま、糸が
@@ -533,8 +526,7 @@ Shader "mecaota/SpiderWeb"
                     float fanEdgeD = min((1.0 - rho) * Redge, (fanHalf - abs(fanTheta)) * r);
                     float fanPin = (_SwayAnimAnchor > 1e-4)
                         ? smoothstep(0.0, max(_SwayAnimAnchor, 1e-4), fanEdgeD) : 1.0;
-                    ringMotion = (_SwayAnimEnable > 0.5 ? 1.0 : 0.0)
-                        * fanPin * (1.0 - saturate(i.contact));
+                    ringMotion = (_SwayAnimEnable > 0.5 ? 1.0 : 0.0) * fanPin;
                 }
 
                 // ---- ジッター後の実位置でセル（区間）を確定 ----
@@ -666,9 +658,6 @@ Shader "mecaota/SpiderWeb"
                 // UV位置を使うことで角度の継ぎ目でも太さが連続する。
                 float silkR = SC_ValueNoise1(dot(uvW, float2(19.1, 27.7)) + ringK * 13.3 + _Seed);
                 hwR *= max(_RingWidth, 0.05) * lerp(1.0, 0.4 + 1.3 * silkR, _Organic);
-                float contactSilk = saturate(i.contact) * _PullContactThicken;
-                hwS *= 1.0 + contactSilk;
-                hwR *= 1.0 + contactSilk;
 
                 // ============ 粘液の糸（塗りは SpiderGoo_Shading.cginc と共通） ============
                 // 粘液感（_GooAmount）で太り・玉・膜をまとめて弱める（1 で各設定値そのまま）
@@ -711,7 +700,7 @@ Shader "mecaota/SpiderWeb"
                 float cellR = sp * Redge / max(warpBase, 1e-3);    // 横糸の間隔（UV）
                 float cellS = r * sector;                          // その半径での縦糸の間隔（弧長）
                 float fillN = STG_ValueNoise2(uvW * _GooWebScale + _Seed * 1.37);
-                float kGoo  = _Thickness * (_JunctionSize + contactSilk) * 2.5
+                float kGoo  = _Thickness * _JunctionSize * 2.5
                             + _GooWebFill * amt * min(spokeG, ringG) * min(cellR, cellS) * lerp(0.2, 2.2, fillN * fillN);
                 float hSR;                                         // 縦糸側の重み
                 float dGoo  = STG_SMin(dS, dR, kGoo, hSR);

@@ -403,8 +403,8 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // 視界ジャック（包まれ演出）の発火判定。vert/frag で同一のこの関数を使い、
         // 判定を一致させる。実体は共通実装（SpiderCocoon_VisionJack.cginc）で、
         // 中央カメラ位置により左右の目で必ず同じ結果になる。
-        // ※ SC_CylRadialNormal / SC_ShadeCocoonAt も共通化に伴い
-        //    SpiderCocoon_Compose.cginc へ移動した。
+        // ※ SC_CylRadialNormal / SC_ShadeCocoonAt は
+        //    SpiderCocoon_Goo.cginc にある（繭と共通）。
         bool SC_DecalJackActive()
         {
             return SC_VisionJackActiveEx(_RadiusFit, _HeightFit);
@@ -903,11 +903,42 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
         // Group volume: a world-space axis-derived shell, including empty-background
         // silhouette pixels. Actual displaced depth handles walls and mirrors.
+        // 視界ジャック（Pass 0/1）と同じく、深度パスと色パスに分ける。
+        //   GROUP_SHELL_DEPTH: 色は塗らず、濃い所（不透明度 SC_JACK_DEPTH_SOLID_ALPHA 以上）だけ深度を書く
+        //   GROUP_SHELL      : 深度は書かずに塗る。薄い所は奥の巣や糸を隠さない
+        // ※ 外殻の形を探す計算（レイマーチ）を両パスで 1 回ずつ行うので、そのぶん重くなる。
+        Pass
+        {
+            Name "GROUP_SHELL_DEPTH"
+            Tags { "LightMode" = "ForwardBase" }
+            ColorMask 0
+            ZWrite On
+            ZTest LEqual
+            Cull Front
+            // ステンシルは色パスと同じ（ジャックの画素だけ避ける）
+            Stencil { Ref [_StencilRef] ReadMask [_StencilRef] Comp NotEqual }
+            CGPROGRAM
+            #pragma vertex vertGroupShell
+            #pragma fragment fragGroupShellDepth
+            #pragma target 3.5
+            #pragma multi_compile_instancing
+            fixed4 fragGroupShellDepth(v2f_d i, out float depth : SV_Depth) : SV_Target
+            {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                fixed4 col = SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, depth);
+                clip(col.a - SC_JACK_DEPTH_SOLID_ALPHA);
+                return 0;
+            }
+            ENDCG
+        }
+
         Pass
         {
             Name "GROUP_SHELL"
             Tags { "LightMode" = "ForwardBase" }
-            ZWrite On
+            // 深度は GROUP_SHELL_DEPTH が濃い所だけ書いた。同じ深度を出すので LEqual で通る
+            ZWrite Off
             ZTest LEqual
             Cull Front
             Blend SrcAlpha OneMinusSrcAlpha

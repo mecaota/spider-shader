@@ -6,8 +6,8 @@ using UnityEngine;
 
 // =============================================================================
 // 質感の継承まわりの「きっかけ」とメニュー。
-//  ・アセットの取り込み・削除・移動 → 一覧（SpiderSilkLookIndex）を作り直す。
-//    シェーダー・cginc なら一致チェックもやり直す。
+//  ・.mat の取り込み・削除・移動 → 一覧（SpiderSilkLookIndex）にその分だけ反映する。
+//    蜘蛛シェーダー・cginc なら一覧を作り直し、一致チェックもやり直す。
 //  ・継承元（蜘蛛糸マテリアル）を削除しようとしたら、継承しているマテリアルを Console に出す
 //    （削除は止めない。継承先は値をそのまま保ち、「継承元が見つかりません」と警告する）。
 //    ※ 自動処理（MCP など）を止めないよう、モーダルダイアログは出さない。
@@ -21,15 +21,18 @@ internal sealed class SpiderSilkLookAssetPostprocessor : AssetPostprocessor
     static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] movedFrom)
     {
         bool mat = false, shader = false;
+        var changedMats = new List<string>();   // movedFrom の .mat は moved にも入るので見ない
         foreach (var list in new[] { imported, deleted, moved, movedFrom })
             foreach (var p in list)
             {
-                if (p.EndsWith(".mat", StringComparison.OrdinalIgnoreCase)) mat = true;
+                if (p.EndsWith(".mat", StringComparison.OrdinalIgnoreCase)) { mat = true; if (list != movedFrom) changedMats.Add(p); }
                 else if (p.Contains("com.mecaota.spider-shader") &&
                          (p.EndsWith(".shader", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".cginc", StringComparison.OrdinalIgnoreCase)))
                     shader = true;
             }
-        if (mat || shader) SpiderSilkLookIndex.Invalidate();
+        // 全体の作り直しは蜘蛛シェーダーが変わったときだけ。.mat は変わった分だけ反映する
+        if (shader) SpiderSilkLookIndex.Invalidate();
+        else if (mat) SpiderSilkLookIndex.MarkChanged(changedMats);
         if (shader) SpiderSilkLookValidator.ScheduleCheck();
         if (mat || shader)
         {

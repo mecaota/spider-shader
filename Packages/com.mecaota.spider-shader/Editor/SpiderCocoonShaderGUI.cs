@@ -147,16 +147,13 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_FanEnable", "_FanAngle", "_FanRotation", "_FanMeshRim" } },
         new Category{ Title = "粘着糸の質感", Common = false, Require = "_JunctionSize",
             Props = new[]{ "_SpokeWidth", "_RingWidth", "_Organic", "_JunctionSize", "_SpokeGoo", "_RingGoo" } },
-        // 足捕縛の変形（Anchor/Target は通常 Udon の MaterialPropertyBlock が上書きする。
-        // インスペクタで直接入れれば Udon 無しの見た目確認に使える）
-        // 捕縛点・追従先の配列（_PullAnchors/_PullTargets）は MPB 専用でインスペクターに出ない
+        // 足捕縛の変形。捕縛点・追従先の配列（_PullAnchors/_PullTargets）は MPB 専用でインスペクターに出ない
         // 変形 2 種は Udon 側の仕掛け（SurfaceContactDeformer / CaptureNetDrape）と
         // 組で使う設定なので、プリセットでは「変形ギミック」区分
         new Category{ Title = "接触追従の変形", Common = false, Require = "_PullEnable",
             Part = PresetPart.Gimmick,
             Props = new[]{ "_PullEnable", "_PullRadius", "_PullFalloff", "_PullStrength",
-                           "_PullMaxStretch", "_PullTearFade", "_PullAdhesion", "_PullContactSize",
-                           "_PullContactThicken", "_PullEdgePin", "_PullCount" } },
+                           "_PullMaxStretch", "_PullTearFade", "_PullCount" } },
         // 投げつけた網が体に覆いかぶさる変形（体のカプセル・網の向きは MPB 専用）
         new Category{ Title = "体に覆いかぶさる変形", Common = false, Require = "_DrapeEnable",
             Part = PresetPart.Gimmick,
@@ -196,10 +193,13 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             if (cat.Require != null && !map.ContainsKey(cat.Require)) continue;
             if (cat.SilkLook && role == SpiderSilkLook.Role.Inheritor) continue;
 
-            // このマテリアルに実在するプロパティだけ集める
+            // このマテリアルに実在するプロパティだけ集める。
+            // [HideInInspector] の値は出さない（巣の _SwayAnimWaves など、そのシェーダーでは効かない値）
             var list = new List<MaterialProperty>();
             foreach (var name in cat.Props)
-                if (map.TryGetValue(name, out var mp)) list.Add(mp);
+                if (map.TryGetValue(name, out var mp) &&
+                    (mp.flags & MaterialProperty.PropFlags.HideInInspector) == 0)
+                    list.Add(mp);
             if (list.Count == 0) continue;
 
             foreach (var mp in list) drawn.Add(mp.name);

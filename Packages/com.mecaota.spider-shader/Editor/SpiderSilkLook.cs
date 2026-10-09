@@ -352,6 +352,10 @@ public static class SpiderSilkLook
         return AssetDatabase.IsOpenForEdit(m);
     }
 
+    /// <summary>自動同期で書く場所か（Assets/ 配下だけ。VPM などで入れた他のパッケージの .mat は書かない）。</summary>
+    public static bool IsAutoSyncTarget(Material m) =>
+        AssetDatabase.GetAssetPath(m).StartsWith("Assets/", StringComparison.Ordinal);
+
     // -------------------------------------------------------------------------
     // 同期
     // -------------------------------------------------------------------------
@@ -361,6 +365,7 @@ public static class SpiderSilkLook
         public bool Save;     // 書いたマテリアルを 1 個ずつ保存する（明示操作・ビルド前）
         internal Func<Material, LinkInfo, bool> Hold;   // true を返したマテリアルは書かない（自動同期の安全装置）
         internal bool ReportHeld;                       // 止めたマテリアルを Problems に載せる（明示操作・ビルド前）
+        internal bool AssetsOnly;                       // Assets/ の外は警告せずに飛ばす（自動同期）
     }
 
     public sealed class SyncReport
@@ -411,6 +416,7 @@ public static class SpiderSilkLook
             waiting.Clear();
             foreach (var m in list)
             {
+                if (options.AssetsOnly && !IsAutoSyncTarget(m)) continue;
                 var link = GetLink(m);
                 string path = AssetDatabase.GetAssetPath(m);
                 if (link.State == LinkState.Broken) { problem(path + ": " + link.Detail); continue; }
@@ -429,12 +435,13 @@ public static class SpiderSilkLook
                 else goal = defaults;
 
                 var cur = ReadValues(m, cache);
-                bool editable = IsEditable(m);
+                bool? editable = null;   // 重いので、値がずれていたときだけ調べる
                 for (int i = 0; i < Props.Length; i++)
                 {
                     var p = Props[i];
                     if (SameBits(cur[i], goal[i], p.IsColor)) continue;
-                    if (!editable) { problem(path + ": 書き込めないため質感を合わせられません"); break; }
+                    editable ??= IsEditable(m);
+                    if (!editable.Value) { problem(path + ": 書き込めないため質感を合わせられません"); break; }
                     if (m.IsPropertyLockedByAncestor(p.Name)) { problem(path + ": " + p.Name + " が親マテリアルでロックされています"); continue; }
                     // 親から継承元を受け継いでいて、この項目を上書きしていない子は、親を合わせれば値が伝わる
                     if (link.FromParent && !m.IsPropertyOverriden(p.Name)) { waiting.Add(m); continue; }
@@ -455,6 +462,7 @@ public static class SpiderSilkLook
             report.Writes += writes;
             if (writes == 0) break;
         }
+        if (resetNoted.Count > 0) SavePreReset();   // 控えはまとめて保存する
 
         // 親を合わせても値が伝わらない子（通常は起きない）
         foreach (var m in waiting)
@@ -482,24 +490,36 @@ public static class SpiderSilkLook
         return report;
     }
 
-    // ---- 既定値にそろえる前の値の控え（このエディタセッションの間だけ。Console にも出す） ----
-    const string PreResetKey = "SpiderSilkLook_PreReset";
+    // ---- 既定値にそろえる前の値の控え（Library のファイルにも保存し、再起動後も残す。Console にも出す） ----
+    const string PreResetKey  = "SpiderSilkLook_PreReset";
+    const string PreResetFile = "Library/SpiderSilkLook_PreReset.txt";
     static Dictionary<string, Vector4[]> s_PreReset;
 
     static Dictionary<string, Vector4[]> PreReset()
     {
         if (s_PreReset != null) return s_PreReset;
         s_PreReset = new Dictionary<string, Vector4[]>();
+        // 同じセッションなら SessionState、再起動後はファイルから読む
+        string data = SessionState.GetString(PreResetKey, "");
+        if (data.Length == 0)
+        {
+            try { if (File.Exists(PreResetFile)) data = File.ReadAllText(PreResetFile); }
+            catch (Exception e) { Debug.LogWarning("[蜘蛛糸の質感] 控えのファイルを読めません: " + PreResetFile + "\n" + e.Message); }
+        }
         var c = System.Globalization.CultureInfo.InvariantCulture;
-        foreach (var entry in SessionState.GetString(PreResetKey, "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        var style = System.Globalization.NumberStyles.Float;
+        foreach (var entry in data.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
         {
             var kv = entry.Split('=');
             if (kv.Length != 2) continue;
             var nums = kv[1].Split(',');
             if (nums.Length != Props.Length * 4) continue;
+            var f = new float[nums.Length];
+            bool ok = true;
+            for (int i = 0; i < nums.Length && ok; i++) ok = float.TryParse(nums[i], style, c, out f[i]);
+            if (!ok) continue;
             var v = new Vector4[Props.Length];
-            for (int i = 0; i < Props.Length; i++)
-                v[i] = new Vector4(float.Parse(nums[i * 4], c), float.Parse(nums[i * 4 + 1], c), float.Parse(nums[i * 4 + 2], c), float.Parse(nums[i * 4 + 3], c));
+            for (int i = 0; i < Props.Length; i++) v[i] = new Vector4(f[i * 4], f[i * 4 + 1], f[i * 4 + 2], f[i * 4 + 3]);
             s_PreReset[kv[0]] = v;
         }
         return s_PreReset;
@@ -520,24 +540,32 @@ public static class SpiderSilkLook
             }
             sb.Append(';');
         }
-        SessionState.SetString(PreResetKey, sb.ToString());
+        string data = sb.ToString();
+        SessionState.SetString(PreResetKey, data);
+        // 空になったらファイルも消す
+        try
+        {
+            if (data.Length > 0) File.WriteAllText(PreResetFile, data);
+            else if (File.Exists(PreResetFile)) File.Delete(PreResetFile);
+        }
+        catch (Exception e) { Debug.LogWarning("[蜘蛛糸の質感] 控えのファイルを保存できません: " + PreResetFile + "\n" + e.Message); }
     }
 
+    // 控えに入れて Console に出す（ファイルへの保存は Sync の最後にまとめて行う）
     static void NotePreReset(Material m, Vector4[] old, Vector4[] goal)
     {
         string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(m));
         if (string.IsNullOrEmpty(guid)) return;
         PreReset()[guid] = (Vector4[])old.Clone();
-        SavePreReset();
         var sb = new System.Text.StringBuilder("[蜘蛛糸の質感] 継承元なしのため、質感を蜘蛛糸シェーダーの既定値にそろえました: " + AssetDatabase.GetAssetPath(m) +
-            "\n元の見た目に戻すには、インスペクタの「そろえる前の質感で継承元を作る…」を押してください（このエディタを閉じるまで有効。元の値は下のとおり）");
+            "\n元の見た目に戻すには、インスペクタの「そろえる前の質感で継承元を作る…」を押してください（元の値は下のとおり）");
         for (int i = 0; i < Props.Length; i++)
             if (!SameBits(old[i], goal[i], Props[i].IsColor))
                 sb.Append("\n  ").Append(Props[i].Name).Append(": ").Append(Fmt(old[i], Props[i].IsColor)).Append(" → ").Append(Fmt(goal[i], Props[i].IsColor));
         Debug.LogWarning(sb.ToString(), m);
     }
 
-    /// <summary>継承元なしで既定値にそろえる前の質感（このエディタセッションで控えたもの）。</summary>
+    /// <summary>継承元なしで既定値にそろえる前の質感（控えはエディタを閉じても残る）。</summary>
     public static bool TryGetPreResetValues(Material m, out Vector4[] values)
     {
         values = null;
