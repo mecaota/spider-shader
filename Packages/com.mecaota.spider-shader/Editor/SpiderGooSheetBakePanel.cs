@@ -61,9 +61,15 @@ internal static class SpiderGooSheetBakePanel
             return;
         }
         long bytes = 0;
-        foreach (string path in unused) bytes += new FileInfo(path).Length;
+        string projectRoot = Path.GetDirectoryName(Application.dataPath);
+        foreach (string path in unused)
+        {
+            var file = new FileInfo(Path.Combine(projectRoot, path));
+            if (file.Exists) bytes += file.Length;
+        }
         string message = SpiderGooSheetBaker.DefaultFolder + " の焼き込み配列のうち、どのマテリアル・Prefab・シーンからも使われていない "
-            + unused.Count + " 個（" + (bytes / (1024.0 * 1024.0)).ToString("F1") + " MiB）をゴミ箱へ移します。";
+            + unused.Count + " 個（" + (bytes / (1024.0 * 1024.0)).ToString("F1") + " MiB）をゴミ箱へ移します。\n"
+            + "このあと焼き直しを Ctrl+Z で取り消すと、ゴミ箱へ移した配列を参照して表示が崩れます。そのときは焼き直してください。";
         if (!EditorUtility.DisplayDialog("使われていない焼き込みを削除", message, "ゴミ箱へ移す", "キャンセル")) return;
         int moved = SpiderGooSheetBaker.MoveToTrash(unused);
         Debug.Log("使われていない焼き込み配列を " + moved + " 個ゴミ箱へ移しました。");
