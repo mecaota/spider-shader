@@ -80,8 +80,9 @@ internal static class SpiderSilkLookAutoSync
                     stream.GetChangeAssetObjectPropertiesEvent(i, out var e);
                     if (!(EditorUtility.InstanceIDToObject(e.instanceId) is Material m)) break;
                     bool spider = SpiderSilkLook.GetRole(m.shader) != SpiderSilkLook.Role.None;
-                    // シェーダーを切り替えて役割が変わったら一覧を作り直す
+                    // シェーダーを切り替えて役割が変わったら一覧を作り直す（蜘蛛シェーダーどうしなら、その .mat だけ反映する）
                     if (spider != SpiderSilkLookIndex.Contains(m)) SpiderSilkLookIndex.Invalidate();
+                    else if (spider && SpiderSilkLookIndex.RoleChanged(m)) SpiderSilkLookIndex.MarkChanged(new[] { AssetDatabase.GetAssetPath(m) });
                     if (spider || SpiderSilkLookIndex.Contains(m)) Request();
                     break;
                 }

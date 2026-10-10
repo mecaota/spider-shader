@@ -501,7 +501,7 @@ SpiderWeb は**常に粘液の糸**で描きます（粘液モードの ON/OFF �
 - **頂点シェーダーの変位**: 共通の`CGINC/SpiderCocoon_Pull.cginc`（`SpiderWeb.shader`と`SpiderCocoon.shader`の両方が使用）が、ワールド空間で「捕縛点（配列 `_PullAnchors[i].xyz`）→追従先（配列 `_PullTargets[i].xyz`）のずれ」を、捕縛点から`_PullRadius`以内の頂点に距離減衰つきで足します。ずれの向きは問わないので、面から離せば伸び、押し込めば凹みます。半径の外は厳密に0なので、メッシュ端は動きません。スロットは最大16本（複数プレイヤーの両足・両手・腰・頭など）で、影響圏が重なる所は重みの和で正規化します。
 - **模様はUVで決まる**ため、頂点が動いても糸は面に貼りついたまま伸びます（テクスチャを貼った布を引っぱるのと同じ）。
 - **法線の再計算**: 陰影はワールド法線で決まるので、変位後の面の傾きを「少しずらした2点を同じ変位関数に通した差分（有限差分）」から求め直し、トゥーン陰影を斜面に沿わせます。
-- **駆動はUdon**（`com.mecaota.restraint`パッケージの`SurfaceContactDeformer`）: 追従ボーン（配列で任意本数）が面に触れた場所をその場で捕縛点として同期。複数プレイヤー同時対応。以後は全クライアントが毎フレーム各スロットのボーン位置を読み、`MaterialPropertyBlock.SetVectorArray`でシェーダーへ渡します。
+- **駆動はUdon**（このパッケージの`Runtime/SurfaceContactDeformer/SurfaceContactDeformer.cs`）: 追従ボーン（配列で任意本数）が面に触れた場所をその場で捕縛点として同期。複数プレイヤー同時対応。以後は全クライアントが毎フレーム各スロットのボーン位置を読み、`MaterialPropertyBlock.SetVectorArray`でシェーダーへ渡します。
 
 ## 構成ファイル
 
@@ -510,7 +510,7 @@ Runtime/CGINC/SpiderCocoon_Pull.cginc  配列uniform（_PullAnchors[16]／_PullT
 Runtime/SpiderWeb.shader              _PullEnable以下のプロパティと頂点シェーダーからの呼び出し
 Runtime/SpiderCocoon.shader           同上（繭。細かい変形には細分化した円柱メッシュが必要）
 Editor/WebPlaneMeshGenerator.cs       細分化平面メッシュ生成（Tools/SpiderShader/Generate WebPlane Mesh...）
-（別パッケージ）com.mecaota.restraint/Runtime/SurfaceContactDeformer/SurfaceContactDeformer.cs   Udon駆動
+Runtime/SurfaceContactDeformer/SurfaceContactDeformer.cs   Udon駆動
 ```
 
 ## セットアップ手順
@@ -591,9 +591,9 @@ WebbedWorld の `TreeWebStations`（木の根元の巣 131 個）は平面では
 | 項目 | 目安と意味 |
 |---|---|
 | 引っ張り半径 | 0.9m。変形が周囲に伝わる距離 |
-| 千切れ開始距離 / フェード幅 | 0.7m / 0.15m。0.85mで戻り切るため、Deformerの解放距離0.85mと一致 |
+| 千切れ開始距離 / フェード幅 | 0.7m / 0.15m。0.85mで戻り切る。Deformerの解放距離（Auto Release Distance、既定0.8m）を0.85mにすると一致する |
 
-10〜18mの大きなWebPlaneでは64分割だと接触部が角張るため、`WebPlaneAdhesive.asset`（128分割、16,641頂点）を用意しています。
+10〜18mの大きなWebPlaneでは64分割だと接触部が角張ります。`Tools/SpiderShader/Generate WebPlane Mesh...`で分割数を128にして作ったメッシュ（16,641頂点）を使ってください。
 小さい巣は従来の64分割を使えます。頂点数は約4倍になるので、大きい巣だけに適用します。
 
 以前の「ボーンへの粘着追従」（`_PullAdhesion`・`_PullContactSize`・`_PullContactThicken`・`_PullEdgePin`）は描画に使っていなかったため、撤去しました。
@@ -632,7 +632,7 @@ WebbedWorld の `TreeWebStations`（木の根元の巣 131 個）は平面では
 
 巻き角度は全体で共有し、高さを各部位の軸に滑らかに合わせます。最寄り部位への突然の切り替えや、軸の符号反転による裏返りを避けます。CocoonGroupLinkerは結合後の代表を保持し、`unlinkHysteresis`（既定0.015m）だけ余計に離れてから分離します。
 
-通常視点と鏡で同じ外殻パスを使います。外殻は視界ジャックと同じく深度パス（`GROUP_SHELL_DEPTH`）と色パス（`GROUP_SHELL`）の2パスで描き、深度は濃い所（不透明度0.9以上）だけ書きます。薄い所は奥の巣や糸を隠しません。単独の繭・視界ジャックは従来のパスです。代表の描画バウンズを拡張し、解除時に戻します。1グループは最大8部位で、超過分は別グループに残します。代表から各部位への接続を用いるため、任意配置の完全な凸包ではありません。
+通常視点と鏡で同じ外殻パスを使います。外殻は視界ジャックと同じく深度パス（`GROUP_SHELL_DEPTH`）と色パス（`GROUP_SHELL`）の2パスで描き、深度は濃い所（不透明度0.5以上）だけ書きます。糸の本体は奥の物を隠し、薄い膜は隠しません。単独の繭・視界ジャックは従来のパスです。代表の描画バウンズを拡張し、解除時に戻します。1グループは最大8部位で、超過分は別グループに残します。代表から各部位への接続を用いるため、任意配置の完全な凸包ではありません。
 
 PC向けのレイマーチ描画です。外殻を描く画素では最大80ステップに加えて法線計算を行います。2パスで1回ずつ行うので、計算は2回分です。大面積・多数同時表示時のGPU負荷、VRChat実機の左右眼・FBTでの挙動は別途確認が必要です。
 

@@ -355,10 +355,11 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         if (index < 0) return false;
 
         // インスペクタと同じく、Require を満たす最初のカテゴリに属する
+        bool hidden = (shader.GetPropertyFlags(index) & ShaderPropertyFlags.HideInInspector) != 0;
         foreach (var cat in Categories)
         {
             if (cat.Require != null && shader.FindPropertyIndex(cat.Require) < 0) continue;
-            if (Array.IndexOf(cat.Props, prop) >= 0 ||
+            if ((!hidden && Array.IndexOf(cat.Props, prop) >= 0) ||
                 (cat.Hidden != null && Array.IndexOf(cat.Hidden, prop) >= 0))
             {
                 group = cat.Title;
@@ -367,7 +368,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             }
         }
 
-        if ((shader.GetPropertyFlags(index) & ShaderPropertyFlags.HideInInspector) != 0) return false;
+        if (hidden) return false;
         group = OtherPresetGroup;
         return true;
     }

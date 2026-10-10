@@ -80,8 +80,6 @@ MonoBehaviour:
     value: 0.0043
   - name: _SwayAnimSpeed
     value: 1.1
-  - name: _SwayAnimWaves
-    value: 2.7
   - name: _SwayAnimAnchor
     value: 0.15
   - name: _ThreadJitter

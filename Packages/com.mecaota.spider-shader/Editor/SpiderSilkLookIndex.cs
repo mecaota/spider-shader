@@ -13,7 +13,8 @@ using UnityEngine;
 //  まだ保存していない変更（インスペクタでシェーダーを切り替えた直後など）も拾うため、
 //  読み込み済みで未保存（dirty）のマテリアルはメモリ上のシェーダーで判定して足す。
 //  .mat の取り込み・削除・移動（postprocessor）は、その .mat だけを反映する。
-//  蜘蛛シェーダーの取り込みや、シェーダーの切り替え（ObjectChangeEvents）では全体を作り直す。
+//  蜘蛛シェーダーの取り込みや、蜘蛛シェーダーとそれ以外の切り替え（ObjectChangeEvents）では全体を作り直す。
+//  蜘蛛シェーダーどうしの切り替え（吐いた糸 ↔ 巣など）は、その .mat だけを反映する。
 // =============================================================================
 public static class SpiderSilkLookIndex
 {
@@ -33,6 +34,16 @@ public static class SpiderSilkLookIndex
     {
         if (s_Dirty || s_Sources == null) return;   // どのみち全体を作り直す
         foreach (var p in paths) s_Changed.Add(p);
+    }
+
+    /// <summary>一覧に記録した役割が、今のシェーダーの役割と違うか（蜘蛛シェーダーどうしの切り替え）。</summary>
+    public static bool RoleChanged(Material m)
+    {
+        Ensure();
+        if (m == null) return false;
+        var role = SpiderSilkLook.GetRole(m.shader);
+        return (role == SpiderSilkLook.Role.Source) != s_Sources.Contains(m) ||
+               (role == SpiderSilkLook.Role.Inheritor) != s_Inheritors.Contains(m);
     }
 
     public static IReadOnlyList<Material> Sources    { get { Ensure(); return s_Sources; } }
