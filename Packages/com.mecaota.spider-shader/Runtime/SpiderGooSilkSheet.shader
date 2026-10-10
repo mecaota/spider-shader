@@ -321,8 +321,6 @@ Shader "mecaota/SpiderGooSilkSheet"
                         {
                             // ---- 接触追従の変形（ワールド空間。法線・接線は変位後の面から再計算） ----
                             float3 pD = wp, N = N0, Tn = T0;
-                            // Preserve contact slots/targets; restore the original smooth
-                            // distance falloff without a rigid translating contact core.
                             SC_PullDeform(pD, N, Tn);
                             if (layer > 0.5) pD += normalize(N) * extraGap;
 
