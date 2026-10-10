@@ -237,7 +237,7 @@ internal class SpiderShaderPresetSaveWindow : EditorWindow
         w._displayName = source.name;
         if (from != null)
         {
-            w._displayName = from.Label;
+            w._displayName = from.Label + "（自分用）";   // 標準プリセットと同じ名前のボタンが並ばないように
             w._category    = from.category ?? "";
             w._description = from.description ?? "";
             var stored = from.StoredGroups();

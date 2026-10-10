@@ -188,6 +188,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private float[] _pendingUntil;
     private float[] _cooldownUntil;
     private float[] _releaseUntil;               // 千切れの解放要求を送ってから同期待ちの間は再送しない
+    private float _lastClaimSent = -999f;        // 最後に捕縛要求を送った時刻（応答の遅れたスロットもリスポーンで外すため）
     private bool _localInside = false;
     private Vector3 _tmpAnchor;
     private float _tmpParam;
@@ -480,6 +481,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     // 処理中に呼ばれたとき、送信者がその外側のイベントの送り主のままなので弾かれる
     private void SendClaim(int playerId, int boneIndex, Vector3 anchorLocal, float param)
     {
+        _lastClaimSent = Time.time;
         if (Networking.IsOwner(gameObject)) { ClaimSlotCore(playerId, boneIndex, anchorLocal, param); }
         else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ClaimSlot), playerId, boneIndex, anchorLocal, param); }
     }
@@ -638,7 +640,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         if (player == null || !player.IsValid()) { return; }
         float now = Time.time;
         // くっついている・要求の応答待ち・外部捕縛中の巣だけ送る（リスポーンで全部の巣が送らないように）
-        bool send = _externalCaptureActive || HasSlotOf(player.playerId);
+        // 応答待ちが切れた後に同期が届くこともあるので、最近捕縛要求を送った巣も送る
+        bool send = _externalCaptureActive || HasSlotOf(player.playerId) || now < _lastClaimSent + 5f;
         for (int b = 0; b < bones.Length && !send; b++) { if (now < _pendingUntil[b]) { send = true; } }
         _externalCaptureActive = false;
         _nextExternalRelease = now + 1f;

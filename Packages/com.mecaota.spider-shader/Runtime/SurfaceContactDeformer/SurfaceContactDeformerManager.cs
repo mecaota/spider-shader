@@ -34,6 +34,7 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
     private bool _slowed = false;
     private float _slowRatio = 1f;
     private float _baseWalk, _baseRun, _baseStrafe;
+    private float _myWalk, _myRun, _myStrafe;   // 最後に自分が書いた速度（他のギミックが変えたかの判定に使う）
 
     // 既に登録済みなら何もしない
     public void Register(SurfaceContactDeformer d)
@@ -92,7 +93,8 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
             _baseWalk = local.GetWalkSpeed();
             _baseRun = local.GetRunSpeed();
             _baseStrafe = local.GetStrafeSpeed();
-            _slowRatio = 1f; // 今の速度＝元の速度なので、次の SetRatio で 3 つとも書き換わる
+            // 今の速度＝元の速度なので、次の SetRatio で 3 つとも書き換わる
+            _myWalk = _baseWalk; _myRun = _baseRun; _myStrafe = _baseStrafe;
             SetRatio(local, ratio);
             _slowed = true;
         }
@@ -109,9 +111,10 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
     // 速度を「元の速度 × ratio」にする。自分が設定した値のままの速度だけ書き換える（後から他のギミックが変えた速度は触らない）
     private void SetRatio(VRCPlayerApi local, float ratio)
     {
-        if (Mathf.Abs(local.GetWalkSpeed() - _baseWalk * _slowRatio) < 0.001f) { local.SetWalkSpeed(_baseWalk * ratio); }
-        if (Mathf.Abs(local.GetRunSpeed() - _baseRun * _slowRatio) < 0.001f) { local.SetRunSpeed(_baseRun * ratio); }
-        if (Mathf.Abs(local.GetStrafeSpeed() - _baseStrafe * _slowRatio) < 0.001f) { local.SetStrafeSpeed(_baseStrafe * ratio); }
+        // 項目ごとに、最後に自分が書いた値のままのときだけ書き換える（書かなかった項目は、他のギミックが戻すのを待つ）
+        if (Mathf.Abs(local.GetWalkSpeed() - _myWalk) < 0.001f) { _myWalk = _baseWalk * ratio; local.SetWalkSpeed(_myWalk); }
+        if (Mathf.Abs(local.GetRunSpeed() - _myRun) < 0.001f) { _myRun = _baseRun * ratio; local.SetRunSpeed(_myRun); }
+        if (Mathf.Abs(local.GetStrafeSpeed() - _myStrafe) < 0.001f) { _myStrafe = _baseStrafe * ratio; local.SetStrafeSpeed(_myStrafe); }
         _slowRatio = ratio;
     }
 

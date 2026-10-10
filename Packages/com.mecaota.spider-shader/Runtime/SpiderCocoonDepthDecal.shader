@@ -904,7 +904,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // Group volume: a world-space axis-derived shell, including empty-background
         // silhouette pixels. Actual displaced depth handles walls and mirrors.
         // 視界ジャック（Pass 0/1）と同じく、深度パスと色パスに分ける。
-        //   GROUP_SHELL_DEPTH: 色は塗らず、濃い所（不透明度 SC_JACK_DEPTH_SOLID_ALPHA 以上）だけ深度を書く
+        //   GROUP_SHELL_DEPTH: 色は塗らず、濃い所（不透明度 SCG_SHELL_DEPTH_ALPHA 以上）だけ深度を書く
         //   GROUP_SHELL      : 深度は書かずに塗る。薄い所は奥の巣や糸を隠さない
         // ※ 外殻の形を探す計算（レイマーチ）を両パスで 1 回ずつ行うので、そのぶん重くなる。
         Pass
@@ -927,7 +927,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 fixed4 col = SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, depth);
-                clip(col.a - SC_JACK_DEPTH_SOLID_ALPHA);
+                clip(col.a - SCG_SHELL_DEPTH_ALPHA);
                 return 0;
             }
             ENDCG

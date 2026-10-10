@@ -1,6 +1,10 @@
 #ifndef SPIDERCOCOON_GROUP_SHELL_INCLUDED
 #define SPIDERCOCOON_GROUP_SHELL_INCLUDED
 
+// 外殻の深度パス（GROUP_SHELL_DEPTH）で深度を書く不透明度の下限。
+// 視界ジャック（0.9）より低くし、糸の本体（不透明度 0.7〜0.9 くらい）は奥の物を隠し、薄い膜だけ透かす
+#define SCG_SHELL_DEPTH_ALPHA 0.5
+
 // World-space envelope. No screen-depth samples: both VR eyes see the same
 // surface, and moving the camera cannot change which body samples define it.
 float _GroupRadiusScale;

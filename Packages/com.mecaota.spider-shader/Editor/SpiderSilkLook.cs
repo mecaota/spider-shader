@@ -355,6 +355,14 @@ public static class SpiderSilkLook
     public static bool IsAutoSyncTarget(Material m) =>
         AssetDatabase.GetAssetPath(m).StartsWith("Assets/", StringComparison.Ordinal);
 
+    /// <summary>自分と Material Variant の親がすべて Assets/ 配下か（親が外にあると、親から伝わる値は自動同期で変わらない）。</summary>
+    public static bool AutoSyncReaches(Material m)
+    {
+        for (var x = m; x != null; x = x.parent)
+            if (!IsAutoSyncTarget(x)) return false;
+        return true;
+    }
+
     // -------------------------------------------------------------------------
     // 同期
     // -------------------------------------------------------------------------
@@ -415,8 +423,13 @@ public static class SpiderSilkLook
             waiting.Clear();
             foreach (var m in list)
             {
-                if (options.AssetsOnly && !IsAutoSyncTarget(m)) continue;
                 var link = GetLink(m);
+                if (options.AssetsOnly && !IsAutoSyncTarget(m))
+                {
+                    // 書かないが、安全装置の判定は通す（リンクの想定外の変化を、後のメニュー同期やビルド前の同期でも止められるように）
+                    if (pass == 0) options.Hold?.Invoke(m, link);
+                    continue;
+                }
                 string path = AssetDatabase.GetAssetPath(m);
                 if (link.State == LinkState.Broken) { problem(path + ": " + link.Detail); continue; }
                 if (options.Hold != null && options.Hold(m, link))
@@ -443,7 +456,12 @@ public static class SpiderSilkLook
                     if (!editable.Value) { problem(path + ": 書き込めないため質感を合わせられません"); break; }
                     if (m.IsPropertyLockedByAncestor(p.Name)) { problem(path + ": " + p.Name + " が親マテリアルでロックされています"); continue; }
                     // 親から継承元を受け継いでいて、この項目を上書きしていない子は、親を合わせれば値が伝わる
-                    if (link.FromParent && !m.IsPropertyOverriden(p.Name)) { waiting.Add(m); continue; }
+                    if (link.FromParent && !m.IsPropertyOverriden(p.Name))
+                    {
+                        // 自動同期で親が書かれない（Assets/ の外にある）なら、伝わるのを待たない
+                        if (!options.AssetsOnly || AutoSyncReaches(m)) waiting.Add(m);
+                        continue;
+                    }
                     if (options.DryRun)
                     {
                         report.Planned.Add(path + " " + p.Name + ": " + Fmt(cur[i], p.IsColor) + " → " + Fmt(goal[i], p.IsColor));
