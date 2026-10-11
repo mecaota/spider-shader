@@ -11,6 +11,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.vrchat.base",
+            "expression": "",
+            "define": "SPIDER_SHADER_VRCSDK"
+        }
+    ],
     "noEngineReferences": false
 }

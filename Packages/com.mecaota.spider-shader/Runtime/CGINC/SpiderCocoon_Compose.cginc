@@ -3,9 +3,10 @@
 
 // ---------------------------------------------------------------------------
 // SpiderCocoon_Compose.cginc
-// 「レイヤー線対称ループ → ライティング → over 合成 → α割り戻し」の共通実装。
-// 本体 SpiderCocoon（メッシュ）・SpiderCocoonDepthDecal（glue/殻/ジャック）の
-// 3実装で重複していた合成ループを、この1関数に集約する。
+// 「レイヤー線対称ループ → ライティング → over 合成 → α割り戻し」の共通実装
+// （細い繊維を半透明で重ねる描き方）。
+// 現在は SpiderThreadTrail の通常モードが使用。繭（本体・デカール）は粘液の糸
+// （SpiderCocoon_Goo.cginc の SC_CompositeGoo）で描く。
 //
 // 前提 include（.shader 側でこの順に読み込むこと）:
 //   SpiderCocoon_Noise.cginc → Common → Thread → Lighting → 本ファイル
@@ -114,48 +115,7 @@ fixed4 SC_CompositeLayers(float2 uv, float3 N, float3 T, float3 B, float3 worldP
     return fixed4(accumRGB / max(accumA, 1e-4), accumA);
 }
 
-// ---------------------------------------------------------------------------
-// 円筒マッピングの共通シェーディングヘルパー
-// 「メッシュUVを持たない任意のローカル点」を、本体 SpiderCocoon と同じ
-// 手続き糸＋トゥーン＋リムで着色する。デカールの glue（深度復元した体表点）と
-// 視界ジャックの内壁（レイ交差点）の両方から使う共用部品。
-// ---------------------------------------------------------------------------
-
-// ローカル点の「円筒の径方向」ワールド法線（陰影用）
-float3 SC_CylRadialNormal(float3 lp)
-{
-    float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
-    float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
-    float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
-    float3 radialW = colX * lp.x + colZ * lp.z;
-    return (length(lp.xz) > 1e-5) ? normalize(radialW) : normalize(colY);
-}
-
-// ローカル点 localPos（＝繭の上の点）を手続き糸＋トゥーン＋リムで着色して返す。
-// 糸の隙間なら discard（SC_CompositeLayers 内）。
-fixed4 SC_ShadeCocoonAt(float3 localPos, float3 worldPos, float3 N)
-{
-    float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
-    float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
-
-    float ang = atan2(localPos.z, localPos.x);
-    // 横リング: uv.x=円周(糸が走る方向), uv.y=軸(巻き数 cy が並ぶ方向)
-    float2 uv = float2(ang / (UNITY_PI * 2.0) + 0.5, localPos.y + 0.5);
-
-    float3 axisDir = normalize(colY);   // 体軸
-    // N はワールド固定の径方向のまま使う（視線による反転はしない）。
-    // 反転すると法線が常にカメラを向き、陰影がカメラ追従になって
-    // 正対時に白飛びする（ライト方向ベースの自然な陰影にならない）。
-    // 裏向き法線でのリム暴走は SC_RimLight 側の abs で防いでいる。
-    float3 nt = cross(axisDir, N);
-    float3 T = (length(nt) > 1e-5) ? normalize(nt) : normalize(colX); // uv.x=円周方向
-    float3 B = axisDir;                                               // uv.y=軸方向
-
-    float2 aaUV = float2(fwidth(uv.x), fwidth(uv.y));
-
-    // 円筒マッピング版: uv.x=円周（ラップ）のため角度は整数スナップ（snapCx=true）、
-    // Fuzz 折返しあり、通常ライティング。
-    return SC_CompositeLayers(uv, N, T, B, worldPos, aaUV, true, true, false);
-}
+// ※ 円筒マッピングのヘルパー SC_CylRadialNormal / SC_ShadeCocoonAt は、繭が粘液の
+//   糸になったのに合わせて SpiderCocoon_Goo.cginc へ移動した。
 
 #endif // SPIDERCOCOON_COMPOSE_INCLUDED

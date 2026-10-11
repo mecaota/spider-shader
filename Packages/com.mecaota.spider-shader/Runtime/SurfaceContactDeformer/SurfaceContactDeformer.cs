@@ -8,7 +8,7 @@ using VRC.Udon.Common.Interfaces;
 /// 面（蜘蛛の巣・繭など。mecaota/SpiderWeb・mecaota/SpiderCocoon シェーダー、_PullEnable ON）に
 /// 手足が触れた場所をその手足に追従させて伸ばす／凹ませるギミック（見た目のみ）。
 ///
-/// ・追従ボーンは bones 配列で任意本数。面（Plane/Sphere/Cylinder）から接触距離以内に
+/// ・追従ボーンは bones 配列で任意本数。面（Plane/Sphere/Cylinder/TreeFan）から接触距離以内に
 ///   来たボーンをその場で「捕縛」し、触れた瞬間のローカル位置をスロットに記録する
 /// ・複数プレイヤー同時対応。最大 MaxSlots 本のスロットを全員で先着共有する
 /// ・全クライアントが毎フレーム Tick()（ボーン位置が確定した後）で各スロットの
@@ -17,6 +17,8 @@ using VRC.Udon.Common.Interfaces;
 ///   頂点の変形はシェーダー側で行うため、このスクリプトはメッシュに触らない
 /// ・捕縛されたボーンには wrapByBone の GameObject（デカール繭の円柱など）を付け、
 ///   ボーン位置・向きへ毎フレーム追従させる（見た目の「糸が巻き付く」演出）
+/// ・threadBySlot（任意）を与えると、くっついた場所（面の上）とボーンの間に太い粘液の糸
+///   （LineRenderer）を張る。伸びるほど細り、千切れ（autoReleaseDistance）で消える
 ///
 /// 負荷対策（マネージャ登録制）:
 /// ・PostLateUpdate は持たず public Tick() を SurfaceContactDeformerManager が駆動する。
@@ -29,6 +31,15 @@ using VRC.Udon.Common.Interfaces;
 ///   （自分がオーナーなら直接呼ぶ）。書き手が常に 1 人なので更新の取りこぼしが起きない
 /// ・オーナーは退室者のスロットを OnPlayerLeft／OnOwnershipTransferred で掃除する
 /// ・移動は拘束しない。手足が捕縛点から autoReleaseDistance 以上離れたら「千切れ」て解放
+///
+/// くっつき方（固定設置の巣で使う設定）:
+/// ・segmentContact: ボーンの点ではなく「ボーンの区間（そのボーン→子ボーン。すねなら膝→足首）」と
+///   面の距離で判定する。手足の表面が触れた瞬間にくっつき、区間のどこが触れたか（割合）も記録して
+///   その点に面を追従させる
+/// ・pullOnly: くっついた後は「くっついた側へ引っ張る向き」と面に沿った向きにだけ追従し、
+///   手足を面に近づけても面の奥へは凹ませない
+/// ・slowLocalWhenStuck: どこか 1 か所でもくっついている間、ローカルの移動速度を stuckSpeedRatio 倍に
+///   する（どのボーンでも同じ。manager がまとめて適用・解除する）
 ///
 /// 面ごとの座標（boneSurfaces）:
 /// ・boneSurfaces[b] を与えると、ボーン b の接触判定・捕縛点ローカル座標・投影を
@@ -81,6 +92,26 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     [Tooltip("Cylinder: 半高（ローカル単位。標準 Cylinder は 1）")]
     public float surfaceHalfHeightLocal = 1f;
 
+    // TreeFan: 幹（ローカル Y 軸）の正面 +Z の高さ treeHubHeight にハブがあり、そこから
+    // 幹を左右 treeWrapAngle 度まで回り込みつつ地面へ扇形に広がる巣。
+    // 幹の周りの角度 α・幹表面からの距離 d として、外周（接地線）は
+    // (α/A)²+(d/b)²=1 の楕円、高さは 地面 + ハブ高 × (1-s)(1-sag·s)（s = 楕円の正規化半径）。
+    // TreeWebFanBuilder が同じ式でメッシュを作る（メッシュは実際の幹・地面に密着させてあるので
+    // ここでの判定は数 cm の近似）
+    [Header("木の幹に張り付く扇形（shape = TreeFan）")]
+    [Tooltip("TreeFan: 幹の半径＋浮き（m）。ローカル Y 軸が幹の中心線、+Z が巣の正面")]
+    public float treeTrunkRadius = 0.25f;
+    [Tooltip("TreeFan: ハブ（中心結節点）の地面からの高さ（m）")]
+    public float treeHubHeight = 1.75f;
+    [Tooltip("TreeFan: 巣が幹を回り込む角度（片側・度）")]
+    public float treeWrapAngle = 95f;
+    [Tooltip("TreeFan: 正面で幹の表面から外周（接地線）までの距離（m）")]
+    public float treeReach = 1.25f;
+    [Tooltip("TreeFan: 縦糸のたわみ（0 で直線、大きいほど地面へなだらかに降りる）")]
+    public float treeSag = 0.35f;
+    [Tooltip("TreeFan: 地面の高さの近似平面 y = X*x + Y*z + Z（ローカル）")]
+    public Vector3 treeGround = Vector3.zero;
+
     [Header("捕縛")]
     [Tooltip("面からこの距離（m）以内に来たボーンを捕縛する（どちら側でも）。ボーン別指定が無いとき共通値")]
     public float contactDistance = 0.2f;
@@ -100,6 +131,45 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     [Tooltip("ON: トリガー内にいる間だけ新しい接触を捕縛する（通りすがりの誤爆防止）")]
     public bool requireTrigger = true;
 
+    [Tooltip("Plane のみ: ボーンが面を通過して裏側（ローカル -Y 側）に入ってから捕縛する。面に近づいただけでは変形しない（FootTrapWeb 用）")]
+    public bool captureOnlyBelowSurface = false;
+
+    [Tooltip("単位サイズの WebPlane: マテリアルの扇形の範囲に捕縛を合わせる")]
+    public bool matchFanShape = true;
+
+    [Header("くっつき方")]
+    [Tooltip("ON: ボーンの区間（そのボーン→子ボーン。すねなら膝→足首）と面の距離で接触を判定し、触れた位置に面を追従させる。OFF: ボーンの根元の点で判定（従来）")]
+    public bool segmentContact = false;
+
+    [Tooltip("ON: くっついた後は引っ張る向き（くっついた側）と面に沿った向きにだけ追従し、手足を面に近づけても面の奥へは凹ませない")]
+    public bool pullOnly = false;
+
+    [Tooltip("ON: ローカルプレイヤーがどこか 1 か所でもくっついている間、移動速度を stuckSpeedRatio 倍にする（manager が適用）")]
+    public bool slowLocalWhenStuck = false;
+
+    [Tooltip("くっついている間の移動速度の倍率（歩き・走り・横歩き）")]
+    public float stuckSpeedRatio = 1f / 3f;
+
+    [Header("粘液の糸（任意）")]
+    [Tooltip("くっついた場所（面）とボーンの間に張る太い粘液の糸（LineRenderer。SpiderThreadTrail の粘液マテリアル）。スロット番号ごとに 1 本、最大 MaxSlots 本。空なら糸は描かない")]
+    public LineRenderer[] threadBySlot;
+    [Tooltip("糸の太さ（m。アバターの目の高さ 1.6m 基準で拡縮）")]
+    public float threadWidth = 0.08f;
+    [Tooltip("この長さ（m）までは太さそのまま。これより伸びると √(この長さ/長さ) 倍に細る（引き伸ばされた粘液）")]
+    public float threadRestLength = 0.15f;
+    [Tooltip("伸びたときの太さの下限（割合）")]
+    public float threadMinWidth = 0.3f;
+    [Tooltip("糸のたるみ（長さ 1m あたりの m）。シェーダーの重力たわみで曲げる")]
+    public float threadSag = 0.06f;
+    [Tooltip("ON: 糸の始点を「変形した巣の面」（くっついた点がシェーダーで動いた先）にする。_PullEnable の巣で凹み・伸びと糸を併用するとき用（落とし穴の巣）。OFF: 変形前の面の上の点（従来）")]
+    public bool threadFromDeformedWeb = false;
+
+    [Header("効果音（任意）")]
+    [Tooltip("手足がくっついた瞬間に鳴らす AudioSource（くっついた場所へ移して clip を PlayOneShot）。同期済みのスロットから鳴らすので周りの人にも聞こえる。空なら鳴らさない")]
+    public AudioSource contactAudio;
+    [Tooltip("続けてくっついたとき（すね→もも→腰…）に鳴らす最短間隔（秒）")]
+    public float contactAudioInterval = 0.4f;
+
     // ---- 同期状態（オーナーだけが書く）----
     // playerId（0 = 空き。VRChat の playerId は 1 以上）
     [UdonSynced] private int[] _slotPlayer = new int[MaxSlots];
@@ -107,6 +177,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     [UdonSynced] private int[] _slotBone = new int[MaxSlots];
     // 触れた瞬間のボーン位置（そのボーンの面のローカル座標）
     [UdonSynced] private Vector3[] _slotAnchor = new Vector3[MaxSlots];
+    // 触れた位置がボーンの区間のどこか（0=ボーンの根元、1=子ボーン。segmentContact 用）
+    [UdonSynced] private float[] _slotParam = new float[MaxSlots];
 
     // ---- ローカル ----
     private bool _inited = false;
@@ -115,29 +187,137 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private Vector4[] _targetsV4;
     private float[] _pendingUntil;
     private float[] _cooldownUntil;
+    private float[] _releaseUntil;               // 千切れの解放要求を送ってから同期待ちの間は再送しない
+    private float _lastClaimSent = -999f;        // 最後に捕縛要求を送った時刻（応答の遅れたスロットもリスポーンで外すため）
     private bool _localInside = false;
     private Vector3 _tmpAnchor;
+    private float _tmpParam;
+    private const int SegmentSamples = 9; // 区間を調べる点の数（区間 40cm なら 5cm 刻み）
     private bool _decorsShown = false;
     private bool _registered = false;
     private int _lastActiveCount = -1;
     // wrap の現在の割り当て（ボーン index → playerId。0=非表示）
     private int[] _wrapPlayer;
+    private bool _fanCapture;
+    private Vector2 _fanHub;
+    private float _fanRadius, _fanHalfAngle, _fanRotation;
+    // TreeFanEval の副出力（U# は out 引数が使えないのでフィールドで返す）
+    private float _tfY, _tfS, _tfGradX, _tfGradZ;
+    // 粘液の糸（threadBySlot）
+    private const int ThreadPoints = 9;          // 1 本の頂点数（シェーダーのたわみ用に分割）
+    private MaterialPropertyBlock _threadMpb;
+    private bool[] _threadOn;                    // 表示中か
+    private bool[] _threadDrawn;                 // 今フレーム描いたか
+    private Vector3[] _threadPts;
+    // 効果音: 前回見たスロットの持ち主（新しくくっついたスロットを見つける）
+    private int[] _seenPlayer;
+    private int[] _seenBone;
+    private float _nextContactSound;
+    private bool _gotFirstSync;                  // 途中入室: 入室直後の最初の同期で届いた既存の捕縛は鳴らさない
+    private float _initTime;
+    // threadFromDeformedWeb: シェーダーの SC_PullTerm と同じ重みを出すためのマテリアル値
+    private float _webStrength = 1f, _webMaxStretch, _webTearFade = 1e-3f, _webRadius = .45f, _webFalloff = 1.5f;
+    private bool _webPullEnabled, _externalCaptureUsed, _externalCaptureActive;
+    private float _nextExternalClaim, _nextExternalRelease;
+    private const float ExternalCleanupWait = 2f; // 外部捕縛の解除後、遅れて届く claim を待つ秒数（再送待ちの 1 秒の後）
+    private Vector3[] _threadEnds;
+    private int[] _threadPullIndices;
+    private Vector3[] _pullAnchors3, _pullDeltas3;   // threadFromDeformedWeb: 今フレームの接点と変位（WebFollow 用）
+    // 外部 claim の再送は初回と同じ捕縛点を使い、遅延で二重到着しても巣を飛ばさない。
+    // 木の巣など外部 claim を使わない利用者には確保しない。
+    private bool[] _externalAnchorSet;
+    private Vector3[] _externalAnchors;
+    private float[] _externalParams;
 
     private void EnsureInit()
     {
         if (_inited) { return; }
         _inited = true;
+        if (targetRenderer == null) { targetRenderer = GetComponent<Renderer>(); }
         if (_slotPlayer == null || _slotPlayer.Length != MaxSlots) { _slotPlayer = new int[MaxSlots]; }
         if (_slotBone == null || _slotBone.Length != MaxSlots) { _slotBone = new int[MaxSlots]; }
         if (_slotAnchor == null || _slotAnchor.Length != MaxSlots) { _slotAnchor = new Vector3[MaxSlots]; }
+        if (_slotParam == null || _slotParam.Length != MaxSlots) { _slotParam = new float[MaxSlots]; }
         if (bones == null) { bones = new TrackBone[0]; }
         _pendingUntil = new float[bones.Length];
         _cooldownUntil = new float[bones.Length];
+        _releaseUntil = new float[bones.Length];
         _wrapPlayer = new int[bones.Length];
-        for (int i = 0; i < bones.Length; i++) { _pendingUntil[i] = -999f; _cooldownUntil[i] = -999f; _wrapPlayer[i] = 0; }
+        for (int i = 0; i < bones.Length; i++) { _pendingUntil[i] = -999f; _cooldownUntil[i] = -999f; _releaseUntil[i] = -999f; _wrapPlayer[i] = 0; }
         _mpb = new MaterialPropertyBlock();
         _anchorsV4 = new Vector4[MaxSlots];
         _targetsV4 = new Vector4[MaxSlots];
+        _threadMpb = new MaterialPropertyBlock();
+        _threadOn = new bool[MaxSlots];
+        // シーンで有効のまま置かれた糸も、使うまで消しておく
+        if (threadBySlot != null)
+        {
+            for (int i = 0; i < threadBySlot.Length; i++) { if (threadBySlot[i] != null) { threadBySlot[i].enabled = false; } }
+        }
+        _threadDrawn = new bool[MaxSlots];
+        _threadPts = new Vector3[ThreadPoints];
+        _threadEnds = new Vector3[MaxSlots];
+        _threadPullIndices = new int[MaxSlots];
+        _pullAnchors3 = new Vector3[MaxSlots];
+        _pullDeltas3 = new Vector3[MaxSlots];
+        _seenPlayer = new int[MaxSlots];
+        _seenBone = new int[MaxSlots];
+        _initTime = Time.time;
+        RefreshFanShape();
+    }
+
+    // threadFromDeformedWeb 用: 巣のマテリアルの引っ張りの強さ・千切れの値を読む
+    private void RefreshPullWeights()
+    {
+        if (!threadFromDeformedWeb || targetRenderer == null) { return; }
+        Material mat = targetRenderer.sharedMaterial;
+        if (mat == null) { return; }
+        _webPullEnabled = mat.HasProperty("_PullEnable") && mat.GetFloat("_PullEnable") > .5f;
+        if (mat.HasProperty("_PullRadius")) { _webRadius = Mathf.Max(mat.GetFloat("_PullRadius"), .001f); }
+        if (mat.HasProperty("_PullFalloff")) { _webFalloff = mat.GetFloat("_PullFalloff"); }
+        if (mat.HasProperty("_PullStrength")) { _webStrength = mat.GetFloat("_PullStrength"); }
+        if (mat.HasProperty("_PullMaxStretch")) { _webMaxStretch = mat.GetFloat("_PullMaxStretch"); }
+        if (mat.HasProperty("_PullTearFade")) { _webTearFade = Mathf.Max(mat.GetFloat("_PullTearFade"), 1e-3f); }
+    }
+
+    // SpiderWeb.shader の SC_PullOffset と同じ全接点の合成。近い手足の影響と正規化も含める。
+    // Udon では演算 1 つずつが外部呼び出しで重いので、影響半径の外の接点は距離だけ見て飛ばす
+    // （2 人で 16 接点なら 16 本 × 16 接点を毎フレーム回すため）。
+    private Vector3 WebFollow(Vector3 point, int count)
+    {
+        if (!_webPullEnabled) { return point; }
+        Vector3 sum = Vector3.zero;
+        float weights = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 anchor = _pullAnchors3[i];
+            float distance = Vector3.Distance(point, anchor);
+            if (distance >= _webRadius) { continue; }
+            Vector3 delta = _pullDeltas3[i];
+            float t = 1f - Mathf.SmoothStep(0f, 1f, distance / _webRadius);
+            float w = t > 0f ? _webStrength * Mathf.Pow(t, _webFalloff) : 0f;
+            if (_webMaxStretch > 0f) { w *= Mathf.Clamp01(1f - (delta.magnitude - _webMaxStretch) / _webTearFade); }
+            sum += delta * w; weights += w;
+        }
+        return point + sum / Mathf.Max(1f, weights);
+    }
+
+    // マテリアルを実行中に切り替える場合は、このイベントで範囲を更新する。
+    public void RefreshFanShape()
+    {
+        RefreshPullWeights();
+        _fanCapture = false;
+        if (!matchFanShape || targetRenderer == null) { return; }
+        Material mat = targetRenderer.sharedMaterial;
+        if (mat == null || !mat.HasProperty("_FanEnable") || mat.GetFloat("_FanEnable") < 0.5f) { return; }
+        _fanCapture = true;
+        _fanHub = new Vector2(Mathf.Clamp(mat.GetFloat("_HubOffsetX"), -0.999f, 0.999f),
+                              Mathf.Clamp(mat.GetFloat("_HubOffsetY"), -0.999f, 0.999f)) * 0.5f;
+        // シェーダーの扇形は横糸をメッシュ端まで並べ、巣の半径はその上限（縦糸の延長に関係なく
+        // 扇の中＝メッシュ端と半径の内側だけが巣）
+        _fanRadius = Mathf.Max(mat.GetFloat("_WebRadius"), 0.001f);
+        _fanHalfAngle = Mathf.Clamp(mat.GetFloat("_FanAngle"), 15f, 330f) * 0.5f;
+        _fanRotation = mat.GetFloat("_FanRotation");
     }
 
     void Start()
@@ -212,8 +392,22 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private void UpdateLocalContacts(VRCPlayerApi local)
     {
         int localId = local.playerId;
-        bool canCapture = !requireTrigger || _localInside;
         float now = Time.time;
+        // 外部捕縛の解除後しばらくは、遅れて届いた claim を取り除くだけにする。通常の木の巣ではこの分岐へ入らない。
+        // 最後の解除から約 3 秒、自分のスロットが無ければ自動の接触判定に戻す
+        if (_externalCaptureUsed && !_externalCaptureActive)
+        {
+            if (now < _nextExternalRelease) { return; }
+            if (HasSlotOf(localId))
+            {
+                _nextExternalRelease = now + 1f;
+                SendReleasePlayer(localId);
+                return;
+            }
+            if (now < _nextExternalRelease + ExternalCleanupWait) { return; }
+            _externalCaptureUsed = false;
+        }
+        bool canCapture = !requireTrigger || _localInside;
         int sends = 0; // 1フレームの送信数上限（レート制限対策）
 
         for (int b = 0; b < bones.Length; b++)
@@ -224,13 +418,16 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             {
                 // 捕縛中: 千切れ判定
                 if (autoReleaseDistance <= 0f) { continue; }
-                Vector3 bp = BonePos(local, b);
+                Vector3 bp = BoneSegPoint(local, b, _slotParam[slot]);
                 if (bp == Vector3.zero) { continue; }
                 Vector3 a = AnchorSurfaceWorld(b, _slotAnchor[slot]);
                 Vector3 t = bp - OffsetWorld(b, _slotAnchor[slot]);
                 if (Vector3.Distance(a, t) > autoReleaseDistance)
                 {
+                    if (now < _releaseUntil[b]) { continue; } // 送った解放の同期待ち。再送しない
                     SendRelease(localId, b);
+                    _releaseUntil[b] = now + pendingTimeout;
+                    if (_externalAnchorSet != null) { _externalAnchorSet[b] = false; }
                     _cooldownUntil[b] = now + recaptureCooldown;
                     sends++;
                 }
@@ -241,34 +438,94 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
                 if (!canCapture) { continue; }
                 if (now < _cooldownUntil[b] || now < _pendingUntil[b]) { continue; }
                 if (!TryContact(local, b)) { continue; }
-                SendClaim(localId, b, _tmpAnchor);
+                SendClaim(localId, b, _tmpAnchor, _tmpParam);
                 _pendingUntil[b] = now + pendingTimeout;
+                _releaseUntil[b] = -999f;
                 sends++;
             }
         }
     }
 
-    // ================= オーナー処理（NetworkCallable）=================
-    private void SendClaim(int playerId, int boneIndex, Vector3 anchorLocal)
+    // 外部スクリプト（落とし穴の罠など）が、ローカルプレイヤーのボーン boneIndex を、自分で決めた
+    // 捕縛点 anchorLocal（面のローカル座標。面から離れた分も含む）で捕縛させる。自動の接触判定は通らない。
+    // オーナーへの送信は ClaimSlot のレート制限（20/秒）に従うので、何本も送るときは呼び出し側で間隔を空ける
+    public void ClaimLocalBone(int boneIndex, Vector3 anchorLocal, float param)
     {
-        if (Networking.IsOwner(gameObject)) { ClaimSlot(playerId, boneIndex, anchorLocal); }
-        else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ClaimSlot), playerId, boneIndex, anchorLocal); }
+        EnsureInit();
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (local == null || !local.IsValid() || boneIndex < 0 || boneIndex >= bones.Length) { return; }
+        _externalCaptureUsed = true; _externalCaptureActive = true;
+        float now = Time.time;
+        if (FindSlot(local.playerId, boneIndex) >= 0 || now < _pendingUntil[boneIndex]
+            || now < _cooldownUntil[boneIndex] || now < _nextExternalClaim) { return; }
+        if (_externalAnchorSet == null)
+        {
+            _externalAnchorSet = new bool[bones.Length];
+            _externalAnchors = new Vector3[bones.Length];
+            _externalParams = new float[bones.Length];
+        }
+        if (!_externalAnchorSet[boneIndex])
+        {
+            _externalAnchorSet[boneIndex] = true;
+            _externalAnchors[boneIndex] = anchorLocal;
+            _externalParams[boneIndex] = param;
+        }
+        _nextExternalClaim = now + .05f;
+        _pendingUntil[boneIndex] = now + Mathf.Max(pendingTimeout, .05f);
+        _releaseUntil[boneIndex] = -999f;
+        SendClaim(local.playerId, boneIndex, _externalAnchors[boneIndex], _externalParams[boneIndex]);
+    }
+
+    // ================= オーナー処理（NetworkCallable）=================
+    // スクリプト内からは *Core を直接呼ぶ。入口（ClaimSlot など）を通すと、他のネットワークイベントの
+    // 処理中に呼ばれたとき、送信者がその外側のイベントの送り主のままなので弾かれる
+    private void SendClaim(int playerId, int boneIndex, Vector3 anchorLocal, float param)
+    {
+        _lastClaimSent = Time.time;
+        if (Networking.IsOwner(gameObject)) { ClaimSlotCore(playerId, boneIndex, anchorLocal, param); }
+        else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ClaimSlot), playerId, boneIndex, anchorLocal, param); }
     }
 
     private void SendRelease(int playerId, int boneIndex)
     {
-        if (Networking.IsOwner(gameObject)) { ReleaseSlot(playerId, boneIndex); }
+        if (Networking.IsOwner(gameObject)) { ReleaseSlotCore(playerId, boneIndex); }
         else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ReleaseSlot), playerId, boneIndex); }
     }
 
     private void SendReleasePlayer(int playerId)
     {
-        if (Networking.IsOwner(gameObject)) { ReleasePlayer(playerId); }
+        if (Networking.IsOwner(gameObject)) { ReleasePlayerCore(playerId); }
         else { SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(ReleasePlayer), playerId); }
     }
 
+    // ネットワークの入口。送信者が自分の分を送ったときだけ通す（改造クライアントが他人のボーンを付け外しできないように）。
+    // ネットワーク外からの直接呼び出しは送信者が無いのでそのまま通る
     [NetworkCallable(20)]
-    public void ClaimSlot(int playerId, int boneIndex, Vector3 anchorLocal)
+    public void ClaimSlot(int playerId, int boneIndex, Vector3 anchorLocal, float param)
+    {
+        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
+        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
+        ClaimSlotCore(playerId, boneIndex, anchorLocal, param);
+    }
+
+    [NetworkCallable(20)]
+    public void ReleaseSlot(int playerId, int boneIndex)
+    {
+        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
+        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
+        ReleaseSlotCore(playerId, boneIndex);
+    }
+
+    [NetworkCallable]
+    public void ReleasePlayer(int playerId)
+    {
+        VRCPlayerApi caller = NetworkCalling.CallingPlayer;
+        if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
+        ReleasePlayerCore(playerId);
+    }
+
+    // 以下は実処理（オーナーのみ）。private なのでネットワークからは呼べない
+    private void ClaimSlotCore(int playerId, int boneIndex, Vector3 anchorLocal, float param)
     {
         EnsureInit();
         if (!Networking.IsOwner(gameObject)) { return; }
@@ -285,12 +542,12 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             _slotBone[slot] = boneIndex;
         }
         _slotAnchor[slot] = anchorLocal; // 既存なら捕縛点だけ更新（冪等）
+        _slotParam[slot] = Mathf.Clamp01(param);
         RequestSerialization();
         UpdateRegistration(); // オーナーは OnDeserialization を受けないので自分で反映
     }
 
-    [NetworkCallable(20)]
-    public void ReleaseSlot(int playerId, int boneIndex)
+    private void ReleaseSlotCore(int playerId, int boneIndex)
     {
         EnsureInit();
         if (!Networking.IsOwner(gameObject)) { return; }
@@ -301,8 +558,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         UpdateRegistration();
     }
 
-    [NetworkCallable]
-    public void ReleasePlayer(int playerId)
+    private void ReleasePlayerCore(int playerId)
     {
         EnsureInit();
         if (!Networking.IsOwner(gameObject)) { return; }
@@ -332,6 +588,16 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public override void OnDeserialization()
     {
         EnsureInit();
+        if (!_gotFirstSync)
+        {
+            _gotFirstSync = true;
+            // 入室直後に届いた同期＝前からいる人の捕縛。その分は鳴らさない（入室後しばらく経ってからの
+            // 最初の同期は本当に今くっついたものなので鳴らす）
+            if (Time.time < _initTime + 10f)
+            {
+                for (int i = 0; i < MaxSlots; i++) { _seenPlayer[i] = _slotPlayer[i]; _seenBone[i] = _slotBone[i]; }
+            }
+        }
         VRCPlayerApi local = Networking.LocalPlayer;
         if (local != null)
         {
@@ -356,22 +622,44 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         EnsureInit();
         if (player == null) { return; }
-        if (Networking.IsOwner(gameObject)) { ReleasePlayer(player.playerId); }
+        if (Networking.IsOwner(gameObject)) { ReleasePlayerCore(player.playerId); }
     }
 
     public override void OnPlayerRespawn(VRCPlayerApi player)
     {
         if (player == null || !player.isLocal) { return; }
+        _ReleaseLocalBones();
+    }
+
+    // 外部捕縛が終了したとき（無効化、席の解除を含む）。リスポーンの通常経路でも共有する。
+    // 「_」始まりなのでネットワークからは呼べない（他人が全員の捕縛を外せないように）
+    public void _ReleaseLocalBones()
+    {
         EnsureInit();
-        SendReleasePlayer(player.playerId);
+        VRCPlayerApi player = Networking.LocalPlayer;
+        if (player == null || !player.IsValid()) { return; }
         float now = Time.time;
-        for (int b = 0; b < bones.Length; b++) { _cooldownUntil[b] = now + recaptureCooldown; _pendingUntil[b] = -999f; }
+        // くっついている・要求の応答待ち・外部捕縛中の巣だけ送る（リスポーンで全部の巣が送らないように）
+        // 応答待ちが切れた後に同期が届くこともあるので、最近捕縛要求を送った巣も送る
+        bool send = _externalCaptureActive || HasSlotOf(player.playerId) || now < _lastClaimSent + 5f;
+        for (int b = 0; b < bones.Length && !send; b++) { if (now < _pendingUntil[b]) { send = true; } }
+        _externalCaptureActive = false;
+        _nextExternalRelease = now + 1f;
+        if (send) { SendReleasePlayer(player.playerId); }
+        for (int b = 0; b < bones.Length; b++)
+        {
+            _cooldownUntil[b] = now + recaptureCooldown; _pendingUntil[b] = -999f;
+            _releaseUntil[b] = send ? now + pendingTimeout : -999f; // 送った解放の同期待ちに ReleaseSlot を重ねない
+            if (_externalAnchorSet != null) { _externalAnchorSet[b] = false; }
+        }
     }
 
     // ================= シェーダーへ渡す＋wrap更新 =================
     private void ApplyPull()
     {
+        if (targetRenderer == null) { return; }
         int n = 0;
+        for (int i = 0; i < MaxSlots; i++) { _threadDrawn[i] = false; _threadPullIndices[i] = -1; }
         // wrap を今フレームの割り当てで塗り替えるため、まず前回分をクリア候補にする
         for (int i = 0; i < MaxSlots; i++)
         {
@@ -381,19 +669,39 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             if (p == null || !p.IsValid()) { continue; }
             int b = _slotBone[i];
             if (b < 0 || b >= bones.Length) { continue; }
-            Vector3 bp = BonePos(p, b);
+            Vector3 bp = BoneSegPoint(p, b, _slotParam[i]);
             if (bp == Vector3.zero) { continue; }
 
             Vector3 a = AnchorSurfaceWorld(b, _slotAnchor[i]);
-            Vector3 t = bp - OffsetWorld(b, _slotAnchor[i]);
+            Vector3 t = PullTarget(b, _slotAnchor[i], a, bp - OffsetWorld(b, _slotAnchor[i]));
             // 各巣は単一面レンダラーなので .w=1（有効フラグ）で足りる
             _anchorsV4[n] = new Vector4(a.x, a.y, a.z, 1f);
             _targetsV4[n] = new Vector4(t.x, t.y, t.z, 0f);
+            if (threadFromDeformedWeb) { _threadPullIndices[i] = n; _threadEnds[i] = bp; _pullAnchors3[n] = a; _pullDeltas3[n] = t - a; }
+            else { DrawThread(i, p, a, bp); }
             n++;
+            if (_seenPlayer[i] != pid || _seenBone[i] != b)
+            {
+                _seenPlayer[i] = pid; _seenBone[i] = b;
+                PlayContactSound(a, p);
+            }
         }
         for (int i = n; i < MaxSlots; i++) { _anchorsV4[i] = Vector4.zero; _targetsV4[i] = Vector4.zero; }
+        for (int i = 0; i < MaxSlots; i++) { if (_slotPlayer[i] <= 0) { _seenPlayer[i] = 0; } }
+        // 全接点を詰めてから糸の始点を計算する（未更新の後続接点を混ぜない）。
+        if (threadFromDeformedWeb)
+        {
+            for (int i = 0; i < MaxSlots; i++)
+            {
+                int index = _threadPullIndices[i];
+                if (index < 0) { continue; }
+                DrawThread(i, VRCPlayerApi.GetPlayerById(_slotPlayer[i]), WebFollow(_pullAnchors3[index], n), _threadEnds[i]);
+            }
+        }
+        HideUnusedThreads();
 
         // 配列 uniform は最初の長さで固定されるため、常に MaxSlots 要素を渡す
+        targetRenderer.GetPropertyBlock(_mpb);
         _mpb.SetVectorArray("_PullAnchors", _anchorsV4);
         _mpb.SetVectorArray("_PullTargets", _targetsV4);
         _mpb.SetFloat("_PullCount", n);
@@ -415,6 +723,61 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         }
     }
 
+    // 新しくくっついたスロットを見つけたら、くっついた場所で効果音を鳴らす。
+    // 全クライアントが同期済みのスロットから同じ判断をするので、周りの人にも同じ場所で聞こえる。
+    // すね・もも・腰…と続けてくっつくので contactAudioInterval 秒に 1 回まで
+    // くっついたのが自分なら、音と一緒に両手のコントローラーを最大強度(振幅 1、320 Hz)で振動させる(ユーザー指示 2026-10-08)。
+    // 振動はローカルなので、全クライアントが同じ判断をしても本人のコントローラーだけが震える。
+    private void PlayContactSound(Vector3 worldPos, VRCPlayerApi player)
+    {
+        if (contactAudio == null || contactAudio.clip == null) { return; }
+        float now = Time.time;
+        if (now < _nextContactSound) { return; }
+        _nextContactSound = now + contactAudioInterval;
+        contactAudio.transform.position = worldPos;
+        contactAudio.PlayOneShot(contactAudio.clip);
+        if (player != null && player.isLocal)
+        {
+            player.PlayHapticEventInHand(VRC_Pickup.PickupHand.Left, .5f, 1f, 320f);
+            player.PlayHapticEventInHand(VRC_Pickup.PickupHand.Right, .5f, 1f, 320f);
+        }
+    }
+
+    // くっついた場所 a（面の上）とボーン上の点 bp の間に粘液の糸を張る。スロット単位なので
+    // 同期済みのスロットから全クライアントで同じ糸になる（追加の通信なし）。長く伸びるほど細り、
+    // autoReleaseDistance を超えるとスロットごと千切れて消える
+    private void DrawThread(int slot, VRCPlayerApi player, Vector3 a, Vector3 bp)
+    {
+        if (threadBySlot == null || slot >= threadBySlot.Length) { return; }
+        LineRenderer line = threadBySlot[slot];
+        if (line == null) { return; }
+        _threadDrawn[slot] = true;
+        float length = Vector3.Distance(a, bp);
+        float scale = Mathf.Clamp(player.GetAvatarEyeHeightAsMeters() / 1.6f, 0.5f, 2f);
+        float thin = (length > threadRestLength && length > 1e-4f) ? Mathf.Sqrt(threadRestLength / length) : 1f;
+        line.widthMultiplier = threadWidth * scale * Mathf.Max(thin, threadMinWidth);
+        for (int k = 0; k < ThreadPoints; k++) { _threadPts[k] = Vector3.Lerp(a, bp, k / (float)(ThreadPoints - 1)); }
+        line.positionCount = ThreadPoints;
+        line.SetPositions(_threadPts);
+        line.GetPropertyBlock(_threadMpb);
+        _threadMpb.SetFloat("_GravityUseUV", 1f);
+        _threadMpb.SetFloat("_GravityLineLength", length);
+        _threadMpb.SetFloat("_GravitySag", threadSag * length);
+        line.SetPropertyBlock(_threadMpb);
+        if (!_threadOn[slot]) { _threadOn[slot] = true; line.enabled = true; }
+    }
+
+    private void HideUnusedThreads()
+    {
+        if (threadBySlot == null) { return; }
+        for (int i = 0; i < MaxSlots && i < threadBySlot.Length; i++)
+        {
+            if (_threadDrawn[i] || !_threadOn[i]) { continue; }
+            _threadOn[i] = false;
+            if (threadBySlot[i] != null) { threadBySlot[i].enabled = false; }
+        }
+    }
+
     // 捕縛されたボーンに wrap（デカール繭の円柱）を追従させる。
     // ボーン index 単位で「最小スロットの人」を表示（決定的）
     private void UpdateWraps()
@@ -426,9 +789,10 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
 
             // このボーンを持つ最小スロットの playerId を探す
             int pid = 0;
+            float param = 0f;
             for (int i = 0; i < MaxSlots; i++)
             {
-                if (_slotPlayer[i] > 0 && _slotBone[i] == b) { pid = _slotPlayer[i]; break; }
+                if (_slotPlayer[i] > 0 && _slotBone[i] == b) { pid = _slotPlayer[i]; param = _slotParam[i]; break; }
             }
 
             var wrap = wrapByBone[b];
@@ -443,7 +807,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
                 if (_wrapPlayer[b] != 0) { _wrapPlayer[b] = 0; wrap.SetActive(false); }
                 continue;
             }
-            Vector3 bp = BonePos(p, b);
+            Vector3 bp = BoneSegPoint(p, b, param); // くっついた位置に巻き付く
             if (bp == Vector3.zero) { continue; }
 
             if (_wrapPlayer[b] != pid)
@@ -480,6 +844,18 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             float m = l.magnitude;
             return (m < 1e-6f) ? new Vector3(0f, surfaceRadiusLocal, 0f) : l * (surfaceRadiusLocal / m);
         }
+        if (shape == SurfaceShape.TreeFan)
+        {
+            // 面の法線方向へ 1 歩戻してから、その位置の面の高さに載せる（ほぼ最近点）
+            float y = TreeFanEval(l);
+            float nrm = 1f / Mathf.Sqrt(1f + _tfGradX * _tfGradX + _tfGradZ * _tfGradZ);
+            float dn = (l.y - y) * nrm;
+            Vector3 p = new Vector3(l.x + _tfGradX * nrm * dn, 0f, l.z + _tfGradZ * nrm * dn);
+            float pr = Mathf.Sqrt(p.x * p.x + p.z * p.z);
+            if (pr < treeTrunkRadius && pr > 1e-5f) { p = p * (treeTrunkRadius / pr); } // 幹の中へは入れない
+            p.y = TreeFanEval(p);
+            return p;
+        }
         if (shape == SurfaceShape.Cylinder)
         {
             Vector2 xz = new Vector2(l.x, l.z);
@@ -493,9 +869,57 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
 
     private bool InCaptureRange(Vector3 l)
     {
-        if (shape == SurfaceShape.Plane) { return new Vector2(l.x, l.z).magnitude <= captureRadiusLocal; }
+        if (shape == SurfaceShape.Plane)
+        {
+            if (_fanCapture)
+            {
+                if (Mathf.Abs(l.x) > 0.5f || Mathf.Abs(l.z) > 0.5f) { return false; }
+                Vector2 p = new Vector2(l.x, l.z) - _fanHub;
+                if (p.magnitude > _fanRadius) { return false; }
+                float angle = Mathf.Atan2(p.y, p.x) * Mathf.Rad2Deg;
+                return Mathf.Abs(Mathf.DeltaAngle(_fanRotation, angle)) <= _fanHalfAngle;
+            }
+            return new Vector2(l.x, l.z).magnitude <= captureRadiusLocal;
+        }
         if (shape == SurfaceShape.Cylinder) { return Mathf.Abs(l.y) <= surfaceHalfHeightLocal; }
+        if (shape == SurfaceShape.TreeFan)
+        {
+            // 高さと傾きも求めておく（直後の TryContact が _tfY / _tfGrad* を使う）
+            _tfY = TreeFanEval(l);
+            return _tfS <= 1.02f;
+        }
         return true;
+    }
+
+    // TreeFan の面の高さ（ローカル y）。副出力: _tfS（楕円の正規化半径。1 が接地線）、
+    // _tfGradX / _tfGradZ（高さの x・z 方向の傾き＝法線を作る材料）
+    private float TreeFanEval(Vector3 l)
+    {
+        float x = l.x, z = l.z;
+        float rho = Mathf.Sqrt(x * x + z * z);
+        float wrap = Mathf.Max(treeWrapAngle, 1f) * Mathf.Deg2Rad;
+        float reach = Mathf.Max(treeReach, 0.01f);
+        float alpha = Mathf.Atan2(x, z);                  // 幹の周りの角度（0 = 正面 +Z）
+        float d = rho - treeTrunkRadius;                  // 幹の表面からの距離
+        bool onTrunk = d < 0f;
+        if (onTrunk) { d = 0f; }
+        float qa = alpha / wrap, qd = d / reach;
+        float s = Mathf.Sqrt(qa * qa + qd * qd);
+        _tfS = s;
+        float k = treeSag;
+        float f = 0f, fp = 0f;                            // 高さの形 (1-s)(1-k·s) とその s 微分
+        if (s < 1f) { f = (1f - s) * (1f - k * s); fp = -1f - k + 2f * k * s; }
+        float gx = treeGround.x, gz = treeGround.y;
+        if (s > 1e-4f && rho > 1e-4f && s < 1f)
+        {
+            float dsda = qa / (wrap * s);
+            float dsdd = onTrunk ? 0f : qd / (reach * s);
+            float r2 = rho * rho;
+            gx += treeHubHeight * fp * (dsda * (z / r2) + dsdd * (x / rho));
+            gz += treeHubHeight * fp * (dsda * (-x / r2) + dsdd * (z / rho));
+        }
+        _tfGradX = gx; _tfGradZ = gz;
+        return treeGround.x * x + treeGround.y * z + treeGround.z + treeHubHeight * f;
     }
 
     private Vector3 AnchorSurfaceWorld(int b, Vector3 anchorLocal)
@@ -508,6 +932,29 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         return Face(b).TransformVector(anchorLocal - ProjectLocal(anchorLocal));
     }
 
+    // 捕縛点での面の法線（ワールド）を、捕縛したときにボーンがあった側へ向けたもの
+    private Vector3 CaptureSideNormal(int b, Vector3 anchorLocal)
+    {
+        Vector3 pr = ProjectLocal(anchorLocal);
+        Vector3 nl = Vector3.up;                                            // Plane
+        if (shape == SurfaceShape.Sphere) { nl = pr; }
+        else if (shape == SurfaceShape.Cylinder) { nl = new Vector3(pr.x, 0f, pr.z); }
+        else if (shape == SurfaceShape.TreeFan) { TreeFanEval(pr); nl = new Vector3(-_tfGradX, 1f, -_tfGradZ); }
+        Vector3 n = Face(b).TransformDirection(nl);
+        if (n.sqrMagnitude < 1e-10f) { n = Face(b).up; }
+        n = n.normalized;
+        return (Vector3.Dot(OffsetWorld(b, anchorLocal), n) < 0f) ? -n : n;
+    }
+
+    // pullOnly: 追従先のうち「面の奥へ押し込む向き」の成分を消す（近づけても凹まない）
+    private Vector3 PullTarget(int b, Vector3 anchorLocal, Vector3 a, Vector3 t)
+    {
+        if (!pullOnly) { return t; }
+        Vector3 n = CaptureSideNormal(b, anchorLocal);
+        float dn = Vector3.Dot(t - a, n);
+        return (dn < 0f) ? t - n * dn : t;
+    }
+
     private float ContactDistanceOf(int b)
     {
         if (contactDistanceByBone != null && b < contactDistanceByBone.Length && contactDistanceByBone[b] > 0f)
@@ -517,18 +964,82 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         return contactDistance;
     }
 
-    // スロット b のボーンが面に触れていれば _tmpAnchor に記録して true
+    // スロット b のボーンが面に触れていれば _tmpAnchor / _tmpParam に記録して true。
+    // segmentContact なら、ボーンの区間（ボーン→子ボーン）を SegmentSamples 点で調べ、
+    // 面に一番近い点で判定する（すねなら膝〜足首のどこが触れても捕縛）
     private bool TryContact(VRCPlayerApi player, int b)
     {
         Vector3 bp = BonePos(player, b);
         if (bp == Vector3.zero) { return false; } // そのボーンが無いアバター
+        Vector3 cp = segmentContact ? ChildPos(player, b) : Vector3.zero;
+        int samples = (cp == Vector3.zero) ? 1 : SegmentSamples;
         Transform f = Face(b);
-        Vector3 l = f.InverseTransformPoint(bp);
-        if (!InCaptureRange(l)) { return false; }
-        float distM = f.TransformVector(l - ProjectLocal(l)).magnitude;
-        if (distM > ContactDistanceOf(b)) { return false; }
-        _tmpAnchor = l;
-        return true;
+        // Plane では面からの高さが区間に沿って直線的に変わる。両端が面の同じ側にあり、
+        // 近い方の端も接触距離より遠ければ、どの点も届かないので調べない
+        if (samples > 1 && shape == SurfaceShape.Plane)
+        {
+            float yb = f.InverseTransformPoint(bp).y;
+            float yc = f.InverseTransformPoint(cp).y;
+            float unit = f.TransformVector(Vector3.up).magnitude;
+            if (yb * yc > 0f && Mathf.Min(Mathf.Abs(yb), Mathf.Abs(yc)) * unit > ContactDistanceOf(b)) { return false; }
+        }
+        float best = float.MaxValue;
+        for (int k = 0; k < samples; k++)
+        {
+            float sk = (samples > 1) ? (float)k / (samples - 1) : 0f;
+            Vector3 l = f.InverseTransformPoint((samples > 1) ? Vector3.Lerp(bp, cp, sk) : bp);
+            if (!InCaptureRange(l)) { continue; }
+            if (captureOnlyBelowSurface && shape == SurfaceShape.Plane && l.y > 0f) { continue; } // 面を通過するまで待つ
+            float distM;
+            if (shape == SurfaceShape.TreeFan)
+            {
+                // InCaptureRange が求めた面の高さと傾きから、面の法線方向の距離を出す（軽い近似）
+                float dn = (l.y - _tfY) / Mathf.Sqrt(1f + _tfGradX * _tfGradX + _tfGradZ * _tfGradZ);
+                distM = f.TransformVector(new Vector3(0f, dn, 0f)).magnitude;
+            }
+            else
+            {
+                distM = f.TransformVector(l - ProjectLocal(l)).magnitude;
+            }
+            if (distM < best) { best = distM; _tmpAnchor = l; _tmpParam = sk; }
+        }
+        return best <= ContactDistanceOf(b);
+    }
+
+    // ボーン b の区間上の点（0=ボーンの根元、1=子ボーン）。子ボーンが無ければ根元
+    private Vector3 BoneSegPoint(VRCPlayerApi player, int b, float param)
+    {
+        Vector3 bp = BonePos(player, b);
+        if (bp == Vector3.zero || param <= 0f) { return bp; }
+        Vector3 cp = ChildPos(player, b);
+        return (cp == Vector3.zero) ? bp : Vector3.Lerp(bp, cp, param);
+    }
+
+    // 子ボーンの位置（子が無い・取れないなら Vector3.zero）
+    private Vector3 ChildPos(VRCPlayerApi player, int b)
+    {
+        HumanBodyBones self = (HumanBodyBones)(int)bones[b];
+        HumanBodyBones child = ChildOf(self);
+        if (child == self) { return Vector3.zero; }
+        Vector3 v = player.GetBonePosition(child);
+        return (v.sqrMagnitude < 1e-8f) ? Vector3.zero : v;
+    }
+
+    // ローカルプレイヤーがこの面にくっついているか（manager の減速判定用）
+    public bool IsLocalStuck()
+    {
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (local == null) { return false; }
+        return HasSlotOf(local.playerId);
+    }
+
+    private bool HasSlotOf(int playerId)
+    {
+        for (int i = 0; i < MaxSlots; i++)
+        {
+            if (_slotPlayer[i] == playerId) { return true; }
+        }
+        return false;
     }
 
     // ================= スロット操作 =================
@@ -555,6 +1066,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         _slotPlayer[i] = 0;
         _slotBone[i] = 0;
         _slotAnchor[i] = Vector3.zero;
+        _slotParam[i] = 0f;
     }
 
     // ボーンが無いアバターは Vector3.zero（捕縛の対象外）

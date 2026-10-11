@@ -19,18 +19,24 @@
 //       → 「視界を奪われる」ではなく「繭に包まれている」見え方になる。
 //
 // 使い方（両シェーダー共通のパス構成）:
-//   ZWrite On / ZTest LEqual / Cull Front / Blend SrcAlpha OneMinusSrcAlpha
-//   Stencil [_StencilRef]（既定128）Replace
+//   深度パス: ColorMask 0 / ZWrite On / ZTest LEqual / Cull Front。ステンシルは書かない。
+//   不透明度が SC_JACK_DEPTH_SOLID_ALPHA 以上の芯だけ深度を書き、半透明部の奥の巣や糸を隠さない。
+//   色パス: ZWrite Off / ZTest LEqual / Cull Front / Blend SrcAlpha OneMinusSrcAlpha
+//   色パスで引き続き Stencil [_StencilRef]（既定128）Replace
 //   （後続の glue パスがジャック画素を上塗りしない目印。他シェーダーと衝突
 //     したらマテリアルで付け替え可能。本体・デカールで同値に揃えること）
 //   頂点: 発火中はメッシュを×100拡大（壁が近クリップ面に切られて画面に
 //         穴が開くのを防ぐ）。非発火時は縮退させフラグメント自体を出さない。
-//   フラグメント: SC_VisionJackWallShade() を呼ぶだけ。
+//   両フラグメントで SC_VisionJackWallShade() の色と実深度を使い、深度パスだけ芯未満を clip。
 //
 // 前提 include（.shader 側でこの順に読み込むこと）:
 //   Noise → Common（SC_IsInMirror / SC_MonoCameraPos / uniforms）
-//         → Thread → Lighting → Compose（SC_ShadeCocoonAt）→ 本ファイル
+//         → Thread → Lighting → Compose → SpiderGoo_Shading
+//         → SpiderCocoon_Goo（SC_ShadeCocoonAt）→ 本ファイル
 // ---------------------------------------------------------------------------
+
+// 内壁の深度を書く不透明度の境目。0.9 未満の膜や帯は（ほぼ不透明に見える膜もこの範囲）、奥の蜘蛛の巣や糸を遮らない。
+#define SC_JACK_DEPTH_SOLID_ALPHA 0.9
 
 // 発火判定。radius / height はオブジェクト空間の円筒しきい値
 // （軸からの距離 < radius かつ |y| < height で発火）。

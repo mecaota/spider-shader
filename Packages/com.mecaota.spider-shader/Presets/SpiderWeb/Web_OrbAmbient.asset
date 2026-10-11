@@ -1,0 +1,119 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84114eb74d80b6f4095a9ff5b0261706, type: 3}
+  m_Name: Web_OrbAmbient
+  m_EditorClassIdentifier: 
+  displayName: "\u6F02\u3046\u7DB2\u7389"
+  category: "\u6295\u3052\u7DB2\uFF08\u7E26\u7CF8\u3082\u7C98\u6DB2\uFF09"
+  description: "\u300C\u8A2D\u7F6E\u3055\u308C\u305F\u5DE3\uFF08\u5F35\u308A\u4ED8\u304F\uFF09\u300D\u3068\u540C\u3058\u63A5\u89E6\u8FFD\u5F93\u306E\u8A2D\u5B9A\u3067\u3001\u7E26\u7CF8\u3082\u7C98\u6DB2\u30FB\u652F\u6301\u7CF8\u306F\u7D30\u3081\uFF08\u6295\u3052\u7DB2\u3068\u540C\u3058
+    1.4 / 0.7\uFF09\u3002\n\u7A7A\u4E2D\u3092\u6F02\u3046\u7DB2\u306E\u7389\u306A\u3069\u306B\u3002\n\n\u203B
+    \u8CEA\u611F\uFF08\u8272\u30FB\u9670\u5F71\u30FB\u30C4\u30E4\u30FB\u7C98\u6DB2\u611F\u30FB\u30C8\u30A5\u30FC\u30F3\u30FB\u30EA\u30E0\u306E
+    21 \u9805\u76EE\uFF09\u306F\u542B\u307E\u306A\u3044\u3002\u9069\u7528\u5148\u30DE\u30C6\u30EA\u30A2\u30EB\u306E\u300C\u7D99\u627F\u5143\u306E\u8718\u86DB\u7CF8\u300D\u3067\u6C7A\u307E\u308B\u3002"
+  order: 50
+  shader: {fileID: 4800000, guid: d172a8c379153f14e9313813931d8cbe, type: 3}
+  renderQueue: -1
+  floats:
+  - name: _HubOffsetX
+    value: 0.041
+  - name: _HubOffsetY
+    value: -0.073
+  - name: _WebRadius
+    value: 0.5
+  - name: _Thickness
+    value: 0.0054
+  - name: _RadialCount
+    value: 15
+  - name: _RingCount
+    value: 12
+  - name: _Sag
+    value: 0.2
+  - name: _SpokeExtend
+    value: 1
+  - name: _FanEnable
+    value: 0
+  - name: _FanAngle
+    value: 90
+  - name: _FanRotation
+    value: 45
+  - name: _FanMeshRim
+    value: 0
+  - name: _SpokeWidth
+    value: 1.4
+  - name: _RingWidth
+    value: 0.7
+  - name: _Organic
+    value: 1
+  - name: _JunctionSize
+    value: 1.2
+  - name: _GooThick
+    value: 1.06
+  - name: _GooBeads
+    value: 0.27
+  - name: _GooBeadFreq
+    value: 30
+  - name: _GooWebFill
+    value: 0.4
+  - name: _RingGoo
+    value: 1
+  - name: _SpokeGoo
+    value: 1
+  - name: _GooWebScale
+    value: 7
+  - name: _HideBackFibers
+    value: 0
+  - name: _Irregular
+    value: 0.53
+  - name: _Seed
+    value: 5.71
+  - name: _SwayAnimEnable
+    value: 1
+  - name: _SwayAnimAmount
+    value: 0.0043
+  - name: _SwayAnimSpeed
+    value: 1.1
+  - name: _SwayAnimAnchor
+    value: 0.15
+  - name: _ThreadJitter
+    value: 0.48
+  - name: _ThreadFuzz
+    value: 0.5
+  - name: _ThreadFuzzScale
+    value: 14
+  - name: _PullEnable
+    value: 1
+  - name: _PullRadius
+    value: 0.9
+  - name: _PullFalloff
+    value: 1.2
+  - name: _PullStrength
+    value: 1
+  - name: _PullMaxStretch
+    value: 0.7
+  - name: _PullTearFade
+    value: 0.15
+  - name: _DrapeEnable
+    value: 0
+  - name: _DrapeGap
+    value: 0.025
+  - name: _DrapeSmooth
+    value: 0.06
+  - name: _DrapeWrap
+    value: 1
+  - name: _DrapeCling
+    value: 3
+  - name: _DrapeTail
+    value: 0.3
+  - name: _DrapeSag
+    value: 0.2
+  colors: []
+  vectors: []
+  textures: []

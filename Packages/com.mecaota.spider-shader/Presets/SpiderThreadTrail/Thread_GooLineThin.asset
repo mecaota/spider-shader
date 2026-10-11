@@ -1,0 +1,153 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84114eb74d80b6f4095a9ff5b0261706, type: 3}
+  m_Name: Thread_GooLineThin
+  m_EditorClassIdentifier: 
+  displayName: "\u7D30\u3044\u7C98\u6DB2\u7CF8\uFF081\u672C\u30FB\u7C98\u7740\u7389\uFF09"
+  category: "\u7C98\u6DB2\u306E\u7CF8"
+  description: "1 \u672C\u3060\u3051\u306E\u7D30\u3044\u7C98\u6DB2\u7CF8\u306B\u7C98\u7740\u7389\u304C\u4E26\u3076\u3002\u63FA\u308C\u30FB\u819C\u306A\u3057\u3002LineRenderer
+    \u306E\u7D30\u3044\u540A\u308A\u7CF8\uFF08Tile \u30E2\u30FC\u30C9\uFF09\u5411\u3051\u3002"
+  order: 20
+  shader: {fileID: 4800000, guid: e16b5748ff50bfa4780d50400641d489, type: 3}
+  renderQueue: -1
+  floats:
+  - name: _ThreadThickness
+    value: 0.25
+  - name: _ThreadJitter
+    value: 0.3
+  - name: _ThreadFuzz
+    value: 0.3
+  - name: _ThreadFuzzScale
+    value: 6
+  - name: _WindingCount
+    value: 3
+  - name: _ThreadDensity
+    value: 1
+  - name: _FiberAngle
+    value: -12
+  - name: _ToonSteps
+    value: 1
+  - name: _ToonSmooth
+    value: 0.03
+  - name: _AmbientBoost
+    value: 0.35
+  - name: _LightInfluence
+    value: 0.35
+  - name: _RimPower
+    value: 4
+  - name: _RimStrength
+    value: 0.3
+  - name: _RimFloor
+    value: 0.05
+  - name: _FiberNormalStrength
+    value: 0.4
+  - name: _RimShadowStrength
+    value: 0.3
+  - name: _LayerCount
+    value: 5
+  - name: _LayerAngleStep
+    value: 4
+  - name: _LayerPosStepX
+    value: 0
+  - name: _LayerPosStepY
+    value: 0.13
+  - name: _LayerThicknessFalloff
+    value: 0
+  - name: _GravitySag
+    value: 0
+  - name: _GravityOscillation
+    value: 0.6
+  - name: _GravitySpeed
+    value: 2
+  - name: _GravityWaves
+    value: 0.65
+  - name: _GravityTrailColor
+    value: 0
+  - name: _SwayAmount
+    value: 0
+  - name: _SwaySpeed
+    value: 3
+  - name: _SwayWaves
+    value: 0.35
+  - name: _SwayAnchor
+    value: 0.5
+  - name: _TrailEdgeSoft
+    value: 0.02
+  - name: _GooEnable
+    value: 1
+  - name: _GooAmount
+    value: 1
+  - name: _GooStrands
+    value: 1
+  - name: _GooWidth
+    value: 0.8
+  - name: _GooSpread
+    value: 0
+  - name: _GooWobble
+    value: 0.03
+  - name: _GooWobbleFreq
+    value: 3
+  - name: _GooBeads
+    value: 0.6
+  - name: _GooBeadFreq
+    value: 10
+  - name: _GooFlow
+    value: 0.05
+  - name: _GooMerge
+    value: 0
+  - name: _GooTailThin
+    value: 0
+  - name: _GooWeb
+    value: 0
+  - name: _GooWebCell
+    value: 0.3
+  - name: _GooWebRows
+    value: 2.5
+  - name: _GooWebHole
+    value: 0.85
+  - name: _GooShade
+    value: 0.12
+  - name: _GooOutline
+    value: 0.14
+  - name: _GooOpacity
+    value: 0.92
+  - name: _GooClarity
+    value: 0.25
+  - name: _GooFiberMix
+    value: 0
+  - name: _GooGloss
+    value: 1
+  - name: _GooGlossWidth
+    value: 0.14
+  - name: _GooGlossOffset
+    value: 0.3
+  - name: _GooGlossBreak
+    value: 0.3
+  colors:
+  - name: _ThreadColor
+    value: {r: 1, g: 1, b: 1, a: 1}
+  - name: _ShadowColor
+    value: {r: 0.5499999, g: 0.5499999, b: 0.62, a: 1}
+  - name: _RimColor
+    value: {r: 0.8, g: 0.9, b: 1, a: 1}
+  - name: _RimShadowColor
+    value: {r: 0.24999994, g: 0.21999994, b: 0.21999994, a: 1}
+  - name: _GooColor
+    value: {r: 0.88, g: 0.87, b: 0.94, a: 1}
+  - name: _GooShadowColor
+    value: {r: 0.6, g: 0.58, b: 0.72, a: 1}
+  - name: _GooOutlineColor
+    value: {r: 0.32999998, g: 0.31999996, b: 0.45, a: 0.85}
+  - name: _GooGlossColor
+    value: {r: 1, g: 1, b: 1, a: 1}
+  vectors: []
+  textures: []

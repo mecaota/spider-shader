@@ -15,18 +15,24 @@
 //    繭の内壁（紡錘形楕円体）を実寸の深度付きで描く。壁より手前にある
 //    自分のアバターの体などは遮られず見える＝繭に包まれている見え方。
 //    実装はデカール版と共通（CGINC/SpiderCocoon_VisionJack.cginc）
+//  - 質感は粘液の糸（CGINC/SpiderCocoon_Goo.cginc）: 全レイヤーの糸を丸い粘液の
+//    管として smooth-min で融合し、交差部は水かき状につながり、隣り合う糸の間には
+//    まだらに膜が張る。塗りは吐いた糸・蜘蛛の巣と共通（SpiderGoo_Shading.cginc）。
+//    粘液感（_GooAmount）を下げると乾いた細い糸に近づく
 // =============================================================================
 Shader "mecaota/SpiderCocoon"
 {
     Properties
     {
+        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 4 シェーダーで
+        //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
+        //   巣・繭・デカールではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分け・共通/固有の区別は CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描くため
         // 二重表示にはならない。
         // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
         [Header(Thread Design)]
-        _ThreadColor        ("糸の色 (Thread Color)", Color)              = (1, 1, 1, 1)
         _ThreadThickness    ("糸の太さ (Thickness)", Range(0.01, 1.0))     = 0.35
         _ThreadJitter       ("太さの乱雑性 (Thickness Jitter)", Range(0, 1))= 0.3
         _ThreadFuzz         ("幅の揺らぎ (Fuzz Amount)", Range(0, 1))       = 0.2
@@ -38,22 +44,17 @@ Shader "mecaota/SpiderCocoon"
         _FiberAngle         ("基準の糸の角度 (Base Fiber Angle deg)", Range(-89, 89)) = 0
 
         [Header(Toon Shading)]
-        _ToonSteps          ("トゥーン段階数 (Toon Steps)", Range(1, 8))    = 3
-        _ToonSmooth         ("段差の柔らかさ (Toon Smooth)", Range(0.001, 0.5)) = 0.05
-        _ShadowColor        ("影色 (Shadow Tint)", Color)                  = (0.55, 0.55, 0.62, 1)
+        _ToonSteps          ("トゥーン段階数 (Toon Steps)", Range(1, 8))    = 1
+        _ToonSmooth         ("段差の柔らかさ (Toon Smooth)", Range(0.001, 0.5)) = 0.03
         _AmbientBoost       ("環境光の底上げ (Ambient Boost)", Range(0, 1)) = 0.35
-        _LightInfluence     ("シーン光の反映度 (Light Influence)", Range(0, 1)) = 0.5
+        _LightInfluence     ("シーン光の反映度 (Light Influence)", Range(0, 1)) = 0.35
 
         [Header(Rim Light)]
         _RimColor           ("リムライト色 (Rim Color)", Color)            = (0.8, 0.9, 1.0, 1)
         _RimPower           ("リム幅 / 鋭さ (Rim Power)", Range(0.5, 16))   = 4.0
-        _RimStrength        ("リム強さ (Rim Strength)", Range(0, 4))        = 0.4
-        _RimFloor           ("リムの下限/全体発光 (Rim Floor)", Range(0, 1)) = 0.25
+        _RimStrength        ("リム強さ (Rim Strength)", Range(0, 4))        = 0.3
+        _RimFloor           ("リムの下限/全体発光 (Rim Floor)", Range(0, 1)) = 0.05
 
-        [Header(Fiber Shading)]
-        _FiberNormalStrength("糸断面の法線曲げ (Fiber Normal Strength)", Range(0, 1)) = 0.4
-        _RimShadowColor     ("ファイバー縁の影色 (Fiber Edge Shadow)", Color) = (0.25, 0.22, 0.22, 1)
-        _RimShadowStrength  ("ファイバー縁影の濃さ (Edge Shadow Strength)", Range(0, 1)) = 0.3
 
         [Header(Layer Stack)]
         _LayerCount         ("レイヤー枚数 (Layer Count)", Range(1, 8))     = 3
@@ -61,6 +62,36 @@ Shader "mecaota/SpiderCocoon"
         _LayerPosStepX      ("レイヤー位置ステップ X 軸 (Pos Step X)", Float) = 0.0
         _LayerPosStepY      ("レイヤー位置ステップ Y 円周 (Pos Step Y)", Float) = 0.02
         _LayerThicknessFalloff ("奥レイヤーの減衰 (Thickness Falloff)", Range(0, 1)) = 0.0
+
+        // ---- 粘液の質感（吐いた糸・蜘蛛の巣と同じ塗り） ----
+        // 粘液感を下げると太り・玉・膜・ツヤ・透けが一緒に弱まる（0 で乾いた細い糸）
+        [Header(Goo Shape)]
+        _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))       = 1
+        _GooThick     ("粘液の太さ倍率 (Goo Thickness)", Range(0.5, 4))      = 1.6
+        _GooBeads     ("糊の玉の大きさ (Glue Beads)", Range(0, 1))           = 0.15
+        _GooBeadFreq  ("糊の玉の細かさ 糸方向UV毎 (Bead Freq)", Float)        = 14
+        _GooFlat      ("帯の平たさ (Ribbon Flatness)", Range(0, 0.95))      = 0.45
+        _GooFiberMix  ("帯の中の筋の濃さ (Fiber Lines)", Range(0, 1))         = 0.5
+        _GooFiberLines("帯1本あたりの筋の本数 (Lines Per Ribbon)", Range(1, 8)) = 4
+        _GooOverlapShadow ("重なりの影 (Overlap Shadow)", Range(0, 1))       = 0.6
+        _GooWebFill   ("隣の糸との間の膜 (Membrane Fill)", Range(0, 1))       = 0.5
+        _GooWebScale  ("膜のまだらの細かさ UV毎 (Membrane Noise)", Float)     = 6
+
+        [Header(Goo Shading)]
+        _GooColor           ("明部の色 (Goo Color)", Color)                  = (0.88, 0.87, 0.94, 1)
+        _GooShadowColor     ("影部の色 (Goo Shadow)", Color)                 = (0.6, 0.58, 0.72, 1)
+        _GooShade           ("影の広さ (Shadow Area)", Range(-0.5, 0.5))      = 0.12
+        _GooOutlineColor    ("輪郭線の色 a=濃さ (Outline Color)", Color)      = (0.33, 0.32, 0.45, 0.85)
+        _GooOutline         ("輪郭線の太さ (Outline Width)", Range(0, 0.5))    = 0.14
+        _GooOpacity         ("不透明度 (Opacity)", Range(0, 1))              = 0.92
+        _GooClarity         ("中心の透け (Clarity)", Range(0, 1))            = 0.25
+
+        [Header(Goo Gloss)]
+        _GooGlossColor      ("ハイライト色 a=濃さ (Gloss Color)", Color)      = (1, 1, 1, 1)
+        _GooGloss           ("ハイライトの強さ (Gloss)", Range(0, 1))         = 1
+        _GooGlossWidth      ("ハイライトの太さ (Gloss Width)", Range(0.01, 0.6)) = 0.14
+        _GooGlossOffset     ("ハイライトを光源側へ (Gloss Offset)", Range(-1, 1)) = 0.3
+        _GooGlossBreak      ("ハイライトの途切れ (Gloss Break)", Range(0, 1))  = 0.3
 
         [Header(Sway Animation)]
         [ToggleUI] _SwayAnimEnable ("揺れアニメ有効 (Sway Enable)", Float) = 0
@@ -109,6 +140,11 @@ Shader "mecaota/SpiderCocoon"
         // （アバター等）と衝突する場合にワールド側で付け替えられるようにする。
         // 本体とデカールの両マテリアルで同じ値に揃えること。
         [IntRange] _StencilRef ("ステンシル ビット (Stencil Bit)", Range(0, 255)) = 128
+
+        // エディタ専用: 質感の継承元（蜘蛛糸マテリアル）の目印。描画には使わない（HLSL では宣言しない）。
+        // xyz = 継承元 .mat の GUID 先頭 18 桁（24bit ずつ）、w = 状態（0=継承元なし→蜘蛛糸シェーダーの既定値 / 2=リンクあり）。
+        // 値は Editor/SpiderSilkLook.cs が読み書きする。手で触らないこと。
+        [HideInInspector] _SilkLookLink ("Silk Look Link (editor only)", Vector) = (0, 0, 0, 0)
     }
 
     SubShader
@@ -125,23 +161,104 @@ Shader "mecaota/SpiderCocoon"
             "DisableBatching"  = "True"
         }
 
-        // ================= Pass 0: 視界ジャック＝包まれ演出（デカール版と共通実装） =================
+        // ================= Pass 0/1: 視界ジャック＝包まれ演出（デカール版と共通実装） =================
         // カメラ（VRでは両目の中点）が繭の内側に入ったときだけ、カメラを囲む
         // 繭の内壁（紡錘形楕円体）を「実寸の深度付き」で描く。
         //   半径 = _VisionJackRadius × _JackRadius
         //   半高 = _VisionJackHeight × _JackStretch
-        // ZTest LEqual ＋ 実深度の書き込みにより、壁より手前にあるもの
+        // ZTest LEqual ＋ 実深度の比較により、壁より手前にあるもの
         // （自分のアバターの体など）は遮られず見える＝「包まれている」見え方。
         // 非発火時は頂点を縮退させ、フラグメントを一切発生させない（通常描画へ影響ゼロ）。
-        // ステンシル [_StencilRef]（既定128）はデカール版と共通の目印
+        // 深度は濃い芯（不透明度 0.9 以上）だけが書く。半透明の膜や帯は深度を書かず、
+        // その奥の蜘蛛の巣や糸を隠さない。色パスも実深度で比較し、手前のものを守る。
+        // 色パスが引き続き書くステンシル [_StencilRef]（既定128）はデカール版と共通の目印
         // （デカールの glue が上塗りしない。両マテリアルで同値に揃えること）。
+        // Pass 0: 色とステンシルは書かず、芯の深度だけを先に記録する。
+        Pass
+        {
+            Name "VISIONJACKDEPTH"
+            // ForwardBase タグ: メインライト・環境光を確実にバインドする
+            Tags { "LightMode" = "ForwardBase" }
+
+            ColorMask 0
+            ZWrite On
+            ZTest  LEqual
+            Cull   Front
+
+            CGPROGRAM
+            #pragma vertex   vertJack
+            #pragma fragment fragJackDepth
+            #pragma target   3.5
+            #pragma multi_compile_instancing
+
+            #include "UnityCG.cginc"
+            #include "Lighting.cginc"
+
+            #include "CGINC/SpiderCocoon_Noise.cginc"
+            #include "CGINC/SpiderCocoon_Common.cginc"
+            #include "CGINC/SpiderCocoon_Thread.cginc"
+            #include "CGINC/SpiderCocoon_Lighting.cginc"
+            #include "CGINC/SpiderCocoon_Compose.cginc"
+            #include "CGINC/SpiderGoo_Shading.cginc"
+            #include "CGINC/SpiderCocoon_Goo.cginc"
+            #include "CGINC/SpiderCocoon_VisionJack.cginc"
+
+            struct v2f_jack
+            {
+                float4 pos      : SV_POSITION;
+                float3 worldDir : TEXCOORD0; // カメラ→頂点のワールドレイ
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
+
+            v2f_jack vertJack(appdata v)
+            {
+                v2f_jack o;
+                UNITY_SETUP_INSTANCE_ID(v);
+                UNITY_INITIALIZE_OUTPUT(v2f_jack, o);
+                UNITY_TRANSFER_INSTANCE_ID(v, o);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+
+                bool active = SC_VisionJackActive();
+
+                // 発火中はメッシュを大きく膨らませる（壁が近クリップ面に切られて
+                // 画面に穴が開くのを防ぐ）。非発火時は縮退させ完全に無効化する。
+                float4 vtx = v.vertex;
+                if (active) vtx.xyz *= 100.0;
+
+                float3 worldVtx = mul(unity_ObjectToWorld, vtx).xyz;
+                o.pos      = active ? UnityObjectToClipPos(vtx) : float4(0.0, 0.0, 0.0, 0.0);
+                o.worldDir = worldVtx - _WorldSpaceCameraPos;
+                return o;
+            }
+
+            fixed4 fragJackDepth(v2f_jack i, out float outDepth : SV_Depth) : SV_Target
+            {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
+                outDepth = UNITY_NEAR_CLIP_VALUE;   // 仮値（discard 経路では書き込まれない）
+
+                if (!SC_VisionJackActive()) discard;
+
+                fixed4 col = SC_VisionJackWallShade(i.worldDir,
+                                              _VisionJackRadius * _JackRadius,
+                                              _VisionJackHeight * _JackStretch,
+                                              outDepth);
+                clip(col.a - SC_JACK_DEPTH_SOLID_ALPHA);
+                return 0;
+            }
+            ENDCG
+        }
+
+        // Pass 1: 内壁の色とステンシルを書く。芯と同じ深度も LEqual で通る。
         Pass
         {
             Name "VISIONJACK"
             // ForwardBase タグ: メインライト・環境光を確実にバインドする
             Tags { "LightMode" = "ForwardBase" }
 
-            ZWrite On
+            ZWrite Off
             ZTest  LEqual
             Cull   Front
             Blend  SrcAlpha OneMinusSrcAlpha
@@ -168,6 +285,8 @@ Shader "mecaota/SpiderCocoon"
             #include "CGINC/SpiderCocoon_Thread.cginc"
             #include "CGINC/SpiderCocoon_Lighting.cginc"
             #include "CGINC/SpiderCocoon_Compose.cginc"
+            #include "CGINC/SpiderGoo_Shading.cginc"
+            #include "CGINC/SpiderCocoon_Goo.cginc"
             #include "CGINC/SpiderCocoon_VisionJack.cginc"
 
             struct v2f_jack
@@ -216,7 +335,7 @@ Shader "mecaota/SpiderCocoon"
             ENDCG
         }
 
-        // ================= Pass 1: 通常の繭メッシュ描画 =================
+        // ================= Pass 2: 通常の繭メッシュ描画 =================
         Pass
         {
             Name "FORWARD"
@@ -241,6 +360,8 @@ Shader "mecaota/SpiderCocoon"
             #include "CGINC/SpiderCocoon_Thread.cginc"
             #include "CGINC/SpiderCocoon_Lighting.cginc"
             #include "CGINC/SpiderCocoon_Compose.cginc"
+            #include "CGINC/SpiderGoo_Shading.cginc"
+            #include "CGINC/SpiderCocoon_Goo.cginc"
             #include "CGINC/SpiderCocoon_VisionJack.cginc"
             #include "CGINC/SpiderCocoon_Pull.cginc"
 
@@ -283,7 +404,7 @@ Shader "mecaota/SpiderCocoon"
                 }
                 else
                 {
-                    // 視界ジャック（包まれ演出）は専用の Pass 0 が実寸の壁として描く。
+                    // 視界ジャック（包まれ演出）は専用の Pass 0/1 が実寸の壁として描く。
                     // （旧実装の「頂点を全画面へ展開」はここから廃止した）
                     o.pos = UnityObjectToClipPos(float4(vpos, 1.0));
                 }
@@ -302,7 +423,7 @@ Shader "mecaota/SpiderCocoon"
                 // 裏面（カメラに背を向けた面＝奥の内壁）は通常 discard する。
                 // これで手前の糸の隙間から「奥の暗い糸」が透けて見えなくなる。
                 // （視界ジャック中にカメラから見える繭の内側はすべて裏面なので、
-                //   既定ではメッシュは消え、Pass 0 の内壁だけが描かれる）
+                //   既定ではメッシュは消え、Pass 0/1 の内壁だけが描かれる）
                 if (_HideBackFibers > 0.5 && facing < 0.0) discard;
 
                 // ---- 基底ベクトル（VFACE で裏面の法線を反転） ----
@@ -328,12 +449,15 @@ Shader "mecaota/SpiderCocoon"
                 // 動的ループ内で fwidth を呼ばないよう、AA 幅はここで一度だけ算出
                 //（揺れ変形後の座標で取ることで、変形分も含めた正しい AA になる）
                 float2 aaUV = float2(fwidth(uvS.x), fwidth(uvS.y));
+                // 円周の継ぎ目（uv.y が 1→0 に飛ぶ三角形）では fwidth が暴走するので、
+                // 半周ずらした座標の微分と小さい方を採る
+                aaUV.y = min(aaUV.y, fwidth(frac(uvS.y + 0.5)));
 
-                // レイヤー合成は共通実装（SpiderCocoon_Compose.cginc）へ。
+                // 粘液の糸の合成は共通実装（SpiderCocoon_Goo.cginc）へ。
                 // メッシュ版: uv.x=軸（シーム無し）のため角度は連続値のまま
-                // （snapCx=false）、Fuzz 折返し不要、通常ライティング。
-                return SC_CompositeLayers(uvS, N, T, B, i.worldPos, aaUV,
-                                          false, false, false);
+                // （snapCx=false）、糸に沿った座標の折返し不要、通常ライティング。
+                return SC_CompositeGoo(uvS, N, T, B, i.worldPos, aaUV,
+                                       false, false, false, 1.0);
             }
             ENDCG
         }
