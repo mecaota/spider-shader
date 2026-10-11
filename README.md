@@ -5,10 +5,17 @@
 - 繭本体（`mecaota/SpiderCocoon`）: 円柱メッシュに手続き的な糸を巻き、内側に入ると「包まれ演出」（視界ジャック）
 - 深度デカール（`mecaota/SpiderCocoonDepthDecal`）: 第三者視点でプレイヤーの体表に繭を張り付ける
 - 蜘蛛の巣（`mecaota/SpiderWeb`）: 断裂・立体感付きの蜘蛛の巣
+- ねばねばネット（`mecaota/SpiderGooSilkSheet`）: 吐いた糸の粘液の帯（束＋穴の空いた膜）をすき間なく並べた模様を焼き、少しずつ回転・ずらして重ねた粘液の膜。体に覆いかぶさる変形（Drape）・質感継承対応（PC専用）
 - 糸トレイル（`mecaota/SpiderThreadTrail`）: Trail Renderer / Particle System用の吐き糸
 - 地面転写（`mecaota/SpiderWebGroundProjector`）: 蜘蛛の巣の転写プロジェクター
 
 シェーダーの詳細な解説・パラメーター一覧は[パッケージ内のREADME](Packages/com.mecaota.spider-shader/README.md)を参照してください。
+
+## ねばねばネット（粘液シート）
+
+吐いた糸（SpiderThreadTrail）の粘液モードの帯を、格子や網にせず**そのまま**すき間なく並べた模様をEditorで画像（Texture2DArray）へ焼き、実行中は画像を読んで最大8層に重ねます。網というより、粘液がどろっと覆いかぶさる見た目です（2026-10-08 にレビューの評価で採用し、それまでのねばねばネット系シェーダーは撤去しました）。
+
+帯の中の形（束・玉・膜の穴・蛇行）は吐いた糸と同じ名前の設定で、焼き直すと変わります。色・光沢・層数・層ごとの太さは焼き直し不要です。1024²・3種類の模様は既定の圧縮で約12MiBです。詳しくは[パッケージREADME](Packages/com.mecaota.spider-shader/README.md#ねばねばネット蜘蛛糸の粘液シートspidergoosilksheet)を参照してください。
 
 ## インストール
 

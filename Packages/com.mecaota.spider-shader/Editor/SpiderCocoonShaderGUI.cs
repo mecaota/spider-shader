@@ -118,10 +118,26 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_GooStrands", "_GooWidth", "_GooSpread", "_GooWobble", "_GooWobbleFreq",
                            "_GooFlow", "_GooTailThin" } },
 
+        // ---- ねばねばネット（蜘蛛糸の粘液シート、SpiderGooSilkSheet）固有 ----
+        // 帯の中の形は「吐いた糸の粘液の束」「粘液の形」「粘液の膜」に吐いた糸と同じ名前で出る。
+        // 焼き込みの入力だけをここへ。形状・質感・変形の既存項目は元のカテゴリに1回ずつ表示。
+        new Category{ Title = "粘液シートの形", Common = false, Require = "_SheetBandWidth",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_WebRadius", "_SheetBandWidth", "_SheetRotation", "_SheetAlongScale", "_Seed", "_HideBackFibers" } },
+        new Category{ Title = "粘液シートの焼き込み設定", Common = false, Require = "_BakedVariants",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_BakedVariants", "_BakeResolution", "_BakeCompression", "_BakePadding" } },
+        new Category{ Title = "粘液シートの重なり", Common = false, Require = "_WebLayers",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_WebLayers", "_WebLayerDepth", "_WebLayerContactDepth", "_WebLayerAdhere",
+                           "_WebLayerAdhereScale", "_WebLayerTwist", "_WebLayerShift", "_WebLayerOpacity",
+                           "_WebLayerWidthOuter", "_WebLayerWidthJitter" } },
+
         // ---- 蜘蛛の巣版（SpiderWeb）固有 ----
         // 巣の形・配置はメッシュ（平面 / 木の扇形）ごとに決まるので、プリセットでは
         // 「形」区分にして、適用時に今の値を残せるようにする
-        new Category{ Title = "蜘蛛の巣カスタマイズ(個別)", Common = false, Require = "_WebRadius",
+        // Require は蜘蛛の巣だけが持つ _RadialCount（粘液シートも _WebRadius を持つため）
+        new Category{ Title = "蜘蛛の巣カスタマイズ(個別)", Common = false, Require = "_RadialCount",
             Part = PresetPart.Shape,
             Props = new[]{ "_HubOffsetX", "_HubOffsetY", "_WebRadius", "_Thickness",
                            "_RadialCount", "_RingCount", "_Sag", "_SpokeExtend",
@@ -201,6 +217,8 @@ public class SpiderCocoonShaderGUI : ShaderGUI
                 EditorGUILayout.Space(2);
             }
         }
+
+        SpiderGooSheetBakePanel.Draw(materialEditor);
 
         // カテゴリ表に無い新規プロパティの取りこぼし防止
         var leftovers = new List<MaterialProperty>();
@@ -314,6 +332,8 @@ public class SpiderCocoonShaderGUI : ShaderGUI
     {
         "_PullCount", "_DrapeCount",
         "_ClipLine",
+        "_BakedShape", "_BakedDetail", "_BakedUVSpan", "_BakedSliceCount", "_BakedWetParams",
+        "_BakedCoverage", "_BakedTexelSize", "_BakedDistanceRange", "_BakedRadiusRange",
     };
 
     internal class PresetGroup

@@ -737,3 +737,71 @@ PC向けのレイマーチ描画です。外殻を描く画素では最大80ス�
 
 構成ファイル: `Editor/SpiderShaderPreset.cs`（データ・適用・保存の処理）、`Editor/SpiderShaderPresetPanel.cs`（プリセット欄と保存ウィンドウ）。グループ分けは `Editor/SpiderCocoonShaderGUI.cs` のカテゴリ表で決まります（`Part`＝見た目/形/変形ギミック、`Hidden`＝インスペクタに出さないが保存する値）。いずれも Editor 専用でワールドのビルドには含まれません。
 
+---
+
+# ねばねばネット（蜘蛛糸の粘液シート、SpiderGooSilkSheet）
+
+`mecaota/SpiderGooSilkSheet` は、吐いた糸（SpiderThreadTrail）の粘液の帯をそのまま並べた模様を焼き、体に覆いかぶさる粘液の膜として重ねるメッシュ用シェーダーです（PC / Unity 2022.3 / Built-in RP）。2026-10-08 に採用しました。
+
+それまでに試したねばねばネット系（四角の網 `SpiderGooQuadNet`/`Decal`、絡みつきデカール `SpiderGooWrapDecal`、水玉の巣 `SpiderGooDotWeb`、重ね巣 `SpiderGooLayeredWeb`、焼き込み重ね巣 `SpiderGooLayeredWebBaked` と「蜘蛛の巣から作る」機能、蜘蛛糸の格子 `SpiderGooSilkGridBaked`）は、このシェーダーの評価が圧倒的によかったため同じ日に撤去しました。経緯と比較画像は WebbedWorld の `WorkLogs/2026-10-08-silk-grid/` と `WorkLogs/2026-10-08-goo-sheet/` にあります。
+
+## 仕組み（シェーダー初心者向け）
+
+1. **帯 1 本 = 吐いた糸の粘液**：吐いた糸の粘液モードは、帯の中に数本の太い粘液の束を並べ、束の間に穴の空いた膜を張る「距離場」です（`CGINC/SpiderThread_Goo.cginc` の `STG_GooField`）。この関数をそのまま使います。
+2. **すき間なく並べる**：その帯を `_SheetRotation` の向きに沿わせ、幅 `_SheetBandWidth` ですき間なく積みます。帯ごとに模様の位相をずらすので、同じ帯の繰り返しには見えません。
+3. **焼く**：Editor でこの模様を画像（距離・半径 / 向き・補助・光沢ノイズ / 被覆率の 3 つの Texture2DArray）へ焼きます。保存するのは完成色ではなく「粘液までの距離」などなので、実行中は吐いた糸と同じ丸い断面・ツヤ・輪郭線・透けで塗れて、光や視点の変化にも反応します。
+4. **重ねて被せる**：実行中は各層が画像を少し回転（`_WebLayerTwist`）・ずらして（`_WebLayerShift`）読み、体に覆いかぶさる変形（Drape。投げ網と同じ `CGINC/SpiderWeb_Drape.cginc`）で最大 8 層に重ねます。1 層だと帯のすき間が筋になって残り、2 層でほぼ埋まり、3 層では穴だけが残る膜になります。
+
+焼くための計算は `Editor/CGINC/SpiderGooSheet_BakeSource.cginc`（`SGS_Evaluate`）と `Editor/Shaders/SpiderGooSheetBake.shader`、焼き込み処理は `Editor/SpiderGooSheetBaker.cs`、読み取りは `CGINC/SpiderGooSheet_BakedPattern.cginc` です。
+
+## パラメータ
+
+| カテゴリ | プロパティ | 既定値 | 説明 |
+|---|---|---:|---|
+| 粘液シートの形 | `_WebRadius` | 0.5 | 膜の外形（円）の半径 UV。0.71 で UV の正方形いっぱい |
+| | `_SheetBandWidth` | 0.12 | 粘液の帯の幅 UV（投げ網では約 23 cm。WebPlane は 1 m 四方で、投げ網では約 1.95 倍に拡大される）。広いほど穴が大きく膜らしい |
+| | `_SheetRotation` | 17 | 帯の向き（度） |
+| | `_SheetAlongScale` | 3 | 帯に沿った長さ m/UV。玉・膜の穴の細かさが吐いた糸と同じメートル単位になる |
+| 吐いた糸の粘液の束・粘液の形・粘液の膜 | `_GooStrands` ほか | 吐いた糸と同じ | 帯の中の束の本数・太さ・玉・膜の穴など。吐いた糸と同じ名前・範囲・既定値 |
+| 粘液シートの重なり | `_WebLayers` | 2 | 重ねる膜の枚数（1〜8） |
+| | `_WebLayerTwist` / `_WebLayerShift` | 8 / 0.08 | 層ごとの回転（度）と模様のずれの上限 |
+| | `_WebLayerDepth` / `_WebLayerContactDepth` | 0.06 / 0.008 | 浮いている所 / 体に接着した所の全層の厚さ m |
+| | `_WebLayerWidthOuter` / `_WebLayerWidthJitter` | 1 / 0 | 層ごとの太さ（一番外の層の倍率 / ランダムなばらつき。焼き直し不要） |
+| 粘液シートの焼き込み設定 | `_BakedVariants` / `_BakeResolution` / `_BakeCompression` | 3 / 1024 / 圧縮 | 模様の枚数・解像度・圧縮（BC5＋BC7＋R8） |
+
+体に覆いかぶさる変形（`_Drape*`）と接触追従の変形（`_Pull*`）は蜘蛛の巣と同じ名前・意味で、投げ網の `CaptureNetDrape` がそのまま使えます。質感 21 項目は継承元の蜘蛛糸マテリアルから受け継ぎます。
+
+## WebbedWorld の見本（パッケージ外）
+
+`Tools/Spider Dungeon/WebbedWorld/Build Goo Sheet Samples` で、`Assets/mecaota/GooNet/` に次を作ります（開いているシーンは変更しません）。どれも 2 層・3 模様・圧縮で、質感は `SilkLook_CaptureNet` を継承します。
+
+- `GooSilkSheetCapture.mat`：投げ網用（Drape あり）。`CaptureDrape.mat` から Drape・Pull・外形の半径だけを写します。
+- `GooSilkSheetSample.mat`：板・球・円柱に貼る見本（外形の半径 0.71）。
+- `GooSilkSheetFloor.mat`：覆いかぶせるゾーンの床の円。
+- `GooNetWrapZone.prefab`：床の円に立った人へ、粘液シートを頭の上から落として全身に覆いかぶせる見本（円から出ると外れます。最大 4 人）。落とす向きは毎回ランダムですが、円に入った本人が向きを決めてネットワークイベントで全員へ伝えるので、同じ膜は全員に同じ向きで見えます（途中参加の人には本人が伝え直し、最初から被った状態で見せます）。中身は `GooNetWrapZone`（Udon、NoVariableSync）と、1 人 1 枚の `CaptureNetDrape`（投げ網と同じ仕組みの `Drop`→`Land`）です。
+
+## 負荷と軽量化（Claude の実測、2026-10-08、Unity Editor、1080p、RX 9070 XT）
+
+体に覆いかぶさる計算は頂点ごとに、有効な層の数 × パスの数だけ走ります。そこで 2026-10-08 に次の 2 つで軽くしました（見た目はほぼ同じ。外側の層が少し透け、頭の丸みがわずかに角ばります）。
+
+- **深度は一番内側の層だけ書く**（16 パス → 9 パス）。体の向こう側や折り返しの膜が手前に透けて濁るのは、内側の層の深度で防げます。深度パスを全部なくすと濁るので、なくしません。
+- **投げ網は 33×33 頂点の専用メッシュ**（`GooSheetPlane33.asset`。WebPlane は 65×65）。WebbedWorld のビルダーが作ります。
+
+体に被せた投げ網 1 枚の追加時間（網を出した時と消した時を交互に測った差）：
+
+| | 寄り | 全身 2.6 m | 遠く 8 m |
+|---|---:|---:|---:|
+| 2 層・軽量化前（16 パス・65×65） | +0.49 ms | +0.20 ms | +0.11 ms |
+| 2 層・軽量化後（9 パス・33×33） | +0.28 ms | +0.13 ms | +0.10 ms |
+| 3 層・軽量化前 | +0.61 ms | +0.26 ms | +0.21 ms |
+| 3 層・軽量化後 | +0.33 ms | +0.15 ms | +0.09 ms |
+
+絶対値は測る回ごとに変わるので、比べられるのは同じ回の中の差だけです。VR は両目ぶん描くので約 2 倍です。焼き込みの解像度（1024→512）や使わない層のパスを削っても速さは変わりません（512 はメモリが 12 → 3 MiB）。詳しくは WebbedWorld の `WorkLogs/2026-10-08-goo-sheet/` を参照してください。
+
+## 注意
+
+- PC 専用です（Texture2DArray・BC5/BC7・9 パス）。Quest 向けの変換はありません。
+- 焼き込み配列は、CPU 側にも画素を残した（読み取り可能な）状態で保存します。CPU 側の画素が無いと .asset に画素が書かれないためです。その分、実行中はメインメモリにも GPU と同じ量を持ちます。
+- 焼き直すと、古い形の配列が `Assets/mecaota/GooNet/Baked` に残ります。「焼き込みの状態」欄の「使われていない焼き込みを削除…」で、どのマテリアル・Prefab・シーンからも使われていない配列をゴミ箱へ移せます。
+- 補助画像を拡大した所のツヤのジャギー・圧縮の誤差が残ります。実 VRChat・VR・ミラーでの確認は別途必要です。
+- 旧シェーダーのマテリアルは残っていないことを確認してから撤去しています。プロジェクト外で旧シェーダーを使っていた場合はマテリアルが Hidden/InternalErrorShader（ピンク）になります。

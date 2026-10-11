@@ -28,7 +28,8 @@ public static class SpiderSilkLook
 {
     public const string SourceShaderName = "mecaota/SpiderThreadTrail";
     public static readonly string[] InheritorShaderNames =
-        { "mecaota/SpiderWeb", "mecaota/SpiderCocoon", "mecaota/SpiderCocoonDepthDecal" };
+        { "mecaota/SpiderWeb", "mecaota/SpiderCocoon", "mecaota/SpiderCocoonDepthDecal",
+          "mecaota/SpiderGooSilkSheet" };
 
     /// <summary>継承先に「どの蜘蛛糸マテリアルを継承元にするか」を記録する隠しプロパティ（描画には使わない）。</summary>
     public const string LinkProperty = "_SilkLookLink";
