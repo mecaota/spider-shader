@@ -26,7 +26,7 @@
 
 - Unity 2022.3
 - Built-in Render Pipeline
-- VRChat Worlds SDK（UdonSharp を含む）。同梱の Udon スクリプトが参照しているため、シェーダーだけを使う場合も必要です。
+- VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）。同梱の Udon スクリプトが参照しているため、シェーダーだけを使う場合も必要です。
 - PC 向けワールドを想定しています。Quest（Android）では、PC 専用と書いたもの以外も動作を確認していません。
 
 ## インストール
@@ -197,7 +197,6 @@ Website/                              配布ページのテンプレート
 
 ### 既知の課題
 
-- `package.json` に `vpmDependencies` が無いため、VCC が VRChat Worlds SDK を自動では入れない（Runtime の asmdef は UdonSharp を参照している）。
 - シェーダー・C# のコメントに古い記述が残っている（「4 シェーダー」の表記、撤去したシェーダー名、`SpiderWeb.shader` 冒頭の「縦糸を別に描いて横糸を重ねる」説明、`SpiderThreadTrail.shader` 冒頭の「繭と同じ共通実装」など）。実装は docs の説明のとおり。
 - 蜘蛛の巣の標準プリセットは、後から追加された項目（体に覆いかぶさる変形の巻きつき・姿勢追従、近接表示）の値を持っていない。
 - Quest（Android）での動作は未確認。
