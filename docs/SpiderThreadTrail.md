@@ -11,7 +11,7 @@
 - 見た目は 2 種類から選べます。
   - **乾いた糸**（既定）: 細い糸が数本、帯に沿って走ります。
   - **粘液モード**: 太い粘液の束が蛇行し、束の間に穴の空いた膜が張ります（アニメの「いとをはく」のような見た目）。
-- このシェーダーの「質感」（粘液の色・ツヤ・トゥーン・リム）は、蜘蛛の巣・繭・デカール・ねばねばネットに**継承**されます。くわしくは [質感の継承](CommonFeatures.md#質感の継承) を参照してください。
+- このシェーダーの「質感」（粘液の色・ツヤ・トゥーン・リム）は、蜘蛛の巣・繭・体に張り付く繭・ねばねばネットに**継承**されます。くわしくは [質感の継承](CommonFeatures.md#質感の継承) を参照してください。
 - 対応環境: Unity Built-in Render Pipeline。PC で動作確認しています。Quest（Android）では未検証です。
 
 ## こんなときに使う
@@ -161,7 +161,7 @@ Trails モジュール用のマテリアルは、Renderer モジュールの **T
 
 | 表示名 | 内部名 | 既定値 | 説明 |
 |---|---|---|---|
-| 糸のステンシル ビット | `_SilkStencilBit` | 64 | 糸の芯に立てるステンシルの目印。繭デカールがこの画素に糸の上から繭を塗らないために使う（下の「描画順とステンシル」） |
+| 糸のステンシル ビット | `_SilkStencilBit` | 64 | 糸の芯に立てるステンシルの目印。体に張り付く繭がこの画素に糸の上から繭を塗らないために使う（下の「描画順とステンシル」） |
 
 ### 重力によるたゆみ（固有）
 
@@ -220,7 +220,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
   - Pass 0 `DEPTHSOLID`: 色は塗らず、不透明度 0.5 以上の芯だけ深度とステンシル（`_SilkStencilBit`）を書きます。
   - Pass 1 `FORWARD`: 深度は書かずに全体を塗ります。
 - 先に描く理由: 巣や繭は、半透明でも前後関係を保つために濃い所だけ深度を書きます。糸を後から描くと、その深度に負けて「巣の向こうに透けて見えるはずの糸」が消えてしまいます。先に描けば、奥の糸の上に巣や繭が半透明で重なるので、糸は必ず透けて見えます。
-- ステンシルは、体表に貼る繭デカール（[SpiderCocoonDepthDecal](SpiderCocoonDepthDecal.md)）が「体の手前を通る糸の上に繭を塗らない」ための目印です。`_SilkStencilBit` を変えたら、デカール側の `_StencilSkipMask`（既定 192 = 繭のジャック用 128 ＋ 糸の 64）も合わせてください。
+- ステンシルは、[体に張り付く繭（SpiderCocoonDepthDecal）](SpiderCocoonDepthDecal.md)が「体の手前を通る糸の上に繭を塗らない」ための目印です。`_SilkStencilBit` を変えたら、体に張り付く繭のマテリアル（インスペクタでは「デカール」）の `_StencilSkipMask`（既定 192 = 視界ジャック用の 128 ＋ 糸の 64）も合わせてください。
 
 ## 注意・制約
 
@@ -243,7 +243,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 |---|---|
 | `Runtime/SpiderThreadTrail.shader` | シェーダー本体 |
 | `Runtime/CGINC/SpiderThread_Goo.cginc` | 粘液モードの束・膜の形（距離場） |
-| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（巣・繭・デカール・ねばねばネットと共通） |
+| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（巣・繭・体に張り付く繭・ねばねばネットと共通） |
 | `Runtime/CGINC/SpiderCocoon_Compose.cginc` ほか `SpiderCocoon_*.cginc` | 乾いた糸モードの糸の計算 |
 | `Runtime/CGINC/SpiderSilk_Motion.cginc` | 重力のたゆみ（巣の揺れと共通の波形） |
 | `Runtime/CGINC/SpiderSilk_Look.cginc` | 質感 21 項目の宣言 |

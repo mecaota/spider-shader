@@ -9,7 +9,7 @@
 Unity 標準の **Projector コンポーネント**で、床に蜘蛛の巣などの画像を真上から投影するシェーダーです。「足元に落ちる丸い影（ブロブシャドウ）」と同じ仕組みです。
 
 - 上を向いた面（床）にだけ映ります。壁や体の正面には映りません。
-- 深度テクスチャを使わないので、VR の左右の目・ミラー・距離のどれでもちらつきません。
+- 深度テクスチャを使わず、床かどうかを床のメッシュの向きで判定するので、VR の左右の目やミラーで映り方が食い違いません。
 - 投影する画像（テクスチャ）は同梱していません。透明部分のある蜘蛛の巣の画像を用意してください。
 - 試験的に入れたシェーダーです。専用のインスペクタ（色分けやプリセット）はなく、Unity 標準のインスペクタで表示されます。質感の継承にも対応していません。
 - 対応環境: Unity Built-in Render Pipeline。
@@ -21,11 +21,11 @@ Unity 標準の **Projector コンポーネント**で、床に蜘蛛の巣な�
 
 ## クイックスタート
 
-1. 透明部分のある蜘蛛の巣の画像を用意し、Import Settings で **Alpha Is Transparency** を ON、**Wrap Mode を Clamp** にします。
+1. 透明部分（アルファ）を含む蜘蛛の巣の画像を用意し、Import Settings で **Alpha Is Transparency** を ON（透明部分の縁に色がにじむのを防ぐ）、**Wrap Mode を Clamp**（投影範囲の外に画像が繰り返し映るのを防ぐ）にします。
 2. マテリアルを作り、Shader を `mecaota/SpiderWebGroundProjector` にして、「投影テクスチャ」に画像を入れます。
 3. 空の GameObject に **Projector** コンポーネントを付け、真下に向けます（Rotation X = 90）。床の上に固定しても、プレイヤーに追従するオブジェクトの子にしても構いません。
 4. Projector の設定:
-   - **Orthographic** を ON にし、**Orthographic Size** で投影する範囲（半径 m）を決めます。
+   - **Orthographic** を ON にし、**Orthographic Size** で投影する範囲を決めます。値は範囲の中心から端までの距離（m）で、Aspect Ratio が 1 なら一辺がその 2 倍の正方形に映ります。
    - **Near Clip Plane** 0.1、**Far Clip Plane** は床まで確実に届く距離（例: 5）。
    - **Material** に 2 のマテリアルを入れます。Projector ごとに別のマテリアルにしてください。
 5. アバターに映したくないときは、Projector の **Ignore Layers** で Player・PlayerLocal などのレイヤーを除外します。
