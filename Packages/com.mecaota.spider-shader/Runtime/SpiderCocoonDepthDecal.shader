@@ -44,6 +44,13 @@
 //     同じ関数で塗るので、包まれる本人の視界にも糸が巻かれていく。実装は
 //     CGINC/SpiderCocoon_Goo.cginc（SC_CompositeGoo）。OFF（既定）は従来どおり完成した繭。
 //
+//  ★ 軽量化（2026-10-14。見た目は変えずに、描かれない画素の計算を省く。詳しくは README の「描画の軽量化」）:
+//     - Pass 2 は鏡の中、Pass 3 は鏡の外で、頂点の段階で三角形を潰す（フラグメントを出さない）。
+//     - Pass 2 は視線が円柱（代表は箱）に届かない画素を、床判定と糸の厚みのループの前に捨てる。
+//     - 視界ジャックの深度パス（Pass 0）は不透明度だけを求め、芯と決まった所で残りの層を省く。
+//     - 全身の殻（GROUP_SHELL）は、smooth-min に効かない遠い部位・橋の計算を飛ばす。
+//     - 表面の模様はキーワード SC_SURFACE_NET（_SurfaceStyle と同期）で切り替える。
+//
 //  ★ 必須前提:
 //     - ワールドに「影付きリアルタイム Directional Light」（_CameraDepthTexture 供給）。
 //     - Quest は screen-space 非対応（PC 専用）。
@@ -131,13 +138,30 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
         // 巻きの端で帯が細って途切れる「ほつれ」の幅（近くの繭とのまとめ描きは
         // CocoonGroupLinker が MaterialPropertyBlock で指示する）
+        // 全身繭では Udon が骨から作った部位（最大 16）と「橋でつなぐ組」
+        // （_GroupBridgePairs / _GroupBridgeCount）を MaterialPropertyBlock で渡し、
+        // 脇や股の凹みをまたいで外形に沿う外殻にする（組が無ければ代表からの放射）
         [Header(Group Volume)]
         _GroupBulge ("まとめ描きの膨らみ m (Group Bulge)", Range(0, 0.12)) = 0.045
-        _GroupBridgeSpan ("部位間をつなぐ距離 m (Group Bridge Span)", Range(0, 0.2)) = 0.1
+        _GroupBridgeSpan ("部位間をつなぐ距離 m (Group Bridge Span)", Range(0, 0.5)) = 0.1
         _GroupRadiusScale ("まとめ繭の半径フィット (Group Radius Fit)", Range(0.25, 1)) = 0.75
         _GroupAxisFollow ("部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
-        _GroupShellBlend ("部位間の一体感 (Group Shell Blend)", Range(0, 1)) = 0.8
+        _GroupShellBlend ("部位間の一体感 (Group Shell Blend)", Range(0, 4)) = 0.8
+        _GroupMarchSteps ("外殻レイマーチの最大歩数 (Shell March Steps)", Range(32, 160)) = 80
+        // 遠い外殻の最大歩数。カメラから箱の中心までが Far Start m までは上の歩数、Far End m 以上はこの歩数で、
+        // 間はなめらかに減らす（上の歩数以上にすると減らさない）。遠い外殻は輪郭の外周が 1 画素細る程度
+        _GroupMarchStepsFar ("遠くの外殻の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
+        _GroupMarchFarStart ("歩数を減らし始める距離 m (Shell Far Start)", Float) = 2.5
+        _GroupMarchFarEnd   ("遠くの歩数になる距離 m (Shell Far End)", Float) = 5
+        // 不透明な物の向こうに完全に隠れた外殻（2x2 の画素単位）を、深度テクスチャで見てレイマーチの前に捨てる（既定 ON）。
+        // 深度テクスチャには入るのに深度バッファでは前を隠さない物（キュー 2500 以下で ShadowCaster を持つ ZWrite Off の物、
+        // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずの外殻が欠けることがある。
+        // そういう場面では OFF にする（従来どおり全部レイマーチする）
+        [ToggleUI] _GroupDepthCut ("隠れた外殻を quad 単位で捨てる (Shell Depth Cut)", Float) = 1
+        // 形を絞った橋（_GroupBridgePairs[k].w > 0 の組。全身繭の前腕↔胴など）の
+        // 半分の高さ = 短いほうの部位の半分の高さ × この値。w = 0 の組と木の繭には効かない
+        _GroupBridgeHeightScale ("絞った橋の高さ倍率 (Bridge Height Scale)", Range(0, 1.5)) = 1
 
         [Header(Edge Fray)]
         _GooEdgeFray        ("巻きの端のほつれ幅 m (Edge Fray)", Range(0, 0.2)) = 0.03
@@ -148,6 +172,38 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         [Header(Winding Animation)]
         [ToggleUI] _WindEnable ("巻きアニメ有効 (Winding Animation)", Float) = 0
         _WindProgress ("巻きの進み具合 (Winding Progress)", Range(0, 1)) = 1
+
+        // 体表 glue（Pass 2/3）と全身の殻の表面の模様（CGINC/SpiderCocoon_Sheet.cginc）。
+        //   シェーダーキーワード SC_SURFACE_NET（1 のとき ON）で切り替える。キーワードはインスペクタ
+        //   （SpiderCocoonShaderGUI）がこの値と自動で揃える。スクリプトで値を変えるときはキーワードも一緒に変えること
+        //   （material.EnableKeyword("SC_SURFACE_NET") / DisableKeyword）。キーワードが無ければ 0（繭の帯）として描く。
+        //   0 = 従来の繭の帯（斜めに交差して巻いた粘液の帯）
+        //   1 = ねばねばネット（mecaota/SpiderGooSilkSheet）風: 粘液の束が平行に並び、間の膜に穴が空く。
+        //       長さの単位は m（ネットのメッシュ UV 1 = 1 m と同じ数字でよい）。巻きアニメは高さで現れる簡易版。
+        //       束・膜の設定は吐いた糸（SpiderThreadTrail の粘液モード）・ネットと同じ名前・意味。
+        //       玉の 2 つだけは繭の _GooBeads と名前がぶつかるので _SheetBeads / _SheetBeadFreq。
+        [Header(Surface Style)]
+        [Enum(Cocoon Bands,0,Sticky Net,1)] _SurfaceStyle ("表面の模様 0=繭の帯 1=ねばねばネット (Surface Style)", Float) = 0
+        _SheetBandWidth     ("粘液の帯の幅 m (Band Width)", Range(0.02, 0.5)) = 0.12
+        _SheetRotation      ("帯の向き 角度 0=体の周りを水平 (Band Rotation)", Range(0, 180)) = 10
+        _SheetAlongScale    ("帯に沿った模様の細かさ (Along Scale)", Range(0.1, 10)) = 3
+        _SheetSeed          ("模様のシード (Sheet Seed)", Float) = 0
+        [IntRange] _SheetLayers ("重ねる膜の枚数 (Layers)", Range(1, 3)) = 2
+        _SheetLayerTwist    ("層ごとの回転 角度 (Layer Twist)", Range(0, 180)) = 8
+        _SheetLayerShift    ("2枚目以降の模様のずれ m (Pattern Shift)", Range(0, 0.3)) = 0.08
+        _SheetLayerOpacity  ("層ごとの不透明度倍率 (Layer Opacity)", Range(0.3, 1)) = 0.95
+        [IntRange] _GooStrands ("束の本数 (Strands)", Range(1, 4))           = 3
+        _GooWidth           ("束の太さ 帯幅比 (Strand Width)", Range(0.02, 1)) = 0.24
+        _GooSpread          ("束の並ぶ幅 (Spread)", Range(0, 1))             = 0.6
+        _GooWobble          ("蛇行の振れ幅 (Wobble)", Range(0, 0.5))          = 0.16
+        _GooWobbleFreq      ("蛇行の細かさ uv.x毎 (Wobble Freq)", Float)      = 0.7
+        _SheetBeads         ("くびれと玉 (Beads)", Range(0, 1))              = 0.55
+        _SheetBeadFreq      ("玉の細かさ uv.x毎 (Bead Freq)", Float)          = 2.2
+        _GooMerge           ("融合の粘り (Merge)", Range(0, 1))              = 0.35
+        _GooWeb             ("束の間の膜の量 (Web Amount)", Range(0, 1))      = 0.6
+        _GooWebCell         ("穴の間隔 uv.x単位 (Hole Spacing)", Float)       = 0.3
+        _GooWebRows         ("幅方向の穴の列数 (Hole Rows)", Range(1, 8))     = 2.5
+        _GooWebHole         ("穴の開き具合 (Hole Size)", Range(0, 1))         = 0.85
 
         // 輪の中に入り込んだ別の部位（腕の内側・隣の腿など）を巻かない。巻いている骨の
         // 軸から見て、体表の向き（法線）が外向きの度合いがこの値未満の面を除く。-1 で無効
@@ -171,11 +227,17 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // （アバター等）と衝突する場合にワールド側で付け替えられるようにする。
         // 本体とデカールの両マテリアルで同じ値に揃えること。
         [IntRange] _StencilRef ("ステンシル ビット (Stencil Bit)", Range(0, 255)) = 128
-        // 体表の glue（Pass 2/3）を描かない画素のビット = ジャックのビット(_StencilRef 128)
-        // ＋ 蜘蛛糸の芯のビット（SpiderThreadTrail の _SilkStencilBit 64）= 192。
-        // 糸は繭より先に描かれ、芯にこのビットを立てる。ZTest Always の glue が
-        // 手前を通る糸を上塗りしないための目印。どちらかを付け替えたら合計に揃えること。
-        [IntRange] _StencilSkipMask ("glue を描かない画素のビット ジャック+糸 (Glue Skip Mask)", Range(0, 255)) = 192
+        // 体表の glue（Pass 2/3）を描く画素のステンシル条件: (stencil & ReadMask) == Ref。
+        //   既定 Ref 0 / ReadMask 208 = ジャックのビット(_StencilRef 128)、蜘蛛糸の芯のビット
+        //   （SpiderThreadTrail の _SilkStencilBit 64）、蜘蛛の体のビット 16 のどれも立っていない画素に描く。
+        //   糸は繭より先に描かれ、芯にビット 64 を立てる。蜘蛛の体（Chaise の皮膚・spider.mat 系の体）は
+        //   見えている画素にビット 16 を立てる。どちらも ZTest Always の glue が手前の糸・蜘蛛の脚を上塗りしないための目印。
+        //   （2026-10-14: 192 → 208。以前は手前の蜘蛛の脚に奥の被害者ののりが塗られていた）
+        //   Projector マスク（SpiderCocoonProjectorMask）と組むギミックは Ref 32 / ReadMask 240
+        //   = 受け手ビット 32 が立ち、かつ 128 / 64 / 16 が立っていない画素だけに描く（床・壁へ漏れない）。
+        //   どれかのビットを付け替えたら本体・デカール・糸・マスク・蜘蛛の体のマテリアルで揃えること。
+        [IntRange] _GlueStencilRef      ("glue を描く画素のステンシル値 0=従来 32=受け手マスク (Glue Stencil Ref)", Range(0, 255)) = 0
+        [IntRange] _GlueStencilReadMask ("glue のステンシル比較ビット 208=ジャック+糸+蜘蛛の体 240=+受け手 (Glue Stencil ReadMask)", Range(0, 255)) = 208
 
         // エディタ専用: 質感の継承元（蜘蛛糸マテリアル）の目印。描画には使わない（HLSL では宣言しない）。
         // xyz = 継承元 .mat の GUID 先頭 18 桁（24bit ずつ）、w = 状態（0=継承元なし→蜘蛛糸シェーダーの既定値 / 2=リンクあり）。
@@ -199,7 +261,10 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         #include "CGINC/SpiderCocoon_Lighting.cginc"
         #include "CGINC/SpiderCocoon_Compose.cginc"
         #include "CGINC/SpiderGoo_Shading.cginc"
+        // 表面の模様「ねばねばネット」（_SurfaceStyle）を使えるようにする。Goo の後に Sheet を読む
+        #define SC_COCOON_SHEET_STYLE
         #include "CGINC/SpiderCocoon_Goo.cginc"
+        #include "CGINC/SpiderCocoon_Sheet.cginc"
         #include "CGINC/SpiderCocoon_VisionJack.cginc"
 
         UNITY_DECLARE_SCREENSPACE_TEXTURE(_CameraDepthTexture);
@@ -284,23 +349,30 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #else
                 float ndcZ = rawDepth * 2.0 - 1.0;
             #endif
+            // 戻り値は最後の 1 か所で返す（途中で return すると、VR のステレオ用バリアントで
+            // FXC が「未初期化の変数を使うかもしれない」と警告するため。計算の中身は同じ）
+            float3 viewPos;
             if (unity_OrthoParams.w > 0.5)
             {
                 float x = (ndc.x - UNITY_MATRIX_P._m03) / UNITY_MATRIX_P._m00;
                 float y = (ndc.y - UNITY_MATRIX_P._m13) / UNITY_MATRIX_P._m11;
                 float z = (ndcZ - UNITY_MATRIX_P._m20 * x - UNITY_MATRIX_P._m21 * y
                            - UNITY_MATRIX_P._m23) / UNITY_MATRIX_P._m22;
-                return float3(x, y, z);
+                viewPos = float3(x, y, z);
             }
-            float K = UNITY_MATRIX_P._m20 * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00
-                    + UNITY_MATRIX_P._m21 * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11
-                    - UNITY_MATRIX_P._m22;
-            float denom = ndcZ - K;
-            denom = (abs(denom) < 1e-8) ? 1e-8 : denom;
-            float w = UNITY_MATRIX_P._m23 / denom;
-            return float3(w * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00,
-                          w * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11,
-                          -w);
+            else
+            {
+                float K = UNITY_MATRIX_P._m20 * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00
+                        + UNITY_MATRIX_P._m21 * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11
+                        - UNITY_MATRIX_P._m22;
+                float denom = ndcZ - K;
+                denom = (abs(denom) < 1e-8) ? 1e-8 : denom;
+                float w = UNITY_MATRIX_P._m23 / denom;
+                viewPos = float3(w * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00,
+                                 w * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11,
+                                 -w);
+            }
+            return viewPos;
         }
 
         // 隣接画素の深度を「厳密復元」して表面の世界法線を求め、水平面かを判定する。
@@ -410,6 +482,70 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             return SC_VisionJackActiveEx(_RadiusFit, _HeightFit);
         }
 
+        // ---------------------------------------------------------------------
+        // 早い棄却のための交差判定（Pass 2。2026-10-14 軽量化）
+        // 視線上の点 o + d * z（z = 視線深度。o, d は箱のローカル座標）のうち、z <= zMax の部分
+        // （カメラの後ろも含む半直線）が、円柱・箱と交わるかを返す。
+        // 糸を描ける点は必ずこの範囲にある（Pass 2 の「早い棄却」の説明）ので、交わらない画素は
+        // 床判定（深度 4 タップ）や糸の厚みのループ（深度 24 タップ）の前に捨ててよい。
+        // 判定は「描くかもしれない」側に倒す（範囲を SC_EARLY_MARGIN だけ広げる）。
+        // 浮動小数の誤差で、元は描いていた縁の画素を捨てないため。
+        // ---------------------------------------------------------------------
+        #define SC_EARLY_MARGIN 0.001   // ローカル座標での余裕（箱が 1 m 前後なら約 1 mm）
+
+        // 半直線と、軸が Y の円柱（xz 半径 R、高さ ±Hh）
+        bool SC_RayHitsCylinder(float3 o, float3 d, float zMax, float R, float Hh)
+        {
+            float zLo = -1e9, zHi = zMax * 1.001 + 0.01;   // 表面の深度にも少し余裕を持たせる
+            // 高さ（Y の板）
+            if (abs(d.y) > 1e-7)
+            {
+                float t1 = (-Hh - o.y) / d.y, t2 = (Hh - o.y) / d.y;
+                zLo = max(zLo, min(t1, t2)); zHi = min(zHi, max(t1, t2));
+            }
+            else if (abs(o.y) > Hh) return false;
+            // 円（xz）: 視線の xz 成分が円の中心に一番近づく位置 tc を先に求め、そこからの距離で解く。
+            // 二次方程式をそのまま解くと、カメラが遠いときに桁落ちで判定がぶれるため。
+            float a = dot(d.xz, d.xz);
+            if (a > 1e-12)
+            {
+                float  tc = -dot(o.xz, d.xz) / a;
+                float2 q  = o.xz + d.xz * tc;               // 視線が円の中心に一番近づく点
+                float  h2 = R * R - dot(q, q);
+                if (h2 < 0.0) return false;                 // 円に届かない
+                float  hw = sqrt(h2 / a);
+                zLo = max(zLo, tc - hw); zHi = min(zHi, tc + hw);
+            }
+            else if (dot(o.xz, o.xz) > R * R) return false;
+            return zLo <= zHi;
+        }
+
+        // 半直線と、原点中心の箱（半サイズ hb）
+        bool SC_RayHitsBox(float3 o, float3 d, float zMax, float3 hb)
+        {
+            float zLo = -1e9, zHi = zMax * 1.001 + 0.01;
+            [unroll]
+            for (int a = 0; a < 3; ++a)
+            {
+                if (abs(d[a]) > 1e-7)
+                {
+                    float t1 = (-hb[a] - o[a]) / d[a], t2 = (hb[a] - o[a]) / d[a];
+                    zLo = max(zLo, min(t1, t2)); zHi = min(zHi, max(t1, t2));
+                }
+                else if (abs(o[a]) > hb[a]) return false;
+            }
+            return zLo <= zHi;
+        }
+
+        // 糸の厚みのループ（Pass 2）の 8 方向。sincos を毎回計算せず定数で持つ
+        static const float2 SC_GLUE_DIRS[8] =
+        {
+            float2( 1.0,         0.0        ), float2( 0.70710678,  0.70710678),
+            float2( 0.0,         1.0        ), float2(-0.70710678,  0.70710678),
+            float2(-1.0,         0.0        ), float2(-0.70710678, -0.70710678),
+            float2( 0.0,        -1.0        ), float2( 0.70710678, -0.70710678)
+        };
+
         #include "CGINC/SpiderCocoon_GroupShell.cginc"
 
         struct appdata_d
@@ -470,6 +606,25 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             if (!SC_DecalJackActive()) o.pos = float4(0.0, 0.0, 0.0, 0.0);
             return o;
         }
+        // Pass 2（通常カメラの glue）用の頂点シェーダー。
+        // 鏡の中・グループの代表（外殻あり、ジャック以外）・代表に任せた繭は、カメラとマテリアルだけで
+        // 決まる（画素ごとに変わらない）ので、フラグメントで discard する代わりに頂点で三角形を潰す。
+        // フラグメントが 1 つも出ないので、画面の結果は discard と同じで、処理だけが減る（2026-10-14）。
+        v2f_d vertGlue(appdata_d v)
+        {
+            v2f_d o = vert(v);
+            if (SC_IsInMirror() || SCG_Hidden() || (SCG_Lead() && _GroupBulge > 0.0005 && !SC_DecalJackActive()))
+                o.pos = float4(0.0, 0.0, 0.0, 0.0);
+            return o;
+        }
+        // Pass 3（鏡専用の glue）用。鏡の外・鏡の中のジャック・外殻ありの代表・代表に任せた繭は頂点で潰す
+        v2f_d vertGlueMirror(appdata_d v)
+        {
+            v2f_d o = vert(v);
+            if (!SC_IsInMirror() || SC_DecalJackActive() || SCG_Hidden() || (SCG_Lead() && _GroupBulge > 0.0005))
+                o.pos = float4(0.0, 0.0, 0.0, 0.0);
+            return o;
+        }
         // Only grouped shells rasterize this additional pass.
         v2f_d vertGroupShell(appdata_d v)
         {
@@ -511,6 +666,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragJackDepth
             #pragma target   3.5
             #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
 
             fixed4 fragJackDepth(v2f_d i, out float outDepth : SV_Depth) : SV_Target
             {
@@ -521,11 +677,12 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                 if (!SC_DecalJackActive()) discard;
 
-                fixed4 col = SC_VisionJackWallShade(i.worldDir,
-                                              _RadiusFit * _JackRadius,
-                                              _HeightFit * _JackStretch,
-                                              outDepth);
-                clip(col.a - SC_JACK_DEPTH_SOLID_ALPHA);
+                // 芯（不透明度 0.9 以上）の画素だけ深度を書く。色と光は計算しない（深度だけのパス）。
+                // 不透明度の式と 0.9 の境目は色パス（Pass 1）と同じなので、書く範囲は従来と同じ
+                if (!SC_VisionJackWallSolid(i.worldDir,
+                                            _RadiusFit * _JackRadius,
+                                            _HeightFit * _JackStretch,
+                                            outDepth)) discard;
                 return 0;
             }
             ENDCG
@@ -557,6 +714,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragJack
             #pragma target   3.5
             #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
 
             fixed4 fragJack(v2f_d i, out float outDepth : SV_Depth) : SV_Target
             {
@@ -592,32 +750,35 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             // 先に描かれた蜘蛛糸の芯（bit64）の画素にも描かない: ZTest Always なので、
             // そのままだと体の手前を通る糸の上に glue を塗り、糸が繭の下へ潜って見える。
             // （体の奥の糸は体の深度に負けて描かれず、ビットも立たないので glue は塗られる）
+            // 蜘蛛の体（bit16。Chaise の皮膚・spider.mat 系の体）が見えている画素にも描かない（同じ理由で、
+            // 被害者の手前にある蜘蛛の脚に奥の被害者ののりを塗らない）。
+            // Ref / ReadMask はマテリアル設定（_GlueStencilRef / _GlueStencilReadMask）。既定 0 / 208、
+            // Projector マスク併用時は 32 / 240（受け手ビット 32 が立つ画素だけに描く）。
             Stencil
             {
-                Ref      0
-                ReadMask [_StencilSkipMask]
+                Ref      [_GlueStencilRef]
+                ReadMask [_GlueStencilReadMask]
                 Comp     Equal
             }
 
             CGPROGRAM
-            #pragma vertex   vert
+            #pragma vertex   vertGlue
             #pragma fragment fragMain
             #pragma target   3.5
             #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
 
             fixed4 fragMain(v2f_d i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);                       // unity_ObjectToWorld を per-instance に
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                bool inMirror = SC_IsInMirror();
                 float2 screenUV = i.screenPos.xy / max(i.screenPos.w, 1e-5);
 
                 // ==== 通常: 深度→体表 glue。輪郭は糸の厚みぶん外へ膨張 ====
                 // （視界ジャックは Pass 0/1 が担当）
-                // ミラーは Pass 3（ミラー専用の glue）が担当するため、ここでは描かない。
-                if (inMirror) discard;
-                if (SCG_Lead() && _GroupBulge > 0.0005 && !SC_DecalJackActive()) discard;
+                // ミラー（Pass 3 が担当）・外殻ありのグループの代表（GROUP_SHELL が担当）・
+                // 代表に任せた繭は、頂点シェーダー vertGlue で三角形を潰すので、ここへは来ない。
 
                 float3 camFwd = -UNITY_MATRIX_V[2].xyz;
 
@@ -636,10 +797,6 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 float3 rayPerZ = i.worldDir / max(viewZ, 1e-5);
                 float3 worldPos = _WorldSpaceCameraPos + rayPerZ * eyeZ;
                 float3 localPos = mul(unity_WorldToObject, float4(worldPos, 1.0)).xyz;
-
-                // 床・天井の判定: 面の向き（厳密復元した法線が水平面か）で行う。
-                // 高さ不問なので、アバター搭載・段差・ジャンプ中でも床を識別できる。
-                bool isFlat = SC_IsHorizontalSurface(screenUV, rawDepth);
 
                 // 許容距離 _ProjectRange（ワールドm）: 円筒より近い距離にあるメッシュ
                 // 表面には「そこにもメッシュがあるかのように」投影する（腕・肩対策）。
@@ -661,9 +818,43 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                 // グループの代表（CocoonGroupLinker）は、自分の円筒の代わりに
                 // 「くっついた仲間それぞれの円筒の和」の中を巻く
-                if (SCG_Hidden()) discard;
+                // （代表に任せた繭 SCG_Hidden は頂点 vertGlue で潰してある）
                 bool   grouped = SCG_Lead();
                 float3 boxHalf = SCG_BoxHalf();
+                float  T       = _GlueThickness;
+
+                // ==== 早い棄却（円柱の内外判定を、重い床判定と糸の厚みのループより先に）====
+                // この画素に糸を描けるのは、次のどちらかのときだけ:
+                //   (A) 糸の面（下の zShell。見えている表面そのもの、その T 手前、または近傍の輪郭から
+                //       作った点）が、円柱（単独。厚み T ぶん広げたもの）または箱（代表）の中にある。
+                //       糸の面はどれも「この画素の視線上で、見えている表面より手前」にある。
+                //   (B) 見えている表面が箱の中の床・天井で、床テクスチャを貼る。
+                // 視線の「表面より手前の部分」が円柱（箱）と交わらず、表面も箱の外なら、どちらも起きない。
+                // その画素は床判定（深度 4 タップ）と糸の厚みのループ（深度 24 タップ）の前に捨てる。
+                // 壁の向こうの繭・地下の繭・箱の角（円柱の外）の画素がここで終わる。
+                float3 rayO = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos, 1.0)).xyz;
+                float3 rayD = mul((float3x3)unity_WorldToObject, rayPerZ);   // 視線深度 1 m あたりのローカルの進み
+                bool reach;
+                if (grouped)
+                {
+                    reach = SC_RayHitsBox(rayO, rayD, eyeZ, boxHalf + SC_EARLY_MARGIN);
+                }
+                else
+                {
+                    // 厚みがあるときは、糸の面が円柱から厚みぶんはみ出せる（下の shellIn と同じ広げ方）
+                    float rCyl = (T < 0.0005) ? limR : min(limR + T / max(sxz, 1e-4), 0.5);
+                    float hCyl = (T < 0.0005) ? limH : min(limH + T / max(sy, 1e-4), 0.5);
+                    reach = SC_RayHitsCylinder(rayO, rayD, eyeZ, rCyl + SC_EARLY_MARGIN, hCyl + SC_EARLY_MARGIN);
+                }
+                if (!reach && any(abs(localPos) > 0.5)) discard;
+
+                // 床・天井の判定: 面の向き（厳密復元した法線が水平面か）で行う。
+                // 高さ不問なので、アバター搭載・段差・ジャンプ中でも床を識別できる。
+                // 使うのは「表面が箱の中」のときだけ（glue の円柱・床テクスチャはどちらも箱の中）なので、
+                // 箱の外の表面では深度 4 タップを読まない。
+                bool isFlat = false;
+                [branch] if (all(abs(localPos) <= boxHalf))
+                    isFlat = SC_IsHorizontalSurface(screenUV, rawDepth);
 
                 // 床・天井ゾーンは糸を glue しない（後段でテクスチャ表示へ）
                 bool onGlue = !isFlat && (grouped
@@ -672,7 +863,6 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 // 輪の中に入り込んだ別の部位の面は巻かない（_WrapFacing）
                 if (onGlue) onGlue = SC_WrapFacingOK(screenUV, rawDepth, worldPos);
 
-                float T = _GlueThickness;
                 bool shellHit = false;
 
                 if (T < 0.0005)
@@ -701,6 +891,10 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                     float  aspect = abs(UNITY_MATRIX_P._m11 / UNITY_MATRIX_P._m00);
                     float  zStep  = max(T * 0.3, 0.02);   // 段差（輪郭）とみなす深度差
 
+                    // 視線が円柱（箱）に届かない画素では、近傍から作る糸の面も必ず外になる（上の早い棄却の説明）。
+                    // そのときはループ（深度 24 タップ）を丸ごと省く
+                    [branch] if (reach)
+                    {
                     [loop]
                     for (int ri = 1; ri <= 3; ++ri)
                     {
@@ -708,11 +902,11 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                         float lift = sqrt(max(T * T - d * d, 0.0));         // その距離での持ち上げ量
                         float rr   = 0.5 * UNITY_MATRIX_P._m11 * d / zBox;  // 画面 UV での半径
 
-                        [loop]
+                        // 8 方向は定数表（SC_GLUE_DIRS）。ループを展開して sincos を省く
+                        [unroll]
                         for (int di = 0; di < 8; ++di)
                         {
-                            float sA, cA;
-                            sincos((float)di * (UNITY_PI * 0.25), sA, cA);
+                            float cA = SC_GLUE_DIRS[di].x, sA = SC_GLUE_DIRS[di].y;
                             // uvS は片目ローカル 0..1。画面外は「棄却」ではなく
                             // 端へクランプしてサンプルする（mono のサンプラーの
                             // エッジクランプと同じ連続的な劣化になり、棄却の有無と
@@ -751,6 +945,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
                             zShell = min(zShell, zN - lift);
                         }
+                    }
                     }
 
                     if (zShell < 1e5 && zShell < eyeZ)
@@ -809,27 +1004,28 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             ZTest  LEqual
             Cull   Back
             Blend  SrcAlpha OneMinusSrcAlpha
-            // ジャック（bit128）と手前の蜘蛛糸の芯（bit64）の画素には描かない（Pass 2 と同じ）
+            // ジャック（bit128）と手前の蜘蛛糸の芯（bit64）の画素には描かない（Pass 2 と同じ Ref / ReadMask 設定）
             Stencil
             {
-                Ref      0
-                ReadMask [_StencilSkipMask]
+                Ref      [_GlueStencilRef]
+                ReadMask [_GlueStencilReadMask]
                 Comp     Equal
             }
 
             CGPROGRAM
-            #pragma vertex   vert
+            #pragma vertex   vertGlueMirror
             #pragma fragment fragMirror
             #pragma target   3.5
             #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
 
             fixed4 fragMirror(v2f_d i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                // このパスはミラー内でのみ描く
-                if (!SC_IsInMirror()) discard;
+                // このパスはミラー内でのみ描く。鏡の外・ミラー内ジャック・外殻ありの代表・
+                // 代表に任せた繭は、頂点シェーダー vertGlueMirror で三角形を潰すので、ここへは来ない。
                 // ミラー内ジャック時は重ねない。
                 // 既知の制限: _VisionJackInMirror=1 でミラー内ジャックが発火して
                 // いる間、鏡の中では壁の隙間から見える体表の glue が描かれない
@@ -837,8 +1033,6 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 //   discard するため）。挙動を直視と完全一致させるには oblique
                 //   深度復元での glue 描画をこの分岐に実装する必要がある。
                 //   既定値（_VisionJackInMirror=0）では発生しない。
-                if (SC_DecalJackActive()) discard;
-                if (SCG_Lead() && _GroupBulge > 0.0005) discard;
 
                 // ==== ミラーでも通常視点と同じ体表 glue ====
                 // ミラーカメラは自前の深度を持つが、鏡面に沿った斜交（oblique）投影の
@@ -875,14 +1069,15 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                 float limR = min(_RadiusFit + marginR, 0.5);
                 float limH = min(_HeightFit + marginH, 0.5);
 
-                if (SC_IsHorizontalSurface(screenUV, rawDepth)) discard;   // 床・天井は描かない
-                if (SCG_Hidden()) discard;
+                // 円柱（代表は仲間の円筒の和）の外は描かない。床判定（深度 4 タップ）より安いので先に調べる
+                // （どれも discard するだけの条件なので、順番を入れ替えても結果は同じ）
                 float sdmM;
                 if (SCG_Lead())
                 {
                     // Pass 2 と同じ「仲間の円筒の和」の中だけを巻く
+                    if (any(abs(gl) > SCG_BoxHalf())) discard;
                     sdmM = SCG_GroupSD(wp);
-                    if (any(abs(gl) > SCG_BoxHalf()) || sdmM > _ProjectRange) discard;
+                    if (sdmM > _ProjectRange) discard;
                     sdmM -= _ProjectRange;
                 }
                 else
@@ -891,6 +1086,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
                     if (length(gl.xz) > limR) discard;
                     sdmM = max((length(gl.xz) - limR) * sxz, (abs(gl.y) - limH) * sy);
                 }
+                if (SC_IsHorizontalSurface(screenUV, rawDepth)) discard;   // 床・天井は描かない
                 if (!SC_WrapFacingOK(screenUV, rawDepth, wp)) discard;   // 入り込んだ別の部位は巻かない
                 float edge01M = SCG_Edge01(sdmM);
                 float3 wrapLocalM = SCG_WrapLocal(gl);
@@ -922,11 +1118,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragGroupShellDepth
             #pragma target 3.5
             #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 色パスと同じ模様で不透明度を求める（インスペクタが揃える）
             fixed4 fragGroupShellDepth(v2f_d i, out float depth : SV_Depth) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
-                fixed4 col = SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, depth);
+                // i.pos.xy = SV_Position（画素の中心）。隠れた quad を捨てる判定（SCG_QuadHidden）に使う
+                fixed4 col = SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, i.pos.xy, depth);
                 clip(col.a - SCG_SHELL_DEPTH_ALPHA);
                 return 0;
             }
@@ -950,11 +1148,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragGroupShell
             #pragma target 3.5
             #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
             fixed4 fragGroupShell(v2f_d i, out float depth : SV_Depth) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
-                return SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, depth);
+                // i.pos.xy = SV_Position（画素の中心）。隠れた quad を捨てる判定（SCG_QuadHidden）に使う
+                return SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, i.pos.xy, depth);
             }
             ENDCG
         }

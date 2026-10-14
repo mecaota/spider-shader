@@ -59,14 +59,14 @@ bool SC_VisionJackActive()
     return SC_VisionJackActiveEx(_VisionJackRadius, _VisionJackHeight);
 }
 
-// 繭の内壁を描く。
+// 繭の内壁の位置を求める（色パス SC_VisionJackWallShade と深度パス SC_VisionJackWallSolid の共通部分）。
 //   worldDir        : カメラ→ピクセルのワールドレイ（頂点から補間した非正規化ベクトル）
 //   wallRadius      : 内壁楕円体の半径（オブジェクト空間）
 //   wallHalfHeight  : 内壁が上下に閉じるまでの半高（オブジェクト空間）
 //   outDepth        : 壁の実深度（Zバッファ値）を書き出す
-// 糸の隙間のピクセルは内部で discard（色・深度・ステンシルとも書かれない）。
-fixed4 SC_VisionJackWallShade(float3 worldDir, float wallRadius, float wallHalfHeight,
-                              out float outDepth)
+//   lpOut / wpOut / nInW : 壁の点（ローカル / ワールド）と、内向きの法線（ワールド。塗りにはこの符号反転を渡す）
+void SC_VisionJackWallHit(float3 worldDir, float wallRadius, float wallHalfHeight,
+                          out float outDepth, out float3 lpOut, out float3 wpOut, out float3 nInW)
 {
     // 交差先は無限円筒ではなく「上下が閉じた紡錘形（楕円体）」。
     // 上下に遠ざかるほど糸のリングの半径が縮み、極で 0 に収束して閉じる。
@@ -147,8 +147,29 @@ fixed4 SC_VisionJackWallShade(float3 worldDir, float wallRadius, float wallHalfH
     float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
     float3 nW = normalize(colX * nL.x + colY * nL.y + colZ * nL.z);
 
+    lpOut = lp; wpOut = wp; nInW = nW;
+}
+
+// 繭の内壁を描く（色パス）。引数は SC_VisionJackWallHit と同じ。
+// 糸の隙間のピクセルは内部で discard（色・深度・ステンシルとも書かれない）。
+fixed4 SC_VisionJackWallShade(float3 worldDir, float wallRadius, float wallHalfHeight,
+                              out float outDepth)
+{
+    float3 lp, wp, nW;
+    SC_VisionJackWallHit(worldDir, wallRadius, wallHalfHeight, outDepth, lp, wp, nW);
     // 糸のパラメータもライティングも通常の繭と完全に同一（SC_ShadeCocoonAt）。
     return SC_ShadeCocoonAt(lp, wp, -nW);
+}
+
+// 深度パス用（2026-10-14 軽量化）: 内壁のこの画素が「芯」（不透明度 SC_JACK_DEPTH_SOLID_ALPHA 以上）かを返す。
+// 色と光は計算せず、不透明度だけを色パスと同じ式で求める。重ねた層の途中で芯と決まれば残りの層を省く
+// （SpiderCocoon_Goo.cginc の SC_CocoonAlphaAt）。深度（outDepth）は色パスと同じ値。
+bool SC_VisionJackWallSolid(float3 worldDir, float wallRadius, float wallHalfHeight,
+                            out float outDepth)
+{
+    float3 lp, wp, nW;
+    SC_VisionJackWallHit(worldDir, wallRadius, wallHalfHeight, outDepth, lp, wp, nW);
+    return SC_CocoonAlphaAt(lp, wp, -nW, SC_JACK_DEPTH_SOLID_ALPHA) >= SC_JACK_DEPTH_SOLID_ALPHA;
 }
 
 #endif // SPIDERCOCOON_VISIONJACK_INCLUDED

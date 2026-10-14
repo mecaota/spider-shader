@@ -187,6 +187,17 @@ fixed4 STG_GooFinishAAWet(float3 col, float extraAlpha, STG_GooSurface s, float 
     return fixed4(col, a);
 }
 
+// STG_GooFinishAAWet が返す不透明度の上限（2026-10-14 軽量化。深度だけのパスや近接表示の早い棄却用）。
+//   a = _GooOpacity × (1 − _GooClarity × 濡れ × 厚み)  … 濡れ・厚みは 0..1 なので |1 − _GooClarity| と 1 の大きい方以下
+//   ツヤ（× _GooOpacity）・輪郭線（× _GooOutlineColor.a）・追加の不透明度（extraAlpha × _GooOpacity）で上がる分も含め、
+//   最後の輪郭のぼかし（0..1 倍）で下がるだけなので、|_GooOpacity| × 下の max を超えない。
+//   extraMax: 呼び出し側が渡す extraAlpha の上限（使わないなら 0）
+float STG_GooAlphaCeiling(float extraMax)
+{
+    return abs(_GooOpacity) * max(max(1.0, abs(1.0 - _GooClarity)),
+                                  max(abs(_GooOutlineColor.a), abs(extraMax)));
+}
+
 // 濡れ具合は粘液感（_GooAmount）そのまま: ツヤ（ハイライト）と透けは「濡れている度合い」
 // なので、粘液感を下げると一緒に弱まる
 fixed4 STG_GooFinishAA(float3 col, float extraAlpha, STG_GooSurface s, float d,

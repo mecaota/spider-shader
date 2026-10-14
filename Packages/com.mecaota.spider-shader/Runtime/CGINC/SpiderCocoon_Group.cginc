@@ -32,10 +32,26 @@ float4 _GroupCylB;      // xyz = 軸方向 × 半分の高さ（world）
 float4 _GroupBoxHalf;   // 代表の箱を広げた半サイズ（オブジェクト空間。仲間全員を包む大きさ）
 
 // 仲間それぞれの円筒（代表のときだけ使う。描く範囲はこれらの和）
-#define SCG_MAX_MEMBERS 8
+#define SCG_MAX_MEMBERS 16
 float4 _GroupMemA[SCG_MAX_MEMBERS];   // xyz = 中心（world）, w = 半径（m）
 float4 _GroupMemB[SCG_MAX_MEMBERS];   // xyz = 軸方向 × 半分の高さ（world）
+                                      // w = 端の丸め 0..1（0 = 端が平らな円筒＝従来。
+                                      //     1 = カプセル＝端が半球。全身繭の頭・手足用。
+                                      //     木の繭の CocoonGroupLinker は 0 を渡す）
 float  _GroupMemCount;
+
+// 部位どうしを結ぶ「橋」（外皮を張る組）の一覧。
+// 全身繭では Udon が「どの部位同士を橋でつなぐか」を渡す（腿↔腿、胴↔上腕など）。
+//   x = 部位 a の番号, y = 部位 b の番号（_GroupMemA/B の添字）
+//   z = この組だけの「つなぐ距離」の倍率（0 なら _GroupBridgeSpan そのまま）
+//   w = 橋の形の絞り（0 = 従来どおり。> 0 = 橋の半径をこの倍率にし、半分の高さを
+//       「短いほうの部位の半分の高さ × _GroupBridgeHeightScale」にする。
+//       前腕↔胴を 0.5 にすると、手首までのマントではなく細い膜になる）
+// _GroupBridgeCount が 0 のとき（CocoonGroupLinker の木の繭など）は従来どおり
+// 代表（_GroupLeadIndex）から他の全部位へ放射状に橋を張る。
+#define SCG_MAX_BRIDGES 16
+float4 _GroupBridgePairs[SCG_MAX_BRIDGES];
+float  _GroupBridgeCount;
 
 // ---- マテリアル ----
 float _GroupBulge;     // grouped shell thickness beyond the original glue (m)
@@ -47,16 +63,20 @@ float _WrapFacing;      // 体表の向きで他の部位を除くしきい値�
 bool SCG_Hidden() { return _GroupRole < -0.5; }
 bool SCG_Lead()   { return _GroupRole >  0.5; }
 
-// 点 p から円筒（中心 c・軸方向×半分の高さ h・半径 r。端は平ら）表面までの
-// 符号付き距離（m。負=内側）
-float SCG_CylinderSD(float3 p, float3 c, float3 h, float r)
+// 点 p から円筒（中心 c・軸方向×半分の高さ h・半径 r）表面までの
+// 符号付き距離（m。負=内側）。rounding = 端の丸め（_GroupMemB.w）。
+// 0 は端が平ら（従来）、1 はカプセル（端が半球）、途中は 2 つの距離を混ぜる
+float SCG_CylinderSD(float3 p, float3 c, float3 h, float r, float rounding)
 {
     float  hh  = length(h);
     float3 ax  = h / max(hh, 1e-6);
     float3 d   = p - c;
     float  y   = dot(d, ax);
-    float2 q   = float2(length(d - ax * y) - r, abs(y) - hh);
-    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0));
+    float  radial = length(d - ax * y);
+    float2 q   = float2(radial - r, abs(y) - hh);
+    float  flatD    = min(max(q.x, q.y), 0.0) + length(max(q, 0.0));
+    float  capsuleD = length(float2(radial, max(q.y, 0.0))) - r;
+    return lerp(flatD, capsuleD, saturate(rounding));
 }
 
 // 描く範囲までの距離（代表のときだけ意味を持つ）。範囲は仲間それぞれの円筒の和で、
@@ -69,7 +89,8 @@ float SCG_GroupSD(float3 p)
     for (int k = 0; k < SCG_MAX_MEMBERS; ++k)
     {
         if (k >= n) break;
-        d = min(d, SCG_CylinderSD(p, _GroupMemA[k].xyz, _GroupMemB[k].xyz, _GroupMemA[k].w));
+        if (_GroupMemA[k].w <= 0.0) continue;   // 半径 0 以下の部位（骨なし）は存在しない扱い
+        d = min(d, SCG_CylinderSD(p, _GroupMemA[k].xyz, _GroupMemB[k].xyz, _GroupMemA[k].w, _GroupMemB[k].w));
     }
     return d;
 }
@@ -86,7 +107,8 @@ void SCG_OwnerAxis(float3 p, out float3 c, out float3 ax)
     for (int k = 0; k < SCG_MAX_MEMBERS; ++k)
     {
         if (k >= n) break;
-        float d = SCG_CylinderSD(p, _GroupMemA[k].xyz, _GroupMemB[k].xyz, _GroupMemA[k].w);
+        if (_GroupMemA[k].w <= 0.0) continue;   // 半径 0 以下の部位（骨なし）は存在しない扱い
+        float d = SCG_CylinderSD(p, _GroupMemA[k].xyz, _GroupMemB[k].xyz, _GroupMemA[k].w, _GroupMemB[k].w);
         if (d < best)
         {
             best = d;
