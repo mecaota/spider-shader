@@ -226,7 +226,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 - 描画順は `Transparent` です。吐いた糸（`Transparent-10`）より後に描きます（理由は [吐いた糸のページ](SpiderThreadTrail.md#描画順とステンシル)）。
 - 2 つのパスで描きます。Pass 0 `DEPTHSOLID` は不透明度 0.5 以上の芯だけ深度を書き、Pass 1 `FORWARD` で全体を塗ります。半透明でも、濃い糸の前後関係が保たれます。
-- Projector の投影を受けません（`IgnoreProjector`）。[地面転写](SpiderWebGroundProjector.md)の巣テクスチャが巣の上に重なることはありません。
+- Projector の投影を受けません（`IgnoreProjector`）。
 - ポイントライト・スポットライトは効きません。影も落としません。
 
 ## 注意・制約

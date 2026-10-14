@@ -220,7 +220,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
   - Pass 0 `DEPTHSOLID`: 色は塗らず、不透明度 0.5 以上の芯だけ深度とステンシル（`_SilkStencilBit`）を書きます。
   - Pass 1 `FORWARD`: 深度は書かずに全体を塗ります。
 - 先に描く理由: 巣や繭は、半透明でも前後関係を保つために濃い所だけ深度を書きます。糸を後から描くと、その深度に負けて「巣の向こうに透けて見えるはずの糸」が消えてしまいます。先に描けば、奥の糸の上に巣や繭が半透明で重なるので、糸は必ず透けて見えます。
-- ステンシルは、[体に張り付く繭（SpiderCocoonDepthDecal）](SpiderCocoonDepthDecal.md)が「体の手前を通る糸の上に繭を塗らない」ための目印です。`_SilkStencilBit` を変えたら、体に張り付く繭のマテリアル（インスペクタでは「デカール」）の `_StencilSkipMask`（既定 192 = 視界ジャック用の 128 ＋ 糸の 64）も合わせてください。
+- ステンシルは、[体に張り付く繭（SpiderCocoonDepthDecal）](SpiderCocoonDepthDecal.md)が「体の手前を通る糸の上に繭を塗らない」ための目印です。`_SilkStencilBit` を変えたら、体に張り付く繭のマテリアル（インスペクタでは「デカール」）の `_GlueStencilReadMask`（既定 208 = 視界ジャック用の 128 ＋ 糸の 64 ＋ 蜘蛛の体の 16）も合わせてください。
 
 ## 注意・制約
 
