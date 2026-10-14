@@ -96,6 +96,10 @@ float4 _DrapeSkinZ[SW_DRAPE_MAX];
 //   z 落下中にふちが持ち上がる高さ (m)  w 体のてっぺんからの落下高さ (m、0=着地)
 //   このとき _DrapeCenter.xz が体の軸、_DrapeUp.xyz が網の向き（水平の基準軸）
 float4 _DrapeFall;
+// 壁に貼りついた網（CaptureNetDrape.Pin、MPB 専用。0 なら従来どおり）
+//   x 体からこの距離 (m) より離れた所は、動かない世界に従う（貼りついた所に残る）
+//   体を動かしても、その部位の近くだけが追従し、離れた所の網は動かない（ベタつく巣と同じ見え方）
+float4 _DrapeAnchor;
 
 bool SW_DrapeActive()
 {
@@ -330,6 +334,28 @@ float3 SW_DrapeSkin(float3 restPoint, float extraGap)
         rowX += w * _DrapeSkinX[j].xyz;
         rowY += w * _DrapeSkinY[j].xyz;
         rowZ += w * _DrapeSkinZ[j].xyz;
+    }
+    // 壁に貼りついた網: 動かない世界を、どの点からも _DrapeAnchor.x だけ離れた「もう 1 つの部位」として混ぜる
+    // （回転なし・移動なし）。体の近くは体の部位が勝ち、離れた所は世界が勝つので、そこは貼りついた位置に残る。
+    UNITY_BRANCH
+    if (_DrapeAnchor.x > 0.0)
+    {
+        float da = _DrapeAnchor.x;
+        float wa;
+        if (da < dMin)
+        {
+            float rescale = exp((da - dMin) / k);
+            sum *= rescale; weightSum *= rescale; anchorSum *= rescale;
+            rowX *= rescale; rowY *= rescale; rowZ *= rescale;
+            dMin = da; wa = 1.0;
+        }
+        else wa = exp((dMin - da) / k);
+        sum += wa * restPoint;
+        weightSum += wa;
+        anchorSum += wa * restPoint;
+        rowX += wa * float3(1.0, 0.0, 0.0);
+        rowY += wa * float3(0.0, 1.0, 0.0);
+        rowZ += wa * float3(0.0, 0.0, 1.0);
     }
     // 最も近い部位の重みは必ず 1 なので weightSum >= 1
     float3 skinned = sum / weightSum;

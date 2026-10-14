@@ -33,7 +33,7 @@ Website/                              配布ページのテンプレート
 
 | CGINC | 役割 | 使うシェーダー |
 |---|---|---|
-| `SpiderSilk_Look.cginc` | 質感 21 項目の uniform 宣言（**宣言はここだけ**） | 地面転写を除く 5 シェーダー（`SpiderCocoon_Common` / `SpiderGoo_Shading` 経由） |
+| `SpiderSilk_Look.cginc` | 質感 21 項目の uniform 宣言（**宣言はここだけ**） | 受け手マスクを除く 5 シェーダー（`SpiderCocoon_Common` / `SpiderGoo_Shading` 経由） |
 | `SpiderGoo_Shading.cginc` | 粘液の塗り（丸い断面・トゥーン・ハイライト・輪郭線・透け） | 糸・巣・繭・デカール・ねばねばネット |
 | `SpiderCocoon_Common.cginc` / `SpiderCocoon_Noise.cginc` / `SpiderCocoon_Thread.cginc` / `SpiderCocoon_Lighting.cginc` | 共通の uniform・ノイズ・糸の位相・リムライト・揺れ | 糸・巣・繭・デカール・ねばねばネット |
 | `SpiderCocoon_Compose.cginc` | 乾いた糸のレイヤー合成（`SC_CompositeLayers`） | 吐いた糸（乾いた糸モード）。繭・デカールは include のみ |
@@ -41,21 +41,23 @@ Website/                              配布ページのテンプレート
 | `SpiderCocoon_Goo.cginc` | 繭の粘液の帯・巻きアニメ（`SC_CompositeGoo`） | 繭・デカール |
 | `SpiderCocoon_VisionJack.cginc` | 視界ジャック（包まれ演出） | 繭・デカール |
 | `SpiderCocoon_Group.cginc` / `_GroupShell.cginc` | くっついた繭のまとめ描き・外殻 | デカール |
+| `SpiderCocoon_Sheet.cginc` | 表面の模様「ねばねばネット風」（`_SurfaceStyle`） | デカール |
+| `SpiderWeb_Core.cginc` | 巣の頂点・フラグメントの処理（`SpiderWeb.shader` の本体） | 巣 |
 | `SpiderCocoon_Pull.cginc` | 接触追従の変形（`SC_PULL_MAX = 16`） | 巣・繭・ねばねばネット |
 | `SpiderWeb_Drape.cginc` | 体に覆いかぶさる変形（`SW_DRAPE_MAX = 20`） | 巣・ねばねばネット |
 | `SpiderSilk_Motion.cginc` | 揺れ・重力たゆみの波形 | 糸・巣 |
 | `SpiderGooSheet_BakedPattern.cginc` | 焼き込んだ模様の読み取り | ねばねばネット |
 
-インスペクタは全シェーダー共通の `Editor/SpiderCocoonShaderGUI.cs`（地面転写を除く）が描きます。
+インスペクタは全シェーダー共通の `Editor/SpiderCocoonShaderGUI.cs`（受け手マスクを除く）が描きます。
 
 ## 変更するときの約束
 
 - **質感 21 項目**は、名前・型・範囲・既定値・属性を全 5 シェーダーで完全に一致させます。足す・消すときは `Runtime/CGINC/SpiderSilk_Look.cginc`・`Editor/SpiderSilkLook.cs`（`Props`）・5 つの `.shader` の Properties を一緒に直します。メニュー **Tools > SpiderShader > 質感プロパティの一致チェック**（取り込み時にも自動実行）で確かめられ、一致しない間は自動同期が止まります。
 - **新しいプロパティ**は `SpiderCocoonShaderGUI.cs` の `Categories` 表に登録します。未登録だと「その他（未分類）」に出ます。プリセットでの扱い（`Part` = Look / Shape / Gimmick、`Hidden`）もここで決まります。Udon が実行時に渡す値は `RuntimeOnlyProps` に入れてプリセットから除外します。
 - ShaderLab の属性の引数（`[Header(...)]` など）は ASCII のみです（日本語を書くとパースエラー）。表示名の日本語は問題ありません。
-- **ステンシルのビット**: 繭の視界ジャック 128（`_StencilRef`）、吐いた糸の芯 64（`_SilkStencilBit`）、デカールが塗らない画素 192（`_StencilSkipMask` = 128 + 64）。どれかを変えたら合計をそろえます。
+- **ステンシルのビット**: 繭の視界ジャック 128（`_StencilRef`）、吐いた糸の芯 64（`_SilkStencilBit`）、受け手マスク 32（`_StencilReceiverBit`）、蜘蛛の体 16（ワールド側のシェーダーが立てる）。デカールの体表 glue は `_GlueStencilRef` / `_GlueStencilReadMask`（既定 0 / 208 = 128 + 64 + 16、受け手マスクと組むときは 32 / 240）。どれかを変えたら合計をそろえます。
 - **描画順**: 吐いた糸は `Transparent-10`、それ以外は `Transparent`。理由は [吐いた糸の「描画順とステンシル」](docs/SpiderThreadTrail.md#描画順とステンシル)。
-- **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（8）と `CocoonGroupLinker` のグループ上限。
+- **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）。
 - 繭・デカールはオブジェクト空間を使う判定があるため `DisableBatching` タグを付けています。
 
 ## ドキュメントの方針

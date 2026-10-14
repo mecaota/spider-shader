@@ -162,6 +162,8 @@ public class SpiderShaderPreset : ScriptableObject
 
             // [Toggle(_GOO_ON)] などのキーワードを、入れた数値に合わせて付け直す
             MaterialEditor.ApplyMaterialPropertyDrawers(m);
+            // 繭デカールの表面の模様（_SurfaceStyle → キーワード SC_SURFACE_NET）も同じく付け直す
+            SpiderCocoonShaderGUI.SyncKeywords(m);
             EditorUtility.SetDirty(m);
         }
         // 吐いた糸に当てたら、その質感を継承している巣・繭・デカールにも伝える

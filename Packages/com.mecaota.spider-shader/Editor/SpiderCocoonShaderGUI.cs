@@ -64,6 +64,17 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         // 揺れアニメは対応シェーダー（SpiderWeb / SpiderCocoon 本体）だけに表示
         new Category{ Title = "揺れアニメ", Common = true, Require = "_SwayAnimEnable",
             Props = new[]{ "_SwayAnimEnable", "_SwayAnimAmount", "_SwayAnimSpeed", "_SwayAnimWaves", "_SwayAnimAnchor" } },
+        // 繭デカールの表面を「ねばねばネット」風にする設定（_SurfaceStyle=1 で有効。デカールだけが持つ）。
+        // 束・膜の設定（_GooStrands / _GooWeb …）は吐いた糸・ネットと同じ名前なので、下の「粘液の形」
+        // 「粘液の膜」「吐いた糸の粘液の束」にも名前が載っている。ここを先に置き、
+        // 同じプロパティは最初に載ったカテゴリにだけ表示する（下の描画ループで重複を飛ばす）。
+        new Category{ Title = "ねばねばネット風の表面", Common = false, Require = "_SurfaceStyle",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_SurfaceStyle", "_SheetBandWidth", "_SheetRotation", "_SheetAlongScale", "_SheetSeed",
+                           "_SheetLayers", "_SheetLayerTwist", "_SheetLayerShift", "_SheetLayerOpacity",
+                           "_GooStrands", "_GooWidth", "_GooSpread", "_GooWobble", "_GooWobbleFreq",
+                           "_SheetBeads", "_SheetBeadFreq", "_GooMerge",
+                           "_GooWeb", "_GooWebCell", "_GooWebRows", "_GooWebHole" } },
         // 粘液の形（色・陰影・光沢・粘液感は上の「質感」）。シェーダーごとに持つ項目が違うが、
         // 実在するプロパティだけが描画される。同じ名前でも単位がシェーダーごとに違うので継承しない
         new Category{ Title = "粘液の形", Common = true, Require = "_GooAmount",
@@ -79,16 +90,17 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         new Category{ Title = "裏面と視界ジャック", Common = false, Require = "_VisionJackRadius",
             Props = new[]{ "_HideBackFibers", "_VisionJackEnable", "_VisionJackRadius", "_VisionJackHeight", "_VisionJackInMirror", "_JackRadius", "_JackStretch" } },
         // 繭のジャック（_StencilRef）・蜘蛛糸の芯（_SilkStencilBit）・デカールが glue を描かない
-        // 画素（_StencilSkipMask）のステンシル。シェーダーごとに持つ項目が違うが、
+        // 画素の条件（_GlueStencilRef / _GlueStencilReadMask）のステンシル。シェーダーごとに持つ項目が違うが、
         // 実在するプロパティだけが描画される（どれも持たないシェーダーには出ない）
         new Category{ Title = "レンダーステート", Common = false,
-            Props = new[]{ "_ZWrite", "_StencilRef", "_StencilSkipMask", "_SilkStencilBit" } },
+            Props = new[]{ "_ZWrite", "_StencilRef", "_GlueStencilRef", "_GlueStencilReadMask", "_SilkStencilBit" } },
 
         // ---- デカール版（SpiderCocoonDepthDecal）固有 ----
         new Category{ Title = "投影フィット", Common = false, Require = "_RadiusFit",
             Props = new[]{ "_RadiusFit", "_HeightFit", "_ProjectRange" } },
         new Category{ Title = "繭まとめ描きのボリューム", Common = false, Require = "_GroupBulge",
-            Props = new[]{ "_GroupBulge", "_GroupBridgeSpan", "_GroupShellBlend", "_GroupRadiusScale", "_GroupAxisFollow", "_GroupAxisBlend" } },
+            Props = new[]{ "_GroupBulge", "_GroupBridgeSpan", "_GroupShellBlend", "_GroupRadiusScale", "_GroupAxisFollow", "_GroupAxisBlend", "_GroupMarchSteps",
+                           "_GroupMarchStepsFar", "_GroupMarchFarStart", "_GroupMarchFarEnd", "_GroupDepthCut", "_GroupBridgeHeightScale" } },
         new Category{ Title = "糸の厚み", Common = false, Require = "_GlueThickness",
             Props = new[]{ "_GlueThickness" } },
         new Category{ Title = "巻きの端のほつれ", Common = false, Require = "_GooEdgeFray",
@@ -169,6 +181,10 @@ public class SpiderCocoonShaderGUI : ShaderGUI
 
     public override void OnGUI(MaterialEditor materialEditor, MaterialProperty[] properties)
     {
+        // 数値とシェーダーキーワードがずれているマテリアル（スクリプトで数値だけ変えた等）は、表示したときに揃える
+        foreach (var t in materialEditor.targets)
+            if (t is Material tm && SyncKeywords(tm)) EditorUtility.SetDirty(tm);
+
         // lilToon と同じく、プリセット（よく使う設定のひな形）を一番上に置く
         SpiderShaderPresetPanel.Draw(materialEditor);
 
@@ -193,11 +209,11 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             if (cat.Require != null && !map.ContainsKey(cat.Require)) continue;
             if (cat.SilkLook && role == SpiderSilkLook.Role.Inheritor) continue;
 
-            // このマテリアルに実在するプロパティだけ集める。
+            // このマテリアルに実在するプロパティだけ集める（先のカテゴリで表示済みのものは飛ばす）。
             // [HideInInspector] の値は出さない（巣の _SwayAnimWaves など、そのシェーダーでは効かない値）
             var list = new List<MaterialProperty>();
             foreach (var name in cat.Props)
-                if (map.TryGetValue(name, out var mp) &&
+                if (!drawn.Contains(name) && map.TryGetValue(name, out var mp) &&
                     (mp.flags & MaterialProperty.PropFlags.HideInInspector) == 0)
                     list.Add(mp);
             if (list.Count == 0) continue;
@@ -251,7 +267,38 @@ public class SpiderCocoonShaderGUI : ShaderGUI
     public override void ValidateMaterial(Material material)
     {
         base.ValidateMaterial(material);
+        SyncKeywords(material);
         SpiderSilkLook.NotifyChanged(material);
+    }
+
+    // 別のシェーダーからこのシェーダーへ切り替えたときも、数値に合わせてキーワードを付け直す
+    public override void AssignNewShaderToMaterial(Material material, Shader oldShader, Shader newShader)
+    {
+        base.AssignNewShaderToMaterial(material, oldShader, newShader);
+        SyncKeywords(material);
+    }
+
+    // -------------------------------------------------------------------------
+    // 数値のプロパティとシェーダーキーワードの同期（2026-10-14 軽量化）
+    //   繭デカールの表面の模様（_SurfaceStyle: 0 = 繭の帯 / 1 = ねばねばネット）は、シェーダーの中では
+    //   キーワード SC_SURFACE_NET で切り替える。実行時の if をやめて、使わない側の処理を
+    //   シェーダーから消すため（描画が少し軽くなる）。数値はインスペクタの表示・保存用で、
+    //   キーワードはこの関数が数値に合わせて付け外しする。インスペクタで値を変えたとき・表示したとき・
+    //   シェーダーを切り替えたとき・プリセットを当てたとき（SpiderShaderPreset.Apply）に呼ばれる。
+    //   スクリプトで _SurfaceStyle を変えるときは、この関数を呼ぶか、キーワードも一緒に変えること。
+    //   キーワードが無いマテリアルは 0（繭の帯）として描かれる。
+    // 戻り値: キーワードを変えたら true（呼び出し側で SetDirty する）
+    // -------------------------------------------------------------------------
+    public const string SurfaceNetKeyword = "SC_SURFACE_NET";
+
+    public static bool SyncKeywords(Material material)
+    {
+        if (material == null || !material.HasProperty("_SurfaceStyle")) return false;
+        bool net = material.GetFloat("_SurfaceStyle") > 0.5f;
+        if (material.IsKeywordEnabled(SurfaceNetKeyword) == net) return false;
+        if (net) material.EnableKeyword(SurfaceNetKeyword);
+        else     material.DisableKeyword(SurfaceNetKeyword);
+        return true;
     }
 
     // -------------------------------------------------------------------------

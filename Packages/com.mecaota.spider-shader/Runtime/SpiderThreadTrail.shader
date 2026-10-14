@@ -140,7 +140,7 @@ Shader "mecaota/SpiderThreadTrail"
         // ねばねばネット系のデカール（SpiderGooQuadNetDecal / SpiderGooWrapDecal）は、このビットが立った画素へ
         // 体表の glue を上塗りしない（手前を通る糸が繭の下へ潜って見えないように）。
         // ※ ねばねばネット系はこのパッケージに含まれない（作者のワールド側にある）。
-        // 付け替えたらデカール側の Glue Skip Mask も合わせること。
+        // 付け替えたらデカール側の _GlueStencilReadMask（既定 208 = 128 + 64 + 16）も合わせること。
         [Header(Render Order)]
         [IntRange] _SilkStencilBit ("糸のステンシル ビット (Silk Stencil Bit)", Range(0, 255)) = 64
     }
@@ -328,8 +328,24 @@ Shader "mecaota/SpiderThreadTrail"
             }
 
             // Pass 0 用: 色は使わず、芯（不透明度が高い所）だけ残して深度とステンシルを書かせる
+            // （戻り値の色は使わないので、色と光の計算はコンパイラが省く）
             fixed4 fragDepth(v2f_t i) : SV_Target
             {
+                // ★ 早い棄却（2026-10-14 軽量化。結果は最後の clip と同じ）
+                //   最後の不透明度 = 糸の模様の不透明度 × 頂点アルファのフェード × 帯の縁のフェード（frag と同じ式）。
+                //   模様の不透明度には上限があるので、上限 × フェードが芯の境目に届かない画素
+                //   （尻尾の消えかけ・帯の縁）は、模様の計算の前に捨てる。
+                float edge = smoothstep(0.0, _TrailEdgeSoft, min(i.uv.y, 1.0 - i.uv.y));
+            #if defined(_GOO_ON)
+                // 粘液: 上限は STG_GooAlphaCeiling（透ける繊維 extraAlpha の上限は _GooFiberMix）
+                float fadeA = lerp(i.color.a, saturate(i.color.a * 3.0), _GooTailThin);
+                float alphaCeiling = STG_GooAlphaCeiling(_GooFiberMix) * abs(fadeA * edge);
+            #else
+                // 繊維の重ね合わせ: 1 層の不透明度は _ThreadColor.a 以下、重ねても max(1, _ThreadColor.a) 以下
+                float alphaCeiling = max(1.0, abs(_ThreadColor.a)) * abs(i.color.a * edge);
+            #endif
+                if (alphaCeiling < STT_DEPTH_SOLID_ALPHA) discard;
+
                 fixed4 c = frag(i);
                 clip(c.a - STT_DEPTH_SOLID_ALPHA);
                 return 0;
@@ -360,7 +376,6 @@ Shader "mecaota/SpiderThreadTrail"
             #pragma fragment fragDepth
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             #pragma shader_feature_local _GOO_ON
             ENDCG
         }
@@ -381,7 +396,6 @@ Shader "mecaota/SpiderThreadTrail"
             #pragma fragment frag
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
             // 粘液モードはキーワードで切替（実行時の if 分岐にすると、分岐内の
             // fwidth のせいで両方の処理が常に走るため）
             #pragma shader_feature_local _GOO_ON

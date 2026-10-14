@@ -1,6 +1,6 @@
 # Spider Shaders
 
-蜘蛛の巣や繭に捕らわれる「疑似拘束」を演出するための、VRChat ワールド向けシェーダー集です。蜘蛛が吐いた糸、張られた巣、体に巻きつく繭、体にかぶさる粘液のネットを、画像素材を用意しなくてもシェーダーの計算だけで描きます（地面転写を除く）。
+蜘蛛の巣や繭に捕らわれる「疑似拘束」を演出するための、VRChat ワールド向けシェーダー集です。蜘蛛が吐いた糸、張られた巣、体に巻きつく繭、体にかぶさる粘液のネットを、画像素材を用意しなくてもシェーダーの計算だけで描きます。
 
 > **Unity Built-in Render Pipeline 専用**です。URP / HDRP のプロジェクトでは動きません（マテリアルがピンクになります）。
 
@@ -15,7 +15,7 @@
 | [繭（SpiderCocoon）](docs/SpiderCocoon.md) | 糸がぐるぐる巻いた繭。中に入ると内壁に包まれる | 円柱メッシュ | |
 | [体に張り付く繭（SpiderCocoonDepthDecal）](docs/SpiderCocoonDepthDecal.md) | プレイヤーの体の表面に沿って巻きつく繭 | 体を包む Cube | **PC 専用**。影付きのリアルタイムライトが必要 |
 | [ねばねばネット（SpiderGooSilkSheet）](docs/SpiderGooSilkSheet.md) | 体にかぶさる粘液のシート（最大 8 層） | 平面などのメッシュ | **PC 専用**。使う前に模様の「焼き込み」が必要 |
-| [地面転写（SpiderWebGroundProjector）](docs/SpiderWebGroundProjector.md) | 床に投影する蜘蛛の巣の画像 | Projector コンポーネント | 試験実装。投影する画像は自分で用意する |
+| [受け手マスク（SpiderCocoonProjectorMask）](docs/SpiderCocoonProjectorMask.md) | 体に張り付く繭を、捕まった人のアバターにだけ描くための目印 | Projector コンポーネント | 試験実装。**PC 専用**。駆動する Udon は同梱していない |
 
 複数のシェーダーで共通の機能:
 

@@ -37,6 +37,19 @@ float _GooOverlapShadow; // 上の帯が下の帯に落とす影の濃さ
 float _WindEnable;
 float _WindProgress;
 
+// ねばねばネット風の表面（SpiderCocoonDepthDecal だけ。.shader が SC_COCOON_SHEET_STYLE を
+// define し、本ファイルの後で SpiderCocoon_Sheet.cginc を読み込む）。
+// 本体 SpiderCocoon.shader では define しないので、ここも分岐も無い＝従来どおり。
+// どちらの模様で塗るかは、シェーダーキーワード SC_SURFACE_NET（_SurfaceStyle = 1 のとき ON）で決める
+// （2026-10-14。以前は実行時の if。キーワードにすると使わない側の処理がシェーダーから消える）。
+// キーワードはマテリアルのインスペクタ（Editor/SpiderCocoonShaderGUI.cs）が _SurfaceStyle と自動で揃える。
+#ifdef SC_COCOON_SHEET_STYLE
+// 中身は SpiderCocoon_Sheet.cginc（_WindEnable を使うので本ファイルより後に置く。ここは予告だけ）
+fixed4 SC_ShadeSheetAtExUnclippedStop(float3 localPos, float3 worldPos, float3 N,
+                                      float3 colX, float3 colY, float edge01,
+                                      bool earlyStop, float stopAlpha);
+#endif
+
 // 層 li の角度シアー（1 周で何本ぶん帯が進むか）。層の並びは線対称: 0, +1, -1, +2, -2 ...
 float SCG_LayerCx(int li, float cy, bool snapCx)
 {
@@ -80,8 +93,14 @@ float SCG_HalfWidth(float idxMod, float seed, float fuzzCoord,
 //   edge01    : 巻きの端からの深さ 0..1（1=内側, 0=巻きの境界）。境界に近いほど帯が
 //               細り、帯ごとにばらばらの位置で途切れる（ほつれ）。端の無い形は 1 を渡す
 // 戻り値: 合成済みの色（α割り戻し済み）。全層が隙間なら discard。
-fixed4 SC_CompositeGooUnclipped(float2 uv, float3 N, float3 T, float3 B, float3 worldPos,
-                       float2 aaUV, bool snapCx, bool foldFuzz, bool flatColor, float edge01)
+//   earlyStop / stopAlpha（深度だけを書くパス用。2026-10-14 軽量化）:
+//     earlyStop が true のとき、重ねた不透明度が stopAlpha 以上になった時点で残りの層を省く。
+//     不透明度は層を重ねるほど増える（下がらない）ので、「最後に stopAlpha 以上か」の判定は省いても変わらない。
+//     そのとき返す色は途中までの合成なので、色を使うパスでは必ず false（下の従来版がそう呼ぶ）。
+//     false を定数で渡すと、コンパイラがこの判定ごと消す＝従来とまったく同じ処理になる。
+fixed4 SC_CompositeGooUnclippedStop(float2 uv, float3 N, float3 T, float3 B, float3 worldPos,
+                       float2 aaUV, bool snapCx, bool foldFuzz, bool flatColor, float edge01,
+                       bool earlyStop, float stopAlpha)
 {
     float3 L = STG_GooLightDir();
     float3 V = normalize(_WorldSpaceCameraPos - worldPos);
@@ -229,10 +248,21 @@ fixed4 SC_CompositeGooUnclipped(float2 uv, float3 N, float3 T, float3 B, float3 
         // ---- 奥→手前へ over 合成（事前乗算） ----
         accRGB = c.rgb * c.a + accRGB * (1.0 - c.a);
         accA   = c.a         + accA   * (1.0 - c.a);
+
+        // 深度パス: もう芯（stopAlpha 以上）と決まったので、残りの層は見ない
+        if (earlyStop && accA >= stopAlpha) break;
     }
 
     // Blend SrcAlpha で α が再度掛かるため割り戻す（縁が暗く沈むのを防ぐ）
     return fixed4(accRGB / max(accA, 1e-4), accA);
+}
+
+// 従来どおり全層を合成する版（色を使うパスはこちら）
+fixed4 SC_CompositeGooUnclipped(float2 uv, float3 N, float3 T, float3 B, float3 worldPos,
+                       float2 aaUV, bool snapCx, bool foldFuzz, bool flatColor, float edge01)
+{
+    return SC_CompositeGooUnclippedStop(uv, N, T, B, worldPos, aaUV, snapCx, foldFuzz, flatColor, edge01,
+                                        false, 2.0);
 }
 
 // Keep the existing discard behaviour for single-surface callers. Group caps
@@ -272,8 +302,10 @@ float3 SC_CylRadialNormal(float3 lp)
 // ローカル点 localPos（＝繭の上の点）を粘液の帯で着色して返す。
 // colX/colY は巻き座標の軸（object→world 行列の列）、edge01 は巻きの端からの深さ
 // （SC_CompositeGoo 参照）。糸の隙間なら discard（SC_CompositeGoo 内）。
-fixed4 SC_ShadeCocoonAtExUnclipped(float3 localPos, float3 worldPos, float3 N,
-                          float3 colX, float3 colY, float edge01)
+// 従来の繭の帯（_SurfaceStyle = 0）。中身は以前の SC_ShadeCocoonAtExUnclipped そのまま
+// （earlyStop / stopAlpha は SC_CompositeGooUnclippedStop を参照。色を使うパスは false）
+fixed4 SC_ShadeCocoonBandsAtExUnclippedStop(float3 localPos, float3 worldPos, float3 N,
+                          float3 colX, float3 colY, float edge01, bool earlyStop, float stopAlpha)
 {
     float ang = atan2(localPos.z, localPos.x);
     // 横リング: uv.x=円周(糸が走る方向), uv.y=軸(巻き数 cy が並ぶ方向)
@@ -295,7 +327,34 @@ fixed4 SC_ShadeCocoonAtExUnclipped(float3 localPos, float3 worldPos, float3 N,
 
     // 円筒マッピング版: uv.x=円周（ラップ）のため角度は整数スナップ（snapCx=true）、
     // 糸に沿った座標は折返しあり、通常ライティング。
-    return SC_CompositeGooUnclipped(uv, N, T, B, worldPos, aaUV, true, true, false, edge01);
+    return SC_CompositeGooUnclippedStop(uv, N, T, B, worldPos, aaUV, true, true, false, edge01,
+                                        earlyStop, stopAlpha);
+}
+
+fixed4 SC_ShadeCocoonBandsAtExUnclipped(float3 localPos, float3 worldPos, float3 N,
+                          float3 colX, float3 colY, float edge01)
+{
+    return SC_ShadeCocoonBandsAtExUnclippedStop(localPos, worldPos, N, colX, colY, edge01, false, 2.0);
+}
+
+// 表面の模様を選んで塗る。SC_COCOON_SHEET_STYLE を define したシェーダー（デカール）だけ、
+// キーワード SC_SURFACE_NET（_SurfaceStyle = 1）で「ねばねばネット風」（帯が平行に並び、間に穴の空いた膜）になる。
+// キーワードが無いマテリアルは従来の繭の帯。
+// （earlyStop / stopAlpha は SC_CompositeGooUnclippedStop を参照。色を使うパスは false）
+fixed4 SC_ShadeCocoonAtExUnclippedStop(float3 localPos, float3 worldPos, float3 N,
+                          float3 colX, float3 colY, float edge01, bool earlyStop, float stopAlpha)
+{
+#if defined(SC_COCOON_SHEET_STYLE) && defined(SC_SURFACE_NET)
+    return SC_ShadeSheetAtExUnclippedStop(localPos, worldPos, N, colX, colY, edge01, earlyStop, stopAlpha);
+#else
+    return SC_ShadeCocoonBandsAtExUnclippedStop(localPos, worldPos, N, colX, colY, edge01, earlyStop, stopAlpha);
+#endif
+}
+
+fixed4 SC_ShadeCocoonAtExUnclipped(float3 localPos, float3 worldPos, float3 N,
+                          float3 colX, float3 colY, float edge01)
+{
+    return SC_ShadeCocoonAtExUnclippedStop(localPos, worldPos, N, colX, colY, edge01, false, 2.0);
 }
 
 fixed4 SC_ShadeCocoonAtEx(float3 localPos, float3 worldPos, float3 N,
@@ -312,6 +371,16 @@ fixed4 SC_ShadeCocoonAt(float3 localPos, float3 worldPos, float3 N)
     float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
     float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
     return SC_ShadeCocoonAtEx(localPos, worldPos, N, colX, colY, 1.0);
+}
+
+// 深度パス用: SC_ShadeCocoonAt と同じ点の「不透明度だけ」を返す（色・光は使わない）。
+// 重ねた不透明度が solidAlpha を少し超えた所で残りの層を省く（判定 >= solidAlpha の結果は変わらない）。
+// 余裕 1e-5 は、浮動小数の丸めで重ねた不透明度がごくわずかに下がる場合の保険。
+float SC_CocoonAlphaAt(float3 localPos, float3 worldPos, float3 N, float solidAlpha)
+{
+    float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+    float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+    return SC_ShadeCocoonAtExUnclippedStop(localPos, worldPos, N, colX, colY, 1.0, true, solidAlpha + 1e-5).a;
 }
 
 #endif // SPIDERCOCOON_GOO_INCLUDED

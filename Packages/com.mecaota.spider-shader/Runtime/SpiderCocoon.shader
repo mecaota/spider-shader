@@ -350,7 +350,6 @@ Shader "mecaota/SpiderCocoon"
             #pragma fragment frag
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma multi_compile_fwdbase
 
             #include "UnityCG.cginc"
             #include "Lighting.cginc"

@@ -66,7 +66,7 @@ public class CocoonGroupLinker : UdonSharpBehaviour
     private int[] _list;     // 表示中の繭の番号
     private Vector4[] _memA; // 代表へ渡す仲間の円筒（中心, 半径）
     private Vector4[] _memB; // 代表へ渡す仲間の円筒（軸 × 半分の高さ）
-    private const int MaxMembers = 8;   // シェーダーの SCG_MAX_MEMBERS と一致させる
+    private const int MaxMembers = 16;  // シェーダーの SCG_MAX_MEMBERS と一致させる
     private int _count;      // _list の有効な数
     private bool _inited;
     private float _nextScan;
@@ -280,6 +280,8 @@ public class CocoonGroupLinker : UdonSharpBehaviour
         _mpb.SetVectorArray("_GroupMemA", _memA);
         _mpb.SetVectorArray("_GroupMemB", _memB);
         _mpb.SetFloat("_GroupMemCount", m);
+        // 橋の組は渡さない（0 = 代表から各部位へ放射状に橋を張る従来の形）
+        _mpb.SetFloat("_GroupBridgeCount", 0f);
 
         // 代表の箱を、まとめた円筒を包む大きさへ（オブジェクト空間の半サイズ）
         Transform t = decals[lead].transform;
@@ -374,7 +376,7 @@ public class CocoonGroupLinker : UdonSharpBehaviour
     {
         int a = Find(i);
         int b = Find(j);
-        // The shader has eight member slots. Keep additional parts in their own group.
+        // The shader has sixteen member slots. Keep additional parts in their own group.
         if (a != b && _groupSize[a] + _groupSize[b] <= MaxMembers)
         {
             _root[b] = a;
