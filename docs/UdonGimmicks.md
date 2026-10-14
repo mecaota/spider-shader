@@ -96,6 +96,8 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 
 幹（ローカル Y 軸）に張り付き、+Z 側の地面へ扇形に広がる曲面の形です。メッシュと同じ値にそろえます。
 
+> 幹に沿う曲面のメッシュを作るツールは、このパッケージに含まれていません。自分で用意したメッシュの寸法に合わせて、下の値を入れます（メッシュの条件は [蜘蛛の巣の「曲面の巣」](SpiderWeb.md#曲面の巣木の幹に張り付く扇形など)）。
+
 | 項目 | 既定値 | 説明 |
 |---|---|---|
 | Tree Trunk Radius | 0.25 | 幹の半径＋浮き（m） |
@@ -110,7 +112,7 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 | 項目 | 既定値 | 説明 |
 |---|---|---|
 | Contact Distance | 0.2 | 面からこの距離（m）以内に来たボーンを捕縛する（面のどちら側でも） |
-| Contact Distance By Bone | なし | `Bones` と並行のボーン別の接触距離。空や長さ違いなら共通の値を使う |
+| Contact Distance By Bone | なし | ボーンごとの接触距離。`Bones` と同じ順に 1 本ずつ入れる（`Bones` の 1 番目に対応するのは 1 番目の値）。値が無いボーンや 0 以下のボーンは、共通の Contact Distance を使う |
 | Auto Release Distance | 0.8 | 手足が捕縛点からこの距離（m）以上離れたら千切れて解放する。0 で無効 |
 | Recapture Cooldown | 1 | 解放してからこの秒数は同じボーンを捕縛しない |
 | Pending Timeout | 1 | 捕縛の要求を送ってから同期が届くまで、再送しない秒数 |
@@ -165,7 +167,7 @@ LineRenderer の設定:
 
 | メソッド | 内容 |
 |---|---|
-| `ClaimLocalBone(int bone, Vector3 anchor, float param)` | 外部のスクリプト（落とし穴の罠など）から、自分のボーンを指定の捕縛点で捕縛させる。引数はボーン番号（`Bones` の順）、捕縛点（面のローカル座標）、区間上の位置（0〜1）。自動の接触判定は通らない。送信は 1 秒 20 回までなので、何本も送るときは間隔を空ける |
+| `ClaimLocalBone(int boneIndex, Vector3 anchorLocal, float param)` | 外部のスクリプト（落とし穴の罠など）から、自分のボーンを指定の捕縛点で捕縛させる。引数はボーン番号（`Bones` の順）、捕縛点（面のローカル座標）、区間上の位置（0〜1）。自動の接触判定は通らない。送信は 1 秒 20 回までなので、何本も送るときは間隔を空ける |
 | `_ReleaseLocalBones()` | `ClaimLocalBone` で捕縛した自分のボーンを解放する。解放後の約 3 秒は、遅れて届いた捕縛を取り除く |
 | `RefreshFanShape()` | 実行中に巣のマテリアルや扇形の形を変えたときに呼ぶ。捕縛範囲（扇形）を読み直す |
 
@@ -175,8 +177,8 @@ LineRenderer の設定:
 
 | 項目 | 値 |
 |---|---|
-| Bones | 左右のすね（LowerLeg）・もも（UpperLeg）・前腕（LowerArm）・上腕（UpperArm）、腰（Hips）、首（Neck） |
-| Contact Distance By Bone | すね 0.09 / もも 0.12 / 前腕 0.07 / 上腕 0.08 / 腰 0.15 / 首 0.08（m、区間の中心線から） |
+| Bones | 次の 10 本をこの順に: LeftLowerLeg・RightLowerLeg（すね）、LeftUpperLeg・RightUpperLeg（もも）、LeftLowerArm・RightLowerArm（前腕）、LeftUpperArm・RightUpperArm（上腕）、Hips（腰）、Neck（首） |
+| Contact Distance By Bone | Bones と同じ順に 10 個: 0.09・0.09・0.12・0.12・0.07・0.07・0.08・0.08・0.15・0.08（m、区間の中心線から。すね 0.09 / もも 0.12 / 前腕 0.07 / 上腕 0.08 / 腰 0.15 / 首 0.08） |
 | Segment Contact / Pull Only / Slow Local When Stuck | ON / ON / ON（速さ 1/3） |
 | Capture Only Below Surface | OFF（初めて触れたときにくっつく） |
 
@@ -210,7 +212,7 @@ LineRenderer の設定:
 - 足を 2 m 以上持ち上げる、または引っ張り半径を大きくする場合は、WebPlane の生成ツールで Bounds Up / Bounds Lateral を上げて作り直してください。
 - 糸の太さは UV 基準なので、引き伸ばした方向に太く見えます。
 - 指定したボーンを持たないアバターでは、そのボーンは捕縛されません。
-- 配列は最初に渡した長さで固定されるため、常に 16 要素で渡しています。シェーダー側の上限（`SC_PULL_MAX`）とスクリプトの `MaxSlots` は同じ値にしてください。
+- 1 枚の面で同時に捕縛できるのは最大 16 か所です（その場にいる全員で先着順に分け合います）。上限を変えるには、シェーダーとスクリプトの両方を直す必要があります（[開発者向けノート](../CONTRIBUTING.md#変更するときの約束)）。
 - 面を隠すときは GameObject の `SetActive(false)` ではなく `Renderer.enabled` を使ってください。非アクティブな UdonBehaviour ではイベントが動きません。
 - ClientSim ではボーンの情報とネットワークイベントの一部が再現されないので、足の持ち上げや複数人の同時捕縛は実機（Build & Test）で確認してください。
 
@@ -273,7 +275,7 @@ LineRenderer の設定:
 
 投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)と[ねばねばネット](SpiderGooSilkSheet.md)が対応しています。
 
-> **駆動する Udon はこのパッケージに含まれていません。** 体の形（ボーンから作ったカプセル）と網の位置・向きを、MaterialPropertyBlock で毎フレーム渡すスクリプトが必要です。作者のワールドでは `CaptureNetDrape` という Udon で駆動しています（[開発者向けノート](../README.md#作者のワールドwebbedworldでの使用例と経緯)）。値が渡されない間は、変形は何も起きません。
+> **駆動する Udon はこのパッケージに含まれていません。** 体の形（ボーンから作ったカプセル）と網の位置・向きを、MaterialPropertyBlock で毎フレーム渡すスクリプトが必要です。作者のワールドでは `CaptureNetDrape` という Udon で駆動しています（[開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯)）。値が渡されない間は、変形は何も起きません。
 
 ### しくみ
 
@@ -329,5 +331,5 @@ LineRenderer の設定:
 ### Drape の注意
 
 - **Batching Static と GPU Instancing は OFF** にしてください（接触追従の変形と同じ理由）。
-- 頂点 1 つごとに最大 20 本のカプセルとの計算を行うので、網の頂点数が多いと重くなります。ねばねばネットでは、作者のワールドで 33×33 頂点の専用メッシュを使って軽くしています。
+- 頂点 1 つごとに最大 20 本のカプセルとの計算を行うので、網の頂点数が多いと重くなります。軽くしたいときは、WebPlane の生成画面（**Tools > SpiderShader > Generate WebPlane Mesh...**）で Segments を下げたメッシュを作って使います（既定の 64 で 65×65 頂点、32 で 33×33 頂点）。
 - 蜘蛛の巣の標準プリセット「覆いかぶさる捕獲網」は、巻きつき・姿勢追従の値を含みません（今の値が残ります）。

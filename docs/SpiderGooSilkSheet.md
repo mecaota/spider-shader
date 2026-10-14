@@ -59,7 +59,7 @@
 焼き込みが失敗するとき（Console にエラーが出ます）:
 
 - Play 中・スクリプトのコンパイル中
-- GPU が Texture2DArray・BC5/BC7 圧縮・浮動小数点の RenderTexture に対応していない
+- GPU（またはグラフィックス API）が、焼き込みに必要な機能（Texture2DArray・BC5/BC7 圧縮・浮動小数点の RenderTexture）に対応していない
 - 帯の幅・帯に沿った長さ・半径が 0 以下
 
 ### メモリの目安
@@ -148,7 +148,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
   - 使っていない層のパスは、頂点の段階で潰れて何も描きません。
 - 遠くでは、細かい模様の代わりに被覆率の画像で描き、ちらつきを抑えます。
 - 描画順は `Transparent` です。
-- 体に被せた 1 枚あたりの追加の描画時間は、作者の環境（PC・1080p）で 2 層 約 0.1〜0.3 ms でした。VR は両目分で約 2 倍です。計測の詳細は [開発者向けノート](../README.md#作者のワールドwebbedworldでの使用例と経緯) にあります。
+- 体に被せた 1 枚あたりの追加の描画時間は、作者の環境（PC・1080p）で 2 層 約 0.1〜0.3 ms でした。VR は両目分で約 2 倍です。計測の詳細は [開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯) にあります。
 
 ## 注意・制約
 
@@ -156,7 +156,6 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 - 焼き込みには Editor のスクリプト（このパッケージの `Editor/` フォルダ）が必要です。
 - 接触追従の変形・体に覆いかぶさる変形を使うときは、**Batching Static を OFF**、マテリアルの **GPU Instancing を OFF** にしてください（このシェーダーは静的バッチングを自動では止めません）。
 - 補助画像を拡大した所でツヤのギザギザや圧縮の誤差が見えることがあります。VRChat 実機・VR・ミラーでの見え方は確認してから使ってください。
-- 以前あった別のねばねばネット系シェーダーは撤去済みです。それらを使っていたマテリアルはピンク（Hidden/InternalErrorShader）になります。経緯は [開発者向けノート](../README.md#作者のワールドwebbedworldでの使用例と経緯) を参照してください。
 
 ## 関連ファイル
 

@@ -11,6 +11,7 @@
 - 巻かれている本人がカメラごと中に入ると、[繭本体](SpiderCocoon.md)と同じ**視界ジャック（包まれ演出）**が出ます。
 - 腕と胴など、くっついた複数の繭を**1 つの繭としてまとめて描く**こともできます（[CocoonGroupLinker](UdonGimmicks.md#繭のまとめ描きcocoongrouplinker)）。
 - 対応環境: **PC 専用**（Quest は非対応）。Unity Built-in Render Pipeline。
+- インスペクタの表示や一部の説明では、このシェーダーを「デカール」と呼んでいます。
 
 > **必須**: ワールドに**影付きのリアルタイム Directional Light** が必要です。無いと体に張り付く繭は一切描かれません（視界ジャックだけは出ます）。
 
@@ -26,7 +27,7 @@
 2. マテリアルを作って Shader を `mecaota/SpiderCocoonDepthDecal` にし、Cube に入れます。
 3. ワールドに Directional Light を置き、**Shadow Type を Soft Shadows か Hard Shadows**（Realtime）にします。
 4. Cube を巻きたい部位を包むように置きます（向きとスケールは下の表）。
-5. Play して、別のカメラ（Scene ビューやデスクトップ視点）から見て、体の表面に糸が沿っていれば成功です。
+5. Play して、別のカメラ（Scene ビューやデスクトップ視点）から見て、体の表面に糸が沿っていれば成功です。一人称の自分の視点では、自分の体には張り付きません（[注意・制約](#注意制約)）。
 
 | Cube の設定 | 合わせ方 |
 |---|---|
