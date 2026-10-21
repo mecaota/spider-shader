@@ -73,10 +73,11 @@ public sealed class SpiderWebBakeBackupEditor : Editor
             }
             if (orig == null)
             {
-                string path = string.IsNullOrEmpty(s.assetGuid) ? "" : AssetDatabase.GUIDToAssetPath(s.assetGuid);
-                EditorGUILayout.HelpBox(string.IsNullOrEmpty(path)
+                // 元に戻す処理（SpiderWebLilToonBaker.Revert）と同じ判定
+                Material found = SpiderWebLilToonBaker.FindOriginal(b, s);
+                EditorGUILayout.HelpBox(found == null
                     ? "元のマテリアル（" + s.name + "、" + (string.IsNullOrEmpty(s.assetPath) ? "シーンの中のマテリアル" : s.assetPath) + "）が見つかりません。元に戻すと、控えの値から同じ値のマテリアルを作り直します。"
-                    : "参照は切れていますが、同じ GUID のアセットがあります（" + path + "）。元に戻すとそれを使います。", MessageType.Warning);
+                    : "参照は切れていますが、同じ GUID のアセットがあります（" + AssetDatabase.GetAssetPath(found) + "）。元に戻すとそれを使います。", MessageType.Warning);
             }
         }
 
@@ -129,9 +130,21 @@ public sealed class SpiderWebBakeBackupEditor : Editor
                 RefreshDiffs();
                 string msg = "焼く前のマテリアルとレンダラーの設定（影など）に戻し、この控えのコンポーネントを外します。\n" +
                              "Undo（Ctrl+Z）で取り消せます。焼いたテクスチャとマテリアルは消しません。";
-                bool missing = b.snapshots.Any(s => s.slot >= b.originalMaterials.Length || b.originalMaterials[s.slot] == null);
+                // 元に戻す処理（SpiderWebLilToonBaker.Revert）と同じ判定: 参照が切れていても同じ GUID のアセットがあればそれを使い、
+                // それも無ければ控えの値から作り直す（範囲外のスロットは Revert も扱わない）
+                var valid = b.snapshots.Where(s => s.slot >= 0 && s.slot < b.originalMaterials.Length).ToList();
+                List<int> recreateSlots = valid.Where(s => SpiderWebLilToonBaker.FindOriginal(b, s) == null).Select(s => s.slot).ToList();
+                List<string> byGuid = valid.Where(s => b.originalMaterials[s.slot] == null)
+                                           .Select(s => new { s.slot, found = SpiderWebLilToonBaker.FindOriginal(b, s) })
+                                           .Where(x => x.found != null)
+                                           .Select(x => "スロット " + x.slot + " = " + AssetDatabase.GetAssetPath(x.found)).ToList();
+                bool missing = recreateSlots.Count > 0;
                 if (missing)
-                    msg += "\n\n元のマテリアルが見つからないスロットは、控えの値から作り直します。";
+                    msg += "\n\n元のマテリアルが見つからないスロット（" + string.Join("・", recreateSlots) + "）は、控えの値から作り直します。";
+                if (byGuid.Count > 0)
+                    msg += "\n\n参照は切れていますが、同じ GUID のアセットがあるスロットは、それを使います（" + string.Join("、", byGuid) + "）。";
+                if (b.wasPrefabInstance && (missing || diffs.Count > 0))
+                    msg += "\n\nprefab のインスタンスなので、作り直したマテリアルのスロットは prefab の上書きとして残ります。";
                 if (b.snapshots.Any(s => !string.IsNullOrEmpty(s.parentPath)) && (missing || diffs.Count > 0))
                     msg += "\n\n元はマテリアルバリアントでした。作り直したマテリアルは親を持たない普通のマテリアルになります（値は同じ）。";
                 SpiderWebRevertMode? mode = null;

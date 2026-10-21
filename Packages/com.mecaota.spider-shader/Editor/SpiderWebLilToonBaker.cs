@@ -334,7 +334,10 @@ public static class SpiderWebLilToonBaker
         }
 
         // ---- スロットごとの UV 範囲と、テクスチャの大きさ ----
-        if (mesh != null && slots.Count > 0)
+        // サブメッシュが 1 つも無いメッシュは、描く三角形が無い（スロットの計画は作らない）
+        if (mesh != null && slots.Count > 0 && mesh.subMeshCount == 0)
+            a.Blockers.Add("メッシュ（" + mesh.name + "）にサブメッシュがありません（描く三角形がありません）。");
+        else if (mesh != null && slots.Count > 0)
         {
             foreach (int slot in slots)
             {
@@ -446,13 +449,34 @@ public static class SpiderWebLilToonBaker
 
     private static readonly Dictionary<string, KnownScript> s_knownScripts = new Dictionary<string, KnownScript>(StringComparer.Ordinal)
     {
-        { "SurfaceContactDeformer", new KnownScript { Describe = _ => "手足が触れたときに巣を引っぱる変形が止まります（Udon は毎フレーム値を送り続けますが、lilToon は使いません）。" } },
+        { "SurfaceContactDeformer", new KnownScript { Describe = DescribeSurfaceContactDeformer } },
     };
+
+    // 同梱の SurfaceContactDeformer。matchFanShape が ON なら、捕まる範囲が変わる副作用も出す
+    private static string DescribeSurfaceContactDeformer(Component[] owners)
+    {
+        string detail = "手足が触れたときに巣を引っぱる変形が止まります（Udon は毎フレーム値を送り続けますが、lilToon は使いません）。";
+        if (owners.Any(IsMatchFanShapeOn))
+            detail += " さらに matchFanShape が ON なので、扇形の捕獲範囲をマテリアル（_FanEnable など）から読めなくなり、捕まる範囲が扇形から平面全体に変わります（ゲーム上の副作用）。";
+        return detail;
+    }
+
+    // matchFanShape は U# の表側（C# の欄を持つコンポーネント）にある。裏側の UdonBehaviour では見つからない
+    private static bool IsMatchFanShapeOn(Component owner)
+    {
+        if (owner == null) return false;
+        using (var so = new SerializedObject(owner))
+        {
+            SerializedProperty fan = so.FindProperty("matchFanShape");
+            return fan != null && fan.propertyType == SerializedPropertyType.Boolean && fan.boolValue;
+        }
+    }
 
     /// <summary>
     /// 焼くと効かなくなる演出を持つスクリプトを登録する。ワールド側の Editor コード（[InitializeOnLoadMethod] など）から呼ぶ。
     /// 焼く巣のレンダラー（または GameObject）をこのスクリプトが参照していると、確認画面に【重大】として detail を出す。
-    /// blocksBake = true なら、そのレンダラーは焼けない（焼くと網として働かなくなるものなど。detail が焼けない理由になる）。
+    /// blocksBake = true なら、そのレンダラーは焼けない（焼くと網として働かなくなるものなど。detail が焼けない理由になる。
+    /// 説明が空でも必ず断る）。
     /// <para>scriptName はクラス名。UdonSharp のスクリプトは元のクラス名で、裏側の UdonBehaviour もプログラムの元のクラス名で照らし合わせる。
     /// 同じ名前をもう一度登録すると上書きする。登録はスクリプトの再読み込み（ドメインのリロード）で消えるので、そのたびに登録し直す。</para>
     /// </summary>
@@ -466,7 +490,8 @@ public static class SpiderWebLilToonBaker
     /// <see cref="RegisterKnownScript(string, string, bool)"/> の、説明をその場で作る版（スクリプトの設定値を説明に入れるときに使う）。
     /// describe には、そのレンダラーを参照している同じオブジェクトの同じスクリプトのコンポーネントが渡る
     /// （UdonSharp なら、C# の欄を持つ表側と、裏側の UdonBehaviour の両方）。
-    /// null か空文字を返すと、登録していないときと同じ汎用の説明になる。
+    /// null か空文字を返すと、登録していないときと同じ汎用の説明になる。ただし blocksBake = true のときは例外で、
+    /// 汎用の「焼けません」の文で必ず断る。
     /// </summary>
     public static void RegisterKnownScript(string scriptName, Func<Component[], string> describe, bool blocksBake = false)
     {
@@ -504,21 +529,24 @@ public static class SpiderWebLilToonBaker
             if (fields.Length == 0) fields = first.Field;
             string where = HierarchyPath(first.Owner.transform) + " の " + first.ScriptName + "（" + fields + "）";
             bool toRenderer = g.Value.Any(x => !x.ToGameObject);
-            string detail = null;
             if (s_knownScripts.TryGetValue(first.ScriptName, out KnownScript known))
-                detail = DescribeKnown(known, first.ScriptName, g.Value.Select(x => x.Owner).Distinct().ToArray());
-            if (!string.IsNullOrEmpty(detail))
             {
+                string detail = DescribeKnown(known, first.ScriptName, g.Value.Select(x => x.Owner).Distinct().ToArray());
                 if (known.BlocksBake)
                 {
-                    a.Blockers.Add(where + ": " + detail);
+                    // 焼けないものとして登録されたスクリプトは、説明が空でも必ず断る
+                    a.Blockers.Add(where + ": " + (string.IsNullOrEmpty(detail)
+                        ? first.ScriptName + " が参照しているため焼けません（ワールド側で焼けないものとして登録されています）。"
+                        : detail));
                     continue;
                 }
-                if (first.ScriptName == "SurfaceContactDeformer" && g.Value.Any(x => x.MatchFanShape))
-                    detail += " さらに matchFanShape が ON なので、扇形の捕獲範囲をマテリアル（_FanEnable など）から読めなくなり、捕まる範囲が扇形から平面全体に変わります（ゲーム上の副作用）。";
-                a.Lost.Add(Item(SpiderWebBakeSeverity.Critical, first.ScriptName + " が操作している効果", where + ": " + detail));
+                if (!string.IsNullOrEmpty(detail))
+                {
+                    a.Lost.Add(Item(SpiderWebBakeSeverity.Critical, first.ScriptName + " が操作している効果", where + ": " + detail));
+                    continue;
+                }
             }
-            else if (toRenderer)
+            if (toRenderer)
             {
                 a.Lost.Add(Item(SpiderWebBakeSeverity.Caution, "スクリプトがこのレンダラーを参照している",
                     where + "。実行時にマテリアルの値を読んだり、MaterialPropertyBlock で変えたりしている場合は、焼いたあと効かなくなります。"));
@@ -609,7 +637,7 @@ public static class SpiderWebLilToonBaker
             (sharedUsers > 0 ? "（このシーンに " + sharedUsers + " 個）" : "") + "は変わりません。"));
         if (PrefabUtility.IsPartOfPrefabInstance(r))
             a.Notes.Add(Item(SpiderWebBakeSeverity.Caution, "prefab のインスタンス",
-                "prefab のインスタンスなので、マテリアルの差し替えと控えのコンポーネントは、このシーンでの上書き（オーバーライド）になります。prefab 本体は変わりません。元に戻すと、焼く前に上書きでなかった値は prefab の値へ戻します（上書きを残しません）。"));
+                "prefab のインスタンスなので、マテリアルの差し替えと控えのコンポーネントは、このシーンでの上書き（オーバーライド）になります。prefab 本体は変わりません。元に戻すと、焼く前に上書きでなかった値は prefab の値へ戻します（上書きを残しません。控えの値から作り直したマテリアルのスロットだけは、上書きとして残します）。"));
         a.Notes.Add(Item(SpiderWebBakeSeverity.Caution, "ビルダーの再実行",
             "この巣を作ったり設定したりするエディター拡張（ワールド側のビルダーやセットアップ用のメニューなど）を実行し直すと、マテリアルが元に戻ることがあります。そのときは控えのコンポーネントが残るので、焼き直すか、控えの「元に戻す」で整理してください。"));
         a.Notes.Add(Item(SpiderWebBakeSeverity.Info, "実行時の値",
@@ -716,7 +744,6 @@ public static class SpiderWebLilToonBaker
         public string ScriptName;
         public string Field;
         public bool ToGameObject;
-        public bool MatchFanShape;
         public bool Implicit;      // 同じオブジェクトの空の Renderer 欄（スクリプトが GetComponent<Renderer>() で補う）
     }
 
@@ -783,20 +810,14 @@ public static class SpiderWebLilToonBaker
                         // SurfaceContactDeformer などは、空なら GetComponent<Renderer>() でこのレンダラーを使う
                         if (mb.gameObject == r.gameObject && !it.propertyPath.Contains(".Array.data[") && IsRendererField(it.type))
                         {
-                            var imp = new RefInfo { Owner = mb, ScriptName = ScriptNameOf(mb), Field = it.propertyPath + " が空 → 同じオブジェクトのレンダラー", Implicit = true };
-                            SerializedProperty fan0 = so.FindProperty("matchFanShape");
-                            imp.MatchFanShape = fan0 != null && fan0.propertyType == SerializedPropertyType.Boolean && fan0.boolValue;
-                            list.Add(imp);
+                            list.Add(new RefInfo { Owner = mb, ScriptName = ScriptNameOf(mb), Field = it.propertyPath + " が空 → 同じオブジェクトのレンダラー", Implicit = true });
                         }
                         continue;
                     }
                     bool toRenderer = o == r;
                     bool toGo = o == r.gameObject;
                     if (!toRenderer && !toGo) continue;
-                    var info = new RefInfo { Owner = mb, ScriptName = ScriptNameOf(mb), Field = it.propertyPath, ToGameObject = toGo };
-                    SerializedProperty fan = so.FindProperty("matchFanShape");
-                    info.MatchFanShape = fan != null && fan.propertyType == SerializedPropertyType.Boolean && fan.boolValue;
-                    list.Add(info);
+                    list.Add(new RefInfo { Owner = mb, ScriptName = ScriptNameOf(mb), Field = it.propertyPath, ToGameObject = toGo });
                 }
             }
         }
@@ -960,7 +981,7 @@ public static class SpiderWebLilToonBaker
         bool transparent = s.mode == SpiderWebBakeMode.Transparent;
         float threshold = transparent ? TransparentCoverageThreshold : s.cutoff;
         Mesh mesh = renderer.GetComponent<MeshFilter>().sharedMesh;
-        EnsureFolder(a.OutputFolder);
+        SpiderShaderEditorUtility.EnsureFolder(a.OutputFolder);
 
         var created = new List<string>();
         var slotRecords = new List<SpiderWebBakedSlot>();
@@ -1386,18 +1407,6 @@ public static class SpiderWebLilToonBaker
         m.SetFloat("_LightMaxLimit", 1.35f);
     }
 
-    private static void EnsureFolder(string folder)
-    {
-        string[] parts = folder.Split('/');
-        string current = parts[0];
-        for (int i = 1; i < parts.Length; i++)
-        {
-            string next = current + "/" + parts[i];
-            if (!AssetDatabase.IsValidFolder(next)) AssetDatabase.CreateFolder(current, parts[i]);
-            current = next;
-        }
-    }
-
     // =========================================================================
     // 元に戻す
     // =========================================================================
@@ -1420,8 +1429,11 @@ public static class SpiderWebLilToonBaker
         return result;
     }
 
-    // 元のマテリアル: 控えの参照。切れていたら、控えの GUID のアセット
-    private static Material FindOriginal(SpiderWebBakeBackup backup, SpiderWebMaterialSnapshot snap)
+    /// <summary>
+    /// 元のマテリアル: 控えの参照。切れていたら、控えの GUID のアセット（Revert・DiffOriginals・控えのインスペクタで同じ判定を使う）。
+    /// null なら、元に戻すときに控えの値から作り直す。
+    /// </summary>
+    internal static Material FindOriginal(SpiderWebBakeBackup backup, SpiderWebMaterialSnapshot snap)
     {
         if (snap.slot < 0 || snap.slot >= backup.originalMaterials.Length) return null;
         Material orig = backup.originalMaterials[snap.slot];
@@ -1439,6 +1451,7 @@ public static class SpiderWebLilToonBaker
     ///   restoreFolder（空なら焼いたフォルダの Restored）に保存する。元がマテリアルバリアントでも、親の無い普通のマテリアルになる。
     /// ・元のマテリアルが焼いたあとで編集されていたら、その違いを結果に並べる（UseOriginal のときは今の値のまま使う）。
     /// ・prefab のインスタンスでは、焼く前に上書きでなかった値は、代入ではなく prefab の値へ戻す（上書きを残さない）。
+    ///   ただし作り直したマテリアルのスロットは、上書きとして残す（prefab の値へ戻すと、作り直したマテリアルが使われない）。
     /// 焼いたアセットは消さない。
     /// </summary>
     public static SpiderWebRevertResult Revert(SpiderWebBakeBackup backup, string restoreFolder = "", SpiderWebRevertMode mode = SpiderWebRevertMode.UseOriginal)
@@ -1458,6 +1471,8 @@ public static class SpiderWebLilToonBaker
         string folder = string.IsNullOrEmpty(restoreFolder)
             ? (string.IsNullOrEmpty(backup.bake.outputFolder) ? DefaultRoot : backup.bake.outputFolder) + "/Restored"
             : restoreFolder.Replace('\\', '/').TrimEnd('/');
+
+        var recreatedSlots = new HashSet<int>();   // 控えの値から作り直したスロット（prefab の値へは戻さない）
 
         foreach (SpiderWebMaterialSnapshot snap in backup.snapshots)
         {
@@ -1479,10 +1494,11 @@ public static class SpiderWebLilToonBaker
             {
                 bool missing = orig == null;
                 orig = SpiderWebMaterialSnapshotUtil.Recreate(snap);
-                EnsureFolder(folder);
+                SpiderShaderEditorUtility.EnsureFolder(folder);
                 string path = AssetDatabase.GenerateUniqueAssetPath(folder + "/" + Sanitize(snap.name) + ".mat");
                 AssetDatabase.CreateAsset(orig, path);
                 result.Recreated.Add(path);
+                recreatedSlots.Add(snap.slot);
                 result.Messages.Add("スロット " + snap.slot + ": " + (missing ? "元のマテリアル（" + snap.name + "）が見つからないので、" : "") +
                                     "控えの値から作り直しました: " + path +
                                     (string.IsNullOrEmpty(snap.parentPath) ? "" : "（元はマテリアルバリアント。親 " + snap.parentPath + " とのつながりは作り直していません。親を持たない普通のマテリアルです）"));
@@ -1513,19 +1529,24 @@ public static class SpiderWebLilToonBaker
             PrefabUtility.RecordPrefabInstancePropertyModifications(r);
             if (backup.wasPrefabInstance)
             {
-                // 焼く前に上書きでなかった値は、prefab の値へ戻す（上書きとして残さない）
+                // 焼く前に上書きでなかった値は、prefab の値へ戻す（上書きとして残さない）。
+                // ・元のマテリアル（GUID で見つけ直したものも含む）を使ったスロットは、prefab の値が同じ元のマテリアルなので、戻しても見た目は同じ
+                // ・作り直したスロットは戻さない（戻すと prefab の値になり、作り直したマテリアルが使われなくなる）。上書きとして残す
                 var before = new HashSet<string>(backup.prefabOverriddenPaths ?? new string[0], StringComparer.Ordinal);
+                var keep = new HashSet<string>(recreatedSlots.Select(s => "m_Materials.Array.data[" + s + "]"), StringComparer.Ordinal);
                 var so = new SerializedObject(r);
-                int reverted = 0;
+                int reverted = 0, kept = 0;
                 foreach (string path in TrackedRendererPaths(count))
                 {
                     if (before.Contains(path)) continue;
                     SerializedProperty sp = so.FindProperty(path);
                     if (sp == null || !sp.prefabOverride) continue;
+                    if (keep.Contains(path)) { kept++; continue; }
                     PrefabUtility.RevertPropertyOverride(sp, InteractionMode.UserAction);
                     reverted++;
                 }
                 if (reverted > 0) result.Messages.Add("prefab のインスタンス: 焼く前に上書きでなかったレンダラーの値 " + reverted + " か所を、prefab の値へ戻しました。");
+                if (kept > 0) result.Messages.Add("prefab のインスタンス: 作り直したマテリアルのスロット " + kept + " か所は、prefab の上書きとして残しました（prefab の値へ戻すと、作り直したマテリアルが使われなくなるため）。");
             }
         }
         EditorUtility.SetDirty(r);
