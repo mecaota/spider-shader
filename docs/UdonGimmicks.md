@@ -282,8 +282,10 @@ LineRenderer の設定:
 | `_GroupMemA[16]` | 部位ごとの円筒。xyz＝中心（ワールド）、w＝半径（m） |
 | `_GroupMemB[16]` | 部位ごとの軸。xyz＝軸の向き × 半分の高さ、w＝端の丸め（0＝平らな端、1＝カプセル） |
 | `_GroupMemCount` / `_GroupLeadIndex` | 有効な部位の数（最大 16）／代表の部位の番号 |
-| `_GroupBridgePairs[16]` | 橋を張る部位の組。x・y＝部位の番号、z＝つなぐ距離の倍率（0 で既定）、w＝橋の形の絞り（0 で絞らない） |
-| `_GroupBridgeCount` | 有効な組の数。0 なら代表から各部位へ放射状に橋を張る（`CocoonGroupLinker` と同じ） |
+| `_GroupBridgePairs[16]` | 繭同士の接続部位（2 つの部位のあいだを繭で埋めてつなぐ部分）を作る部位の組。x・y＝部位の番号、z＝つなぐ距離の倍率（0 で既定）、w＝接続部位の形の絞り（0 で絞らない） |
+| `_GroupBridgeCount` | 有効な組の数。0 なら代表から各部位へ放射状に接続部位を作る（`CocoonGroupLinker` と同じ） |
+
+名前の `Bridge` は繭同士の接続部位のことです（互換のため名前はそのままにしています）。
 
 代表の描画範囲（Renderer の `localBounds`）も、部位全体を包む大きさに広げてください。値の作り方は `CocoonGroupLinker.cs` の `WriteBundle` が参考になります。
 

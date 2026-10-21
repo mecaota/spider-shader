@@ -48,7 +48,7 @@
 //     - Pass 2 は鏡の中、Pass 3 は鏡の外で、頂点の段階で三角形を潰す（フラグメントを出さない）。
 //     - Pass 2 は視線が円柱（代表は箱）に届かない画素を、床判定と糸の厚みのループの前に捨てる。
 //     - 視界ジャックの深度パス（Pass 0）は不透明度だけを求め、芯と決まった所で残りの層を省く。
-//     - 全身の殻（GROUP_SHELL）は、smooth-min に効かない遠い部位・橋の計算を飛ばす。
+//     - 全身の殻（GROUP_SHELL）は、smooth-min に効かない遠い部位・繭同士の接続部位の計算を飛ばす。
 //     - 表面の模様はキーワード SC_SURFACE_NET（_SurfaceStyle と同期）で切り替える。
 //
 //  ★ 必須前提:
@@ -138,12 +138,13 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 
         // 巻きの端で帯が細って途切れる「ほつれ」の幅（近くの繭とのまとめ描きは
         // CocoonGroupLinker が MaterialPropertyBlock で指示する）
-        // 全身繭では Udon が骨から作った部位（最大 16）と「橋でつなぐ組」
+        // 全身繭では Udon が骨から作った部位（最大 16）と、繭同士の接続部位を作る組
         // （_GroupBridgePairs / _GroupBridgeCount）を MaterialPropertyBlock で渡し、
         // 脇や股の凹みをまたいで外形に沿う外殻にする（組が無ければ代表からの放射）
+        // プロパティ名の Bridge は繭同士の接続部位のこと（互換のため名前はそのまま）
         [Header(Group Volume)]
         _GroupBulge ("まとめ描きの膨らみ m (Group Bulge)", Range(0, 0.12)) = 0.045
-        _GroupBridgeSpan ("部位間をつなぐ距離 m (Group Bridge Span)", Range(0, 0.5)) = 0.1
+        _GroupBridgeSpan ("部位間をつなぐ距離 m (Group Connection Span)", Range(0, 0.5)) = 0.1
         _GroupRadiusScale ("まとめ繭の半径フィット (Group Radius Fit)", Range(0.25, 1)) = 0.75
         _GroupAxisFollow ("部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
@@ -159,9 +160,9 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずの外殻が欠けることがある。
         // そういう場面では OFF にする（従来どおり全部レイマーチする）
         [ToggleUI] _GroupDepthCut ("隠れた外殻を quad 単位で捨てる (Shell Depth Cut)", Float) = 1
-        // 形を絞った橋（_GroupBridgePairs[k].w > 0 の組。全身繭の前腕↔胴など）の
+        // 形を絞った接続部位（_GroupBridgePairs[k].w > 0 の組。全身繭の前腕↔胴など）の
         // 半分の高さ = 短いほうの部位の半分の高さ × この値。w = 0 の組と木の繭には効かない
-        _GroupBridgeHeightScale ("絞った橋の高さ倍率 (Bridge Height Scale)", Range(0, 1.5)) = 1
+        _GroupBridgeHeightScale ("絞った接続部位の高さ倍率 (Connection Height Scale)", Range(0, 1.5)) = 1
 
         [Header(Edge Fray)]
         _GooEdgeFray        ("巻きの端のほつれ幅 m (Edge Fray)", Range(0, 0.2)) = 0.03

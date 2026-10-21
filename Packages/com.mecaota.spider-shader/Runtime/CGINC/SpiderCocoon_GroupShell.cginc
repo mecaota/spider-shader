@@ -7,7 +7,7 @@
 
 // World-space envelope. The shape never comes from screen depth: both VR eyes see the same
 // surface, and moving the camera cannot change which body samples define it.
-// 外殻の形は、ワールド座標の部位（_GroupMemA/B）と橋だけで決まる。画面の深度から形は作らないので、
+// 外殻の形は、ワールド座標の部位（_GroupMemA/B）と繭同士の接続部位だけで決まる。画面の深度から形は作らないので、
 // 両目で同じ形になり、カメラを動かしても形は変わらない。
 // 画面の深度（_CameraDepthTexture）を読むのは 1 か所だけ: 不透明な物の向こうに完全に隠れた
 // 2x2 の画素（quad）を、レイマーチの前に丸ごと捨てる（SCG_QuadHidden。2026-10-14 Phase 3）。
@@ -29,8 +29,8 @@ float _GroupAxisBlend;
 float _GroupLeadIndex;
 float4 _GroupWrapOrigin;
 float _GroupMarchSteps; // 外殻レイマーチの最大歩数（全身の 2 m 級の箱でも穴が開かないよう上げられる）
-// 「形を絞った橋」（_GroupBridgePairs[k].w > 0 の組）の半分の高さの倍率（既定 1）。
-// 絞った橋の半分の高さ = 短いほうの部位の半分の高さ × この値。
+// 「形を絞った接続部位」（_GroupBridgePairs[k].w > 0 の組）の半分の高さの倍率（既定 1）。
+// 絞った接続部位の半分の高さ = 短いほうの部位の半分の高さ × この値。
 // w = 0 の組（腿↔腿など）と、組を使わない木の繭には効かない。
 float _GroupBridgeHeightScale;
 // 遠い外殻の最大歩数（2026-10-14 Phase 3）。カメラ（両目の中点）から箱の中心までの距離が
@@ -75,20 +75,20 @@ void SCG_UnionSection(float d, float cap, float blend, inout float best, inout f
     capBest = lerp(cap, capBest, h);
 }
 
-// 部位 a と部位 b の間に張る橋（外皮）の距離。中心は 2 部位の中心を結ぶ線上を
+// 部位 a と部位 b の間をつなぐ接続部位（外皮）の距離。中心は 2 部位の中心を結ぶ線上を
 // 滑らかに移り、軸・半径・半分の高さも a→b へ補間する（代表からの放射と同じ形）。
-// span = この橋を張ってよい「部位表面どうしの隙間」の上限（m）。
-// shape = _GroupBridgePairs[k].w（橋の形の絞り）。
+// span = この接続部位を作ってよい「部位表面どうしの隙間」の上限（m）。
+// shape = _GroupBridgePairs[k].w（接続部位の形の絞り）。
 //   0 = 従来どおり（半径・高さとも a→b の補間）
 //   > 0 = 半径をこの倍率にし、半分の高さを「短いほうの部位の半分の高さ ×
 //         _GroupBridgeHeightScale」にする。前腕↔胴を 0.5 にすると、手首まで届く
 //         マントにならず、前腕の内側と腰の間に細い膜が張るだけになる。
-// 橋の端の丸めは a・b の rounding（_GroupMemB.w）を補間する。
+// 接続部位の端の丸めは a・b の rounding（_GroupMemB.w）を補間する。
 //
 // ★ 下限で飛ばす（2026-10-14 軽量化。結果は飛ばさない場合と同じ）
-//   skipAbove: 橋までの距離がこの値以上と分かれば、断面の計算を省いて skipAbove を返す
+//   skipAbove: 接続部位までの距離がこの値以上と分かれば、断面の計算を省いて skipAbove を返す
 //   （呼び出し側は「これ以上なら smooth-min の寄与が 0」の値を渡す。飛ばさないときは 1e30）。
-//   橋の断面までの距離は、断面の中心（a→b の線分上の点）からの距離 |delta| − 半径 − 半分の高さ − 厚み
+//   接続部位の断面までの距離は、断面の中心（a→b の線分上の点）からの距離 |delta| − 半径 − 半分の高さ − 厚み
 //   より小さくならない（SCG_RoundedSection は半径 r・半分の高さ h の形の距離で、その形は
 //   半径 r + h の球に収まるため）。下の d + (1 - gate) * (...) の足し分もそのまま足せる。
 float SCG_PairBridge(float3 p, int ia, int ib, float span, float radiusScale,
@@ -118,7 +118,7 @@ float SCG_PairBridge(float3 p, int ia, int ib, float span, float radiusScale,
     float reach = skipAbove - extra + rr + hh + thickness;   // |delta| がこれ以上なら飛ばせる
     if (skipAbove < 1e29 && (reach <= 0.0 || dot(delta, delta) >= reach * reach))
     {
-        ec = 0.0;          // 飛ばした橋は合成に使われないので、端の値は何でもよい
+        ec = 0.0;          // 飛ばした接続部位は合成に使われないので、端の値は何でもよい
         return skipAbove;
     }
     float ya = dot(delta, aa), yb = dot(delta, ab);
@@ -137,13 +137,13 @@ struct SCG_FieldConst
     int    lead;          // 代表の部位
     float  thickness;     // 膨らみ（glue の厚み + 外殻の膨らみ）
     float  blend;         // 部位どうしをなめらかにつなぐ幅（smooth-min の k）
-    bool   pairMode;      // 橋の組が渡されている（全身繭）
+    bool   pairMode;      // 接続部位の組が渡されている（全身繭）
     float  radiusScale;
-    float3 c0;            // 代表の中心・半分の高さ・軸（代表からの放射の橋用）
+    float3 c0;            // 代表の中心・半分の高さ・軸（代表から放射状に作る接続部位用）
     float  h0;
     float3 a0;
-    bool   radial;        // 代表から放射状に橋を張る（組なし。木の繭など）
-    bool   pairs;         // 組ごとに橋を張る
+    bool   radial;        // 代表から放射状に接続部位を作る（組なし。木の繭など）
+    bool   pairs;         // 組ごとに接続部位を作る
     int    pairCount;
 };
 
@@ -155,13 +155,13 @@ SCG_FieldConst SCG_MakeFieldConst()
     c.thickness = max(_GlueThickness, 0.0) + max(_GroupBulge, 0.0);
     // 一体感は 1 を超えて上げられる（全身繭で脇・股の合流を大きく丸める）
     c.blend = max(c.thickness * 0.3 * max(_GroupShellBlend, 0.0), 1e-5);
-    // 橋の組が渡されていれば（全身繭）組ごとに橋を張り、代表からの放射はしない
+    // 接続部位の組が渡されていれば（全身繭）組ごとに接続部位を作り、代表からの放射はしない
     c.pairMode = _GroupBridgeCount > 0.5;
     c.radiusScale = clamp(_GroupRadiusScale, 0.25, 1.0);
     c.c0 = _GroupMemA[c.lead].xyz;
     c.h0 = max(length(_GroupMemB[c.lead].xyz), 1e-5);
     c.a0 = _GroupMemB[c.lead].xyz / c.h0;
-    // 代表が骨なしなら放射の橋も張らない
+    // 代表が骨なしなら放射状の接続部位も作らない
     c.radial = !c.pairMode && _GroupBridgeSpan > 0.0005 && _GroupMemA[c.lead].w > 0.0;
     c.pairs = c.pairMode && _GroupBridgeSpan > 0.0005 && c.n > 1;
     c.pairCount = min((int)_GroupBridgeCount, SCG_MAX_BRIDGES);
@@ -172,11 +172,11 @@ SCG_FieldConst SCG_MakeFieldConst()
 // 形には効かないほど小さい
 #define SCG_SKIP_MARGIN 0.0001
 
-// Members plus ruled bridges from the stable representative. Squared axis
+// Members plus ruled connections from the stable representative. Squared axis
 // projections interpolate the unoriented axes: +Y/-Y and 90 degree crossings
 // never trigger a sign flip or a vanishing lerped axis.
 //
-// ★ 遠い部位・橋は計算を飛ばす（allowSkip。2026-10-14 軽量化。結果は飛ばさない場合と同じ）
+// ★ 遠い部位・接続部位は計算を飛ばす（allowSkip。2026-10-14 軽量化。結果は飛ばさない場合と同じ）
 //   部位どうしは smooth-min（STG_SMin）でつなぐ。新しい距離 d が今までの最小 best より
 //   blend（smooth-min の k）以上大きければ、STG_SMin の結果は best のまま（寄与が厳密に 0）:
 //     d - best >= k のとき m = max(k - |best - d|, 0) / k = 0 なので、min(best, d) - 0 = best。
@@ -218,11 +218,11 @@ float SCG_VolumeFieldC(float3 p, SCG_FieldConst fc, bool allowSkip, out float ca
         delta = p - bridgeCenter;
         float rr = lerp(_GroupMemA[fc.lead].w, _GroupMemA[k].w, t) * fc.radiusScale;
         float hh = lerp(fc.h0, hk, t);
-        // No binary distance cutoff: a continuous fade limits unusually long bridges.
+        // No binary distance cutoff: a continuous fade limits unusually long connections.
         float gap = max(length(segment) - _GroupMemA[fc.lead].w - _GroupMemA[k].w - fc.h0 - hk, 0.0);
         float gate = 1.0 - smoothstep(_GroupBridgeSpan, _GroupBridgeSpan + fc.thickness, gap);
         float extra = (1.0 - gate) * (length(segment) + rr + hh + fc.thickness);
-        // 橋も同じく下限で飛ばす（断面の中心は c0→ck の線分上。SCG_PairBridge の説明）
+        // 接続部位も同じく下限で飛ばす（断面の中心は c0→ck の線分上。SCG_PairBridge の説明）
         skipAbove = (allowSkip && best < 1e5) ? best + fc.blend + SCG_SKIP_MARGIN : 1e30;
         float bridgeReach = skipAbove - extra + rr + hh + fc.thickness;
         if (skipAbove < 1e29 && (bridgeReach <= 0.0 || dot(delta, delta) >= bridgeReach * bridgeReach)) continue;
@@ -243,12 +243,12 @@ float SCG_VolumeFieldC(float3 p, SCG_FieldConst fc, bool allowSkip, out float ca
             int ia = clamp((int)pr.x, 0, fc.n - 1);
             int ib = clamp((int)pr.y, 0, fc.n - 1);
             if (ia == ib) continue;
-            if (_GroupMemA[ia].w <= 0.0 || _GroupMemA[ib].w <= 0.0) continue;   // 骨なしの部位を含む橋は張らない
+            if (_GroupMemA[ia].w <= 0.0 || _GroupMemA[ib].w <= 0.0) continue;   // 骨なしの部位を含む接続部位は作らない
             float span = _GroupBridgeSpan * (pr.z > 0.0 ? pr.z : 1.0);
             float skipAbove = (allowSkip && best < 1e5) ? best + fc.blend + SCG_SKIP_MARGIN : 1e30;
             float pec;
             float pairD = SCG_PairBridge(p, ia, ib, span, fc.radiusScale, fc.thickness, pr.w, skipAbove, pec);
-            if (pairD >= skipAbove) continue;   // 飛ばした（または寄与が 0 と分かった）橋
+            if (pairD >= skipAbove) continue;   // 飛ばした（または寄与が 0 と分かった）接続部位
             SCG_UnionSection(pairD, pec, fc.blend, best, cap);
         }
     }
@@ -276,7 +276,7 @@ float SCG_VolumeDistanceC(float3 p, SCG_FieldConst fc)
 
 // 全部位がカプセル（端の丸め > 0.5）か。そのとき端の値 cap はどこでも -1（SCG_RoundedSection）になり、
 // 外殻のほつれは「十分内側」で一定なので、距離場をもう 1 回評価して cap を求める必要が無い。
-// 0.51 は、2 部位の丸めを補間した橋の丸めも確実に 0.5 を超えるための余裕。
+// 0.51 は、2 部位の丸めを補間した接続部位の丸めも確実に 0.5 を超えるための余裕。
 bool SCG_AllCapsules(SCG_FieldConst fc)
 {
     bool all = true;
@@ -318,7 +318,7 @@ void SCG_AxisWrap(float3 p, out float3 local, out float3 colX, out float3 colY)
         // Tensor projection has the same value for axis and -axis. The shared
         // direction remains as a bias at perpendicular axes to avoid folds.
         float3 guide = normalize(y * 0.35 + axis * dot(axis, y) * 0.65);
-        // 全身繭（橋の組あり）では高さを部位の中心ではなく共通の原点から測る。
+        // 全身繭（接続部位の組あり）では高さを部位の中心ではなく共通の原点から測る。
         // 部位ごとの中心から測ると、胴↔腿・前腕↔手のように中心の高さが違う部位の
         // 境目で高さが急に変わり、帯が詰まって横一直線の継ぎ目になる。
         // 木の繭（組なし）は従来どおり部位の中心から測る（見た目は変わらない）。
@@ -491,7 +491,7 @@ fixed4 SCG_ShadeGroupShell(float2 screenUV, float3 worldDir, float2 svPos, out f
         d = SCG_VolumeDistanceC(origin + ray * t, fc);
         if (oldD * d < 0.0)
         {
-            // Refine any bracketed crossing (tilted bridge fields are conservative approximations).
+            // Refine any bracketed crossing (tilted connection fields are conservative approximations).
             float a = oldT, b = t;
             [unroll] for (int k = 0; k < 6; k++)
             {

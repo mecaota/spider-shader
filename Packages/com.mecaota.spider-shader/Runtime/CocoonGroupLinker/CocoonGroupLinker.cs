@@ -11,7 +11,7 @@ using UnityEngine;
 ///   （両手首を合わせる・手を胸に当てる・両足をそろえる等）
 /// ・初回は最大の繭を代表にし、結合中は代表を保持する。
 ///   各部位の円筒と共有原点を渡し、代表だけが外殻と連続した巻き模様を描く。
-///   外殻はワールド座標の円筒と橋から生成し、巻き方向は各部位の軸に滑らかに追従する。
+///   外殻はワールド座標の円筒と繭同士の接続部位から生成し、巻き方向は各部位の軸に滑らかに追従する。
 ///   分離には距離の余裕を設け、境界で結合・分離が往復するのを抑える。
 /// ・followers（PlayerBoneConstraint など targetPlayerId を持つ追従器）を decals と同じ並びで
 ///   設定すると、装着中の繭だけを、同じプレイヤーの繭どうしでまとめる
@@ -280,7 +280,7 @@ public class CocoonGroupLinker : UdonSharpBehaviour
         _mpb.SetVectorArray("_GroupMemA", _memA);
         _mpb.SetVectorArray("_GroupMemB", _memB);
         _mpb.SetFloat("_GroupMemCount", m);
-        // 橋の組は渡さない（0 = 代表から各部位へ放射状に橋を張る従来の形）
+        // 接続部位の組は渡さない（0 = 代表から各部位へ放射状に接続部位を作る従来の形）
         _mpb.SetFloat("_GroupBridgeCount", 0f);
 
         // 代表の箱を、まとめた円筒を包む大きさへ（オブジェクト空間の半サイズ）
