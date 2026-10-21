@@ -171,6 +171,68 @@ LineRenderer の設定:
 | `_ReleaseLocalBones()` | `ClaimLocalBone` で捕縛した自分のボーンを解放する。解放後の約 3 秒は、遅れて届いた捕縛を取り除く |
 | `RefreshFanShape()` | 実行中に巣のマテリアルや扇形の形を変えたときに呼ぶ。捕縛範囲（扇形）を読み直す |
 
+### スロットの状態を外から読む
+
+別の UdonSharp スクリプトから、この巣の「どのスロットに、誰の、どの部位（ボーン）が付いているか」を読めます。たとえば、ワールドにある全部の巣を調べて、捕まっている部位から全身の繭（[外殻の部位](#外殻の部位を自分で渡すとき)）を組み立てる、といった使い方です。どのメソッドも読むだけで、同期や捕縛の状態は変えません。
+
+| メソッド | 返す値 |
+|---|---|
+| `GetSlotCount()` | スロットの総数（`MaxSlots` = 16。空きも含む） |
+| `GetOccupiedSlotMask()` | 誰かが付いているスロットのビットマスク。スロット i に付いていれば bit i が 1。0 なら誰も付いていない |
+| `GetOccupiedSlotCount()` | 誰かが付いているスロットの数（0〜16） |
+| `GetSlotPlayerId(int slot)` | そのスロットに付いている人の `playerId`。空きは 0、範囲外の slot は -1 |
+| `GetSlotBoneIndex(int slot)` | 付いているボーンの `Bones` での番号（`ClaimLocalBone` の boneIndex と同じ）。空き・範囲外は -1 |
+| `GetSlotHumanBone(int slot)` | 付いているボーンの種類。[TrackBone](#trackboneボーンの指定) は `HumanBodyBones` と同じ整数なので、`(HumanBodyBones)値` でそのまま変換できる。空き・範囲外は -1 |
+
+**考え方**: スロットの中身は全員で同じ値になる同期配列ですが、巣が 100 個以上あるワールドで、毎回すべての巣の 16 スロットを調べると無駄が大きくなります。そこで巣の側で「誰かが付いているスロット」を 1 つの整数（ビットマスク）にまとめておき、同期を受け取ったときと、オーナーがスロットを書き換えたときだけ作り直します。毎フレームの計算は増えません。読む側は、`GetOccupiedSlotMask()` が 0 の巣（ほとんどの巣）を 1 回の呼び出しで飛ばせます。Web でいえば、一覧を毎回 `filter` して数えるのではなく、データが変わったときだけ「件数」や「未読フラグ」を更新しておき、画面はそれを読むだけにするイメージです。
+
+多数の巣を 1 フレームに少しずつ調べる例（UdonSharp）:
+
+```csharp
+using UdonSharp;
+using UnityEngine;
+using VRC.SDKBase;
+
+[UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+public class WebSlotScanner : UdonSharpBehaviour
+{
+    public SurfaceContactDeformer[] deformers; // 調べる巣
+    public int perFrame = 16;                  // 1 フレームに調べる巣の数
+    private int _cursor;
+
+    void Update()
+    {
+        if (deformers == null || deformers.Length == 0) { return; }
+        int n = Mathf.Min(perFrame, deformers.Length);
+        for (int k = 0; k < n; k++)
+        {
+            SurfaceContactDeformer d = deformers[_cursor];
+            _cursor = (_cursor + 1) % deformers.Length;
+            if (d == null) { continue; }
+            int mask = d.GetOccupiedSlotMask();
+            if (mask == 0) { continue; }           // 誰も付いていない巣はここで終わり
+            int slots = d.GetSlotCount();          // ループの外で 1 回だけ呼ぶ
+            for (int s = 0; s < slots; s++)
+            {
+                if ((mask & (1 << s)) == 0) { continue; }
+                int playerId = d.GetSlotPlayerId(s);
+                int bone = d.GetSlotHumanBone(s);
+                if (playerId <= 0 || bone < 0) { continue; }
+                VRCPlayerApi p = VRCPlayerApi.GetPlayerById(playerId);
+                if (!Utilities.IsValid(p)) { continue; } // 退室した直後
+                HumanBodyBones part = (HumanBodyBones)bone;
+                // ここで「p の part に糸が付いている」を記録する
+            }
+        }
+    }
+}
+```
+
+- 値は同期済みのスロットなので、全員のクライアントで同じになります（スクリプトは各自のクライアントで読むだけでよく、同期は要りません）。自分が触れた直後は、捕縛の要求がオーナーとやり取りされるまでの間（通信の遅れの分）、まだ入っていません。
+- 退室した人のスロットは、オーナーが掃除するまで少しの間残ることがあります。`VRCPlayerApi.GetPlayerById` の結果を `Utilities.IsValid` で確かめてください。
+- 少しずつ調べる場合、外れたスロットは次にその巣を調べたときにわかります。1 周するごとに結果を作り直してください。
+- 別の UdonBehaviour のメソッドを呼ぶたびに少し手間がかかるので、`GetSlotCount()` などはループの外で 1 回だけ呼びます。
+
 ### 推奨設定の例（地面・木などに固定した巣）
 
 作者のワールドで、固定設置の巣にそろえて使っている設定です。投げ網など飛んでくる網には当てはまりません。
@@ -271,7 +333,7 @@ LineRenderer の設定:
 
 ### 外殻の部位を自分で渡すとき
 
-全身を 1 つの外殻で包むなど、`CocoonGroupLinker` を使わずに部位を自分で決めるときは、代表にする繭の Renderer に次の値を MaterialPropertyBlock で渡します（駆動スクリプトは同梱していません）。
+全身を 1 つの外殻で包むなど、`CocoonGroupLinker` を使わずに部位を自分で決めるときは、代表にする繭の Renderer に次の値を MaterialPropertyBlock で渡します（駆動スクリプトは同梱していません）。どの部位に巣が付いているかは、SurfaceContactDeformer の [スロットの状態を外から読む](#スロットの状態を外から読む) メソッドで調べられます。
 
 | 名前 | 内容 |
 |---|---|

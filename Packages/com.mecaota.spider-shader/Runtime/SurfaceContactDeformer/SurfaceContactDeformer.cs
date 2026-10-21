@@ -19,6 +19,8 @@ using VRC.Udon.Common.Interfaces;
 ///   ボーン位置・向きへ毎フレーム追従させる（見た目の「糸が巻き付く」演出）
 /// ・threadBySlot（任意）を与えると、くっついた場所（面の上）とボーンの間に太い粘液の糸
 ///   （LineRenderer）を張る。伸びるほど細り、千切れ（autoReleaseDistance）で消える
+/// ・別のスクリプトは GetOccupiedSlotMask / GetSlotPlayerId / GetSlotHumanBone などで
+///   「どのスロットに、誰の、どの部位が付いているか」を読める（読み取り専用。同期や捕縛は変えない）
 ///
 /// 負荷対策（マネージャ登録制）:
 /// ・PostLateUpdate は持たず public Tick() を SurfaceContactDeformerManager が駆動する。
@@ -228,6 +230,10 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private bool[] _externalAnchorSet;
     private Vector3[] _externalAnchors;
     private float[] _externalParams;
+    // 外から読む API 用: 誰かが付いているスロット（bit i = スロット i。MaxSlots は 31 以下であること）と、その数。
+    // 同期配列を書いた・受け取ったときだけ RefreshOccupiedSlots() で作り直し、毎フレームは計算しない
+    private int _occupiedMask = 0;
+    private int _occupiedCount = 0;
 
     private void EnsureInit()
     {
@@ -263,6 +269,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         _seenPlayer = new int[MaxSlots];
         _seenBone = new int[MaxSlots];
         _initTime = Time.time;
+        RefreshOccupiedSlots();
         RefreshFanShape();
     }
 
@@ -543,6 +550,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         }
         _slotAnchor[slot] = anchorLocal; // 既存なら捕縛点だけ更新（冪等）
         _slotParam[slot] = Mathf.Clamp01(param);
+        RefreshOccupiedSlots();
         RequestSerialization();
         UpdateRegistration(); // オーナーは OnDeserialization を受けないので自分で反映
     }
@@ -554,6 +562,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         int slot = FindSlot(playerId, boneIndex);
         if (slot < 0) { return; }
         ClearSlot(slot);
+        RefreshOccupiedSlots();
         RequestSerialization();
         UpdateRegistration();
     }
@@ -567,7 +576,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         {
             if (_slotPlayer[i] == playerId) { ClearSlot(i); changed = true; }
         }
-        if (changed) { RequestSerialization(); UpdateRegistration(); }
+        if (changed) { RefreshOccupiedSlots(); RequestSerialization(); UpdateRegistration(); }
     }
 
     // 退室済み・無効なプレイヤーのスロットを掃除（オーナーのみ）
@@ -581,13 +590,14 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             VRCPlayerApi p = VRCPlayerApi.GetPlayerById(_slotPlayer[i]);
             if (p == null || !p.IsValid()) { ClearSlot(i); changed = true; }
         }
-        if (changed) { RequestSerialization(); UpdateRegistration(); }
+        if (changed) { RefreshOccupiedSlots(); RequestSerialization(); UpdateRegistration(); }
     }
 
     // ================= 同期・退室・リスポーン =================
     public override void OnDeserialization()
     {
         EnsureInit();
+        RefreshOccupiedSlots(); // 届いた同期配列から占有スロットを作り直す（オーナーは *Core で作り直す）
         if (!_gotFirstSync)
         {
             _gotFirstSync = true;
@@ -1040,6 +1050,72 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             if (_slotPlayer[i] == playerId) { return true; }
         }
         return false;
+    }
+
+    // ================= スロットの状態を外から読む（読み取り専用）=================
+    // 別の UdonBehaviour（捕まった部位から全身の繭を組み立てるスクリプトなど）が
+    // 「どのスロットに、誰の、どの部位が付いているか」を読むための入口。
+    // 値は同期済みのスロット（オーナーが書いて全員に配ったもの）なので、全クライアントで同じになる。
+    // どれも読むだけで、同期・捕縛の状態は変えない。多数の巣を調べるときは、先に GetOccupiedSlotMask() が
+    // 0 かどうかを見て、誰も付いていない巣を 1 回の呼び出しで飛ばす
+
+    // スロットの総数（= MaxSlots。空きも含む）
+    public int GetSlotCount()
+    {
+        return MaxSlots;
+    }
+
+    // 誰かが付いているスロットのビットマスク（スロット i に付いていれば bit i が 1。0 なら誰も付いていない）。
+    // 同期を受け取ったときとオーナーがスロットを書き換えたときに作っておいた値を返すだけなので、毎フレーム呼んでも軽い
+    public int GetOccupiedSlotMask()
+    {
+        return _occupiedMask;
+    }
+
+    // 誰かが付いているスロットの数（0〜MaxSlots）
+    public int GetOccupiedSlotCount()
+    {
+        return _occupiedCount;
+    }
+
+    // スロット slot に付いているプレイヤーの playerId。空きは 0、範囲外の slot は -1。
+    // 退室した人のスロットはオーナーが掃除するまで少し残ることがあるので、使う側で GetPlayerById の結果を確かめる
+    public int GetSlotPlayerId(int slot)
+    {
+        if (slot < 0 || slot >= MaxSlots) { return -1; }
+        int pid = _slotPlayer[slot];
+        return (pid > 0) ? pid : 0;
+    }
+
+    // スロット slot に付いているボーンの bones 配列での番号（ClaimLocalBone の boneIndex と同じ）。空き・範囲外は -1
+    public int GetSlotBoneIndex(int slot)
+    {
+        if (slot < 0 || slot >= MaxSlots || _slotPlayer[slot] <= 0) { return -1; }
+        int b = _slotBone[slot];
+        if (bones == null || b < 0 || b >= bones.Length) { return -1; }
+        return b;
+    }
+
+    // スロット slot に付いているボーンの種類。TrackBone は HumanBodyBones と同じ整数なので、
+    // 受け取った値は (HumanBodyBones)値 でそのまま変換できる。空き・範囲外は -1
+    public int GetSlotHumanBone(int slot)
+    {
+        int b = GetSlotBoneIndex(slot);
+        if (b < 0) { return -1; }
+        return (int)bones[b];
+    }
+
+    // 占有スロットのキャッシュ（_occupiedMask / _occupiedCount）を同期配列から作り直す。
+    // 同期配列を書いた後（オーナー）と受け取った後（OnDeserialization）に呼ぶ
+    private void RefreshOccupiedSlots()
+    {
+        int mask = 0, count = 0;
+        for (int i = 0; i < MaxSlots; i++)
+        {
+            if (_slotPlayer[i] > 0) { mask |= 1 << i; count++; }
+        }
+        _occupiedMask = mask;
+        _occupiedCount = count;
     }
 
     // ================= スロット操作 =================

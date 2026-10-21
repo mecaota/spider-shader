@@ -21,6 +21,7 @@
 
 - [共通機能](https://github.com/mecaota/spider-shader/blob/main/docs/CommonFeatures.md) — インスペクタの見方・質感の継承・プリセット・Editor のメニュー
 - [Udon ギミック](https://github.com/mecaota/spider-shader/blob/main/docs/UdonGimmicks.md) — 接触追従の変形（`Runtime/SurfaceContactDeformer`）・繭のまとめ描き（`Runtime/CocoonGroupLinker`）・体に覆いかぶさる変形
+  - 接触追従の変形は、どのスロットに誰のどの部位が付いているかを別のスクリプトから読めます（[スロットの状態を外から読む](https://github.com/mecaota/spider-shader/blob/main/docs/UdonGimmicks.md#スロットの状態を外から読む)）
 
 ## 動作環境
 
