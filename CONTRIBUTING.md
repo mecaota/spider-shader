@@ -15,8 +15,10 @@ Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布さ�
   Runtime/                            シェーダー（*.shader）と共通コード（CGINC/*.cginc）
     CocoonGroupLinker/                繭のまとめ描きの Udon
     SurfaceContactDeformer/           接触追従の変形の Udon
+    WebBake/                          巣の lilToon 焼き込みの控え（エディター専用のコンポーネント）
   Editor/                             インスペクタ・質感の継承・プリセット・焼き込み・メッシュ生成（Editor 専用）
-    Shaders/, CGINC/                  ねばねばネットの焼き込み用シェーダー（Editor 専用）
+    SpiderWeb*Bake*.cs                巣の lilToon 焼き込み（確認画面・控えのインスペクタ・ビルド時の除去。SpiderWebMaterialSnapshotUtil.cs も）
+    Shaders/, CGINC/                  焼き込み用シェーダー（Editor 専用。ねばねばネット用と、巣の lilToon 焼き込み用の SpiderWebBake.shader）
   Presets/                            標準プリセット（SpiderShaderPreset アセット）
 docs/                                 利用者向けドキュメント（シェーダーごと＋共通機能＋Udon ギミック）
 Website/                              配布ページのテンプレート
@@ -26,6 +28,7 @@ Website/                              配布ページのテンプレート
 
 - `Editor/` のスクリプトは `includePlatforms: Editor` の asmdef で分けてあり、ワールドのビルドには含まれません。VRChat SDK（`com.vrchat.base`）があるときだけ `SPIDER_SHADER_VRCSDK` が定義され、Build & Upload 直前の質感の同期が有効になります。
 - `Runtime/` の asmdef は `VRC.Udon`・`UdonSharp.Runtime` を参照しています。
+- `Editor/` の asmdef は、巣の焼き込みの控え（`Runtime/WebBake/SpiderWebBakeBackup.cs`）を使うため、`Runtime/` の asmdef（`com.mecaota.spider-shader`）を参照しています。lilToon は参照せず、`Shader.Find` とリフレクションで探します（lilToon の無いプロジェクトでもコンパイルが通る）。
 
 ## シェーダーと共通コード（CGINC）の関係
 
@@ -42,7 +45,7 @@ Website/                              配布ページのテンプレート
 | `SpiderCocoon_VisionJack.cginc` | 視界ジャック（包まれ演出） | 繭・デカール |
 | `SpiderCocoon_Group.cginc` / `_GroupShell.cginc` | くっついた繭のまとめ描き・外殻 | デカール |
 | `SpiderCocoon_Sheet.cginc` | 表面の模様「ねばねばネット風」（`_SurfaceStyle`） | デカール |
-| `SpiderWeb_Core.cginc` | 巣の頂点・フラグメントの処理（`SpiderWeb.shader` の本体） | 巣 |
+| `SpiderWeb_Core.cginc` | 巣の頂点・フラグメントの処理（`SpiderWeb.shader` の本体）。`SW_BAKE` を定義して include すると視線と光の向きが焼き込み用に置き換わり、巣の lilToon 焼き込み用の `Editor/Shaders/SpiderWebBake.shader` と同じ式を共有する | 巣、巣の lilToon 焼き込み |
 | `SpiderCocoon_Pull.cginc` | 接触追従の変形（`SC_PULL_MAX = 16`） | 巣・繭・ねばねばネット |
 | `SpiderWeb_Drape.cginc` | 体に覆いかぶさる変形（`SW_DRAPE_MAX = 20`） | 巣・ねばねばネット |
 | `SpiderSilk_Motion.cginc` | 揺れ・重力たゆみの波形 | 糸・巣 |
@@ -59,6 +62,7 @@ Website/                              配布ページのテンプレート
 - **描画順**: 吐いた糸は `Transparent-10`、それ以外は `Transparent`。理由は [吐いた糸の「描画順とステンシル」](docs/SpiderThreadTrail.md#描画順とステンシル)。
 - **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）。
 - 繭・デカールはオブジェクト空間を使う判定があるため `DisableBatching` タグを付けています。
+- 巣の lilToon 焼き込み（`Editor/SpiderWebLilToonBaker.cs`）の焼き方（座標・色・ミップ・lilToon の設定）を変えたら `ToolVersion` を上げます。`SpiderWeb_Core.cginc` を変えると焼き込みの色も変わりますが、焼いた巣には自動では反映されません（焼き直しが必要）。
 
 ## ドキュメントの方針
 
@@ -124,6 +128,22 @@ Website/                              配布ページのテンプレート
 | 3 層・軽量化後 | +0.33 ms | +0.15 ms | +0.09 ms |
 
 焼き込みの解像度（1024 → 512）や使わない層のパスを削っても速さは変わらなかった（512 はメモリが 12 → 3 MiB）。
+
+**巣の lilToon 焼き込み**
+
+- 2026-10-14 に追加。ワールド固有のスクリプトの個別の説明（空中の巣の壁 `AerialWebWall`・ハンモックの巣 `HammockWebTrap`・`BossStickyNetManager`・`PitfallWebTrap`）と、焼けない網（`CaptureNetDrape`・`SpiderSilkShooter`）は、パッケージ 0.9.0 で名前を外した。ワールドの Editor コードから `SpiderWebLilToonBaker.RegisterKnownScript` で登録する（`AerialWebWall` は表示する距離 `cullOnDistance` / `cullOffDistance` を読んで説明に入れる）。登録しないと一般の説明（レンダラーを参照していれば【注意】、GameObject だけを参照していれば【参考】）になり、捕獲網でもマテリアルの `_DrapeEnable` が OFF なら焼けてしまう（SkinnedMeshRenderer・パーティクルの網は登録しなくても断る）。
+- `SpiderWeb_Core.cginc` を `SpiderWeb.shader` から切り出す前後で、巣の描画は 19 構図で画素が一致し、D3D11 のバイトコードも 16 バリアントすべてで一致した。
+- 巣だけの描画時間（巣を消した画面との差。2026-10-14、Unity Editor、1080p 全画面、RX 9070 XT、MSAA なし）:
+
+| 巣 | 元 | 焼いたあと |
+|---|---:|---:|
+| WebPlane の巣 | 0.72 ms | 0.22 ms |
+| 木の扇の巣 | 0.96 ms | 0.34 ms |
+| 空中の巣の板 | 0.67 ms | 0.06 ms |
+
+MSAA 4x でも 62〜77% 減った。画面に巣が小さく写るときは差も小さくなる。実機の VRChat（VR・鏡・多人数）では未計測。
+
+- 被覆率を保つミップの実測: 空中の巣の板は 2048 段 24.55% → 32 段 24.81%（ふつうの平均なら 32 段で 1.27% まで減る）。木の扇の巣は 34.66% → 36.72%（+2.06 ポイント）。1×1〜16×16 の段は画素が少ないので割合が粗くなる。
 
 ## 既知の課題
 

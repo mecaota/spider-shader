@@ -2,9 +2,9 @@
 // SpiderWeb_Core.cginc — 蜘蛛の巣（mecaota/SpiderWeb）の頂点・フラグメントの処理
 //
 //  2026-10-14: SpiderWeb.shader の CGINCLUDE の中身を、そのままここへ移した。
-//    巣のシェーダー（Runtime/SpiderWeb.shader）と、巣の模様をテクスチャへ焼き込む Editor 専用の
-//    シェーダー（今後の版で追加予定）が同じ式を使えるようにするため。
-//    移す前と後で、巣の描画が画素一致することを確認済み。
+//    巣のシェーダー（Runtime/SpiderWeb.shader）と、巣の模様を lilToon 用のテクスチャへ焼き込む
+//    Editor 専用シェーダー（Editor/Shaders/SpiderWebBake.shader。SW_BAKE を定義して include する）が
+//    同じ式を使うため。移す前と後で、巣の描画が画素一致することを確認済み。
 //
 //  ■ 使い方
 //    巣のシェーダー: CGINCLUDE の中で #include "CGINC/SpiderWeb_Core.cginc" するだけ。
@@ -486,7 +486,7 @@ fixed4 fragCore(web_v2f i, fixed facing, bool depthOnly)
     float3 VG  = normalize(_WorldSpaceCameraPos - i.worldPos);
     float3 LG  = STG_GooLightDir();
 #if defined(SW_BAKE)
-    // ★ 焼き込み専用（焼き込み用のシェーダーが SW_BAKE を定義して読み込む）。
+    // ★ 焼き込み専用（Editor/Shaders/SpiderWebBake.shader が SW_BAKE を定義して読み込む）。
     //   lilToon へ焼く色は「見る向きに依らない色」にしたいので、視線を「面を正面から見る」向きに、
     //   光を焼くときのシーンの太陽の向き（SW_BAKE_LIGHT_DIR。C# が渡す）に置き換える。
     //   面の向き・接線は巣と同じくメッシュから取る（焼き込み用の頂点シェーダーがワールドの向きにして渡す）。

@@ -252,8 +252,8 @@ Shader "mecaota/SpiderWeb"
         // 色の計算はコンパイラが省く。
         CGINCLUDE
             // 頂点・フラグメントの処理（巣の模様の計算）は CGINC/SpiderWeb_Core.cginc にある。
-            // 2026-10-14: 別のシェーダー（焼き込み用など）からも同じ式を使えるよう、シェーダー本体から切り出した。
-            // 中身は切り出す前と同じ（描画が画素一致することを確認済み）。
+            // 2026-10-14: lilToon への焼き込み（Editor/Shaders/SpiderWebBake.shader）と同じ式を使うため、
+            // シェーダー本体から切り出した。中身は切り出す前と同じ（描画が画素一致することを確認済み）。
             #include "CGINC/SpiderWeb_Core.cginc"
         ENDCG
 

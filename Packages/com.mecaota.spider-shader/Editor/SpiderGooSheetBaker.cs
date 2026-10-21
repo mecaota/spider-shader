@@ -217,7 +217,7 @@ public static class SpiderGooSheetBaker
         folder = folder.Replace('\\', '/').TrimEnd('/');
         if (!folder.StartsWith("Assets/", StringComparison.Ordinal) || folder.Contains(".."))
             throw new ArgumentException("生成先はAssets以下のフォルダーを指定してください。");
-        EnsureFolder(folder);
+        SpiderShaderEditorUtility.EnsureFolder(folder);
         string shapePath = folder + "/" + plan.Hash + "-shape.asset";
         string detailPath = folder + "/" + plan.Hash + "-detail.asset";
         string coveragePath = folder + "/" + plan.Hash + "-coverage.asset";
@@ -422,17 +422,5 @@ public static class SpiderGooSheetBaker
     private static void DestroyTransient(UnityEngine.Object obj)
     {
         if (obj != null && !AssetDatabase.Contains(obj)) UnityEngine.Object.DestroyImmediate(obj);
-    }
-
-    private static void EnsureFolder(string folder)
-    {
-        string[] parts = folder.Split('/');
-        string current = parts[0];
-        for (int i = 1; i < parts.Length; i++)
-        {
-            string next = current + "/" + parts[i];
-            if (!AssetDatabase.IsValidFolder(next)) AssetDatabase.CreateFolder(current, parts[i]);
-            current = next;
-        }
     }
 }

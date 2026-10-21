@@ -235,6 +235,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         }
 
         SpiderGooSheetBakePanel.Draw(materialEditor);
+        SpiderWebLilToonBakePanel.Draw(materialEditor);
 
         // カテゴリ表に無い新規プロパティの取りこぼし防止
         var leftovers = new List<MaterialProperty>();

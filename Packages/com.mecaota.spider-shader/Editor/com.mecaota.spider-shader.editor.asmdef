@@ -1,7 +1,9 @@
 {
     "name": "com.mecaota.spider-shader.Editor",
     "rootNamespace": "",
-    "references": [],
+    "references": [
+        "com.mecaota.spider-shader"
+    ],
     "includePlatforms": [
         "Editor"
     ],
