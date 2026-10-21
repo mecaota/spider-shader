@@ -259,7 +259,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 | 解像度（長い辺） | 2048 | 1024 / 2048 / 4096。短い辺は UV の縦横比に合わせて自動で決まる。糸 1 本が 2 テクセル未満になると注意が出る |
 | モード | Cutout ＋ alpha to coverage | Cutout ＋ alpha to coverage か、Transparent（半透明） |
 | Cutout のしきい値 | 0.5 | 0.05〜0.95。これより濃い所を糸として残す（Cutout のとき） |
-| 保存先（空なら自動） | 空 | 空なら `Assets/mecaota/BakedWebs/<シーン名>/`。ファイル名は `<オブジェクト名>_<確認内容の指紋 8 桁>` |
+| 保存先（空なら自動） | 空 | 空なら `Assets/mecaota/BakedWebs/<シーン名>/`。ファイル名は `<オブジェクト名>_<確認内容の指紋 8 桁>`（巣のスロットが複数あるときは、後ろに `_s<スロット番号>` が付く） |
 
 ### 対象と対象外
 
@@ -357,7 +357,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 | `SpiderWebLilToonBaker.Analyze(renderer, settings)` | 焼けるか、失われる機能、注意事項を調べる（何も変えない） |
 | `SpiderWebLilToonBaker.Bake(renderer, settings, consent)` | 焼く。同意の印（`SpiderWebBakeConsent`）が無いとき、確認したあとで対象・設定・マテリアルの値・確認内容が変わったときは、何もせずに例外で断る。同意の印は確認画面だけが作れる（画面を通さずに焼けないようにするため） |
 | `SpiderWebLilToonBaker.DiffOriginals(backup)` | 元のマテリアルが焼いたあとで変わったところを調べる |
-| `SpiderWebLilToonBaker.Revert(backup, restoreFolder, mode)` | 控えから元に戻す。`mode` は `UseOriginal`（既定）か `RecreateFromSnapshot` |
+| `SpiderWebLilToonBaker.Revert(backup, restoreFolder, mode)` | 控えから元に戻す。`mode` は `UseOriginal`（既定）か `RecreateFromSnapshot`。`restoreFolder`（作り直したマテリアルの保存先）は空なら焼いたフォルダの `Restored/`。指定するときは `Assets/` の下（`..` を含まない）で、違反なら何も変えずに例外で断る |
 | `SpiderWebLilToonBaker.RegisterKnownScript(scriptName, detail, blocksBake)` | ワールド側のスクリプトを登録する。焼く巣をそのスクリプトが参照していると、確認画面に `detail` を【重大】で出す。`blocksBake` が true なら、焼けない理由として出して断る |
 
 `RegisterKnownScript` は、ワールド側の Editor 用スクリプト（`Editor` フォルダの中）から呼びます。例:

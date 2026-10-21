@@ -131,7 +131,7 @@ Website/                              配布ページのテンプレート
 
 **巣の lilToon 焼き込み**
 
-- 2026-10-14 に追加。ワールド固有のスクリプトの個別の説明（空中の巣の壁 `AerialWebWall`・ハンモックの巣 `HammockWebTrap`・`BossStickyNetManager`・`PitfallWebTrap`）と、焼けない網（`CaptureNetDrape`・`SpiderSilkShooter`）は、パッケージ 0.9.0 で名前を外した。ワールドの Editor コードから `SpiderWebLilToonBaker.RegisterKnownScript` で登録する（`AerialWebWall` は表示する距離 `cullOnDistance` / `cullOffDistance` を読んで説明に入れる）。登録しないと一般の【注意】になり、捕獲網でもマテリアルの `_DrapeEnable` が OFF なら焼けてしまう（SkinnedMeshRenderer・パーティクルの網は登録しなくても断る）。
+- 2026-10-14 に追加。ワールド固有のスクリプトの個別の説明（空中の巣の壁 `AerialWebWall`・ハンモックの巣 `HammockWebTrap`・`BossStickyNetManager`・`PitfallWebTrap`）と、焼けない網（`CaptureNetDrape`・`SpiderSilkShooter`）は、パッケージ 0.9.0 で名前を外した。ワールドの Editor コードから `SpiderWebLilToonBaker.RegisterKnownScript` で登録する（`AerialWebWall` は表示する距離 `cullOnDistance` / `cullOffDistance` を読んで説明に入れる）。登録しないと一般の説明（レンダラーを参照していれば【注意】、GameObject だけを参照していれば【参考】）になり、捕獲網でもマテリアルの `_DrapeEnable` が OFF なら焼けてしまう（SkinnedMeshRenderer・パーティクルの網は登録しなくても断る）。
 - `SpiderWeb_Core.cginc` を `SpiderWeb.shader` から切り出す前後で、巣の描画は 19 構図で画素が一致し、D3D11 のバイトコードも 16 バリアントすべてで一致した。
 - 巣だけの描画時間（巣を消した画面との差。2026-10-14、Unity Editor、1080p 全画面、RX 9070 XT、MSAA なし）:
 

@@ -1,3 +1,6 @@
+// このファイルは C# の null 許容の注釈（nullable）を使わない書き方をしている。利用側のプロジェクトが
+// 追加のコンパイラ引数（csc.rsp の -nullable:enable など）で注釈を有効にしても警告が出ないよう、明示的に無効にする。
+#nullable disable
 using UnityEditor;
 
 /// <summary>

@@ -1449,6 +1449,7 @@ public static class SpiderWebLilToonBaker
     /// 控えから、焼く前のマテリアルとレンダラーの設定に戻し、控えのコンポーネントを外す（Undo 1 回分）。
     /// ・元のマテリアルが無ければ（mode が RecreateFromSnapshot なら、あっても）控えの値から作り直して
     ///   restoreFolder（空なら焼いたフォルダの Restored）に保存する。元がマテリアルバリアントでも、親の無い普通のマテリアルになる。
+    ///   restoreFolder は Assets/ の下のフォルダ（.. を含まない）。違反なら何も変えずに ArgumentException で断る。
     /// ・元のマテリアルが焼いたあとで編集されていたら、その違いを結果に並べる（UseOriginal のときは今の値のまま使う）。
     /// ・prefab のインスタンスでは、焼く前に上書きでなかった値は、代入ではなく prefab の値へ戻す（上書きを残さない）。
     ///   ただし作り直したマテリアルのスロットは、上書きとして残す（prefab の値へ戻すと、作り直したマテリアルが使われない）。
@@ -1471,6 +1472,9 @@ public static class SpiderWebLilToonBaker
         string folder = string.IsNullOrEmpty(restoreFolder)
             ? (string.IsNullOrEmpty(backup.bake.outputFolder) ? DefaultRoot : backup.bake.outputFolder) + "/Restored"
             : restoreFolder.Replace('\\', '/').TrimEnd('/');
+        // 指定された保存先は、焼くときの保存先と同じ条件で確かめる（Assets/ の下で、.. を含まない）。違反なら何も変えずに断る
+        if (!string.IsNullOrEmpty(restoreFolder) && (!folder.StartsWith("Assets/", StringComparison.Ordinal) || folder.Contains("..")))
+            throw new ArgumentException("作り直したマテリアルの保存先は Assets/ の下のフォルダにしてください: " + folder, nameof(restoreFolder));
 
         var recreatedSlots = new HashSet<int>();   // 控えの値から作り直したスロット（prefab の値へは戻さない）
 
