@@ -47,8 +47,8 @@ using VRC.Udon.Common.Interfaces;
 ///   localStuckReceivers の各 UdonBehaviour へ SendCustomEvent で送る（ローカルのみ。2 つは必ず交互に送る）
 /// ・千切れ・リスポーンで解放を送った時点で「はがれた」とみなす（オーナーとの往復を待たない）。くっついている間に
 ///   巣やマネージャが無効になったときも「はがれた」を送り、有効に戻ってまだくっついていれば送り直す
-/// ・restraint の PlayerSpeedLimiter に送れば「くっついている間の減速」になる（既定のイベント名は SubtractSpeed / AddSpeed。
-///   対で送るので、何枚の巣から同じ PlayerSpeedLimiter に送っても、全部はがれたら元に戻る）。イベント名で送るだけなので、
+/// ・restraint の PlayerMovementLock(窓口)に送れば「くっついている間の減速」になる（既定のイベント名は SubtractSpeed / AddSpeed。
+///   対で送るので、何枚の巣から同じ窓口に送っても、全部はがれたら元に戻る）。イベント名で送るだけなので、
 ///   このパッケージは restraint が無くてもコンパイルできる（以前の slowLocalWhenStuck はこの形で restraint へ移した）
 ///
 /// 面ごとの座標（boneSurfaces）:
@@ -158,7 +158,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public bool pullOnly = false;
 
     [Header("くっついたときの通知（任意）")]
-    [Tooltip("ローカルプレイヤーがこの巣にくっついた／全部はがれたときにイベントを送る UdonBehaviour（restraint の PlayerSpeedLimiter で減速するなど）。空なら送らない")]
+    [Tooltip("ローカルプレイヤーがこの巣にくっついた／全部はがれたときにイベントを送る UdonBehaviour（restraint の PlayerMovementLock の窓口で減速するなど）。空なら送らない")]
     public UdonBehaviour[] localStuckReceivers;
 
     [Tooltip("ローカルプレイヤーがどこか 1 か所でもくっついたときに送るイベント名")]
