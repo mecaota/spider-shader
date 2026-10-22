@@ -135,8 +135,8 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
             Vector3 fwd = p.GetRotation() * Vector3.forward;
             fwd.y = 0f;
             if (fwd.sqrMagnitude < 1e-6f) { fwd = Vector3.forward; }
-            projectorTransform.SetPositionAndRotation(head + Vector3.up * heightAboveHead,
-                                                      Quaternion.LookRotation(Vector3.down, fwd.normalized));
+            projectorTransform.position = head + Vector3.up * heightAboveHead;
+            projectorTransform.rotation = Quaternion.LookRotation(Vector3.down, fwd.normalized);
         }
     }
 
