@@ -45,7 +45,8 @@ using VRC.Udon.Common.Interfaces;
 /// くっついたときの通知（localStuckReceivers）:
 /// ・ローカルプレイヤーがこの巣のどこか 1 か所でもくっついたら localStuckEvent、全部はがれたら localUnstuckEvent を、
 ///   localStuckReceivers の各 UdonBehaviour へ SendCustomEvent で送る（ローカルのみ。リスポーンと巣の無効化でも「はがれた」を送る）
-/// ・restraint の PlayerSpeedLimiter に送れば「くっついている間の減速」になる。イベント名で送るだけなので、
+/// ・restraint の PlayerSpeedLimiter に送れば「くっついている間の減速」になる（既定のイベント名は SubtractSpeed / AddSpeed。
+///   対で送るので、何枚の巣から同じ PlayerSpeedLimiter に送っても、全部はがれたら元に戻る）。イベント名で送るだけなので、
 ///   このパッケージは restraint が無くてもコンパイルできる（以前の slowLocalWhenStuck はこの形で restraint へ移した）
 ///
 /// 面ごとの座標（boneSurfaces）:
@@ -159,10 +160,10 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public UdonBehaviour[] localStuckReceivers;
 
     [Tooltip("ローカルプレイヤーがどこか 1 か所でもくっついたときに送るイベント名")]
-    public string localStuckEvent = "Engage";
+    public string localStuckEvent = "SubtractSpeed";
 
     [Tooltip("ローカルプレイヤーが全部はがれたときに送るイベント名（リスポーンと巣の無効化でも送る）")]
-    public string localUnstuckEvent = "Disengage";
+    public string localUnstuckEvent = "AddSpeed";
 
     [Header("粘液の糸（任意）")]
     [Tooltip("くっついた場所（面）とボーンの間に張る太い粘液の糸（LineRenderer。SpiderSilk の粘液マテリアル）。スロット番号ごとに 1 本、最大 MaxSlots 本。空なら糸は描かない")]
@@ -683,7 +684,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public override void OnPlayerRespawn(VRCPlayerApi player)
     {
         if (player == null || !player.isLocal) { return; }
-        // 解放の同期が届く前でも「はがれた」を先に送る（受け手の PlayerSpeedLimiter もリスポーンで数を 0 に戻すため）
+        // 解放の同期が届く前でも「はがれた」を先に送る（リスポーンした人の減速がすぐ戻るように）
         NotifyLocalStuck(false);
         _ReleaseLocalBones();
     }
