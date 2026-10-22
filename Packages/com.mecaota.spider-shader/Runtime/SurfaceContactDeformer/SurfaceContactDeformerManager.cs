@@ -13,7 +13,7 @@ using UnityEngine;
 /// PostLateUpdate を持つ UdonBehaviour はこの1個だけなので、アイドル時のコストは
 /// マネージャ1個分に収まる。シーンに1個だけ置くこと。
 ///
-/// くっついている間の減速は、以前はここで行っていたが restraint の PlayerSpeedLimiter へ移した
+/// くっついている間の減速は、以前はここで行っていたが restraint の PlayerMovementLock へ移した
 /// （各 Deformer の localStuckReceivers から「くっついた」「全部はがれた」を送る）
 /// </summary>
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
