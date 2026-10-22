@@ -14,7 +14,9 @@ Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布さ�
   README.md                           パッケージ内の入口（docs/ へのリンクのみ）
   Runtime/                            シェーダー（*.shader）と共通コード（CGINC/*.cginc）
     CocoonGroupLinker/                繭のまとめ描きの Udon
+    CocoonProjectorMask/              受け手マスクを駆動する Udon（SpiderCocoonProjectorMaskDriver）
     SurfaceContactDeformer/           接触追従の変形の Udon
+    WebDrape/                         体に覆いかぶさる変形を駆動する Udon（SpiderWebDrapeDriver）
     WebBake/                          巣の lilToon 焼き込みの控え（エディター専用のコンポーネント）
   Editor/                             インスペクタ・質感の継承・プリセット・焼き込み・メッシュ生成（Editor 専用）
     SpiderWeb*Bake*.cs                巣の lilToon 焼き込み（確認画面・控えのインスペクタ・ビルド時の除去。SpiderWebMaterialSnapshotUtil.cs も）
@@ -60,7 +62,8 @@ Website/                              配布ページのテンプレート
 - ShaderLab の属性の引数（`[Header(...)]` など）は ASCII のみです（日本語を書くとパースエラー）。表示名の日本語は問題ありません。
 - **ステンシルのビット**: 繭の視界ジャック 128（`_StencilRef`）、吐いた糸の芯 64（`_SilkStencilBit`）、受け手マスク 32（`_StencilReceiverBit`）、蜘蛛の体 16（ワールド側のシェーダーが立てる）。デカールの体表 glue は `_GlueStencilRef` / `_GlueStencilReadMask`（既定 0 / 208 = 128 + 64 + 16、受け手マスクと組むときは 32 / 240）。どれかを変えたら合計をそろえます。
 - **描画順**: 吐いた糸は `Transparent-10`、それ以外は `Transparent`。理由は [吐いた糸の「描画順とステンシル」](docs/SpiderThreadTrail.md#描画順とステンシル)。
-- **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）。
+- **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16。スロットの状態を外から読む API が int のビットマスクを使うため 32 以下に限る。超えるとコンパイルエラーになる）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）、覆いかぶさる変形のカプセル `SW_DRAPE_MAX`（20）と `SpiderWebDrapeDriver.MaxCapsules`（20）。
+- 新しい UdonSharp スクリプトのプログラムアセット（`.asset`）は、`sourceCsScript` だけを指した中身の空のものを置いてあり、Unity で開いたときに UdonSharp がコンパイルして中身を作ります。作り直された `.asset` は、そのままコミットして構いません。
 - 繭・デカールはオブジェクト空間を使う判定があるため `DisableBatching` タグを付けています。
 - 巣の lilToon 焼き込み（`Editor/SpiderWebLilToonBaker.cs`）の焼き方（座標・色・ミップ・lilToon の設定）を変えたら `ToolVersion` を上げます。`SpiderWeb_Core.cginc` を変えると焼き込みの色も変わりますが、焼いた巣には自動では反映されません（焼き直しが必要）。
 
@@ -144,9 +147,3 @@ Website/                              配布ページのテンプレート
 MSAA 4x でも 62〜77% 減った。画面に巣が小さく写るときは差も小さくなる。実機の VRChat（VR・鏡・多人数）では未計測。
 
 - 被覆率を保つミップの実測: 空中の巣の板は 2048 段 24.55% → 32 段 24.81%（ふつうの平均なら 32 段で 1.27% まで減る）。木の扇の巣は 34.66% → 36.72%（+2.06 ポイント）。1×1〜16×16 の段は画素が少ないので割合が粗くなる。
-
-## 既知の課題
-
-- シェーダー・C# のコメントに古い記述が残っている（「4 シェーダー」の表記、撤去したシェーダー名、`SpiderWeb.shader` 冒頭の「縦糸を別に描いて横糸を重ねる」説明、`SpiderThreadTrail.shader` 冒頭の「繭と同じ共通実装」など）。実装は docs の説明のとおり。
-- 蜘蛛の巣の標準プリセットは、後から追加された項目（体に覆いかぶさる変形の巻きつき・姿勢追従、近接表示）の値を持っていない。
-- Quest（Android）での動作は未確認。

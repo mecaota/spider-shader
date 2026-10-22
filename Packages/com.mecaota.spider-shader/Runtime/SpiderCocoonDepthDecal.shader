@@ -59,9 +59,10 @@ Shader "mecaota/SpiderCocoonDepthDecal"
 {
     Properties
     {
-        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 4 シェーダーで
+        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
+        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカールではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分け・共通/固有の区別は CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描くため
@@ -141,10 +142,11 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         // 全身繭では Udon が骨から作った部位（最大 16）と、繭同士の接続部位を作る組
         // （_GroupBridgePairs / _GroupBridgeCount）を MaterialPropertyBlock で渡し、
         // 脇や股の凹みをまたいで外形に沿う外殻にする（組が無ければ代表からの放射）
-        // プロパティ名の Bridge は繭同士の接続部位のこと（互換のため名前はそのまま）
+        // プロパティ名の Bridge は繭同士の接続部位のこと。名前は作成済みのマテリアルと、値を渡す Udon
+        // （CocoonGroupLinker やワールドのスクリプト）が参照しているので変えない
         [Header(Group Volume)]
         _GroupBulge ("まとめ描きの膨らみ m (Group Bulge)", Range(0, 0.12)) = 0.045
-        _GroupBridgeSpan ("部位間をつなぐ距離 m (Group Connection Span)", Range(0, 0.5)) = 0.1
+        _GroupBridgeSpan ("繭同士の接続部位を作る距離 m (Group Connection Span)", Range(0, 0.5)) = 0.1
         _GroupRadiusScale ("まとめ繭の半径フィット (Group Radius Fit)", Range(0.25, 1)) = 0.75
         _GroupAxisFollow ("部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
@@ -162,7 +164,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         [ToggleUI] _GroupDepthCut ("隠れた外殻を quad 単位で捨てる (Shell Depth Cut)", Float) = 1
         // 形を絞った接続部位（_GroupBridgePairs[k].w > 0 の組。全身繭の前腕↔胴など）の
         // 半分の高さ = 短いほうの部位の半分の高さ × この値。w = 0 の組と木の繭には効かない
-        _GroupBridgeHeightScale ("絞った接続部位の高さ倍率 (Connection Height Scale)", Range(0, 1.5)) = 1
+        _GroupBridgeHeightScale ("絞った繭同士の接続部位の高さ倍率 (Connection Height Scale)", Range(0, 1.5)) = 1
 
         [Header(Edge Fray)]
         _GooEdgeFray        ("巻きの端のほつれ幅 m (Edge Fray)", Range(0, 0.2)) = 0.03

@@ -57,6 +57,9 @@ using VRC.Udon.Common.Interfaces;
 public class SurfaceContactDeformer : UdonSharpBehaviour
 {
     public const int MaxSlots = 16; // シェーダーの SC_PULL_MAX と一致させる
+    // 外から読む API の占有スロットは int のビットマスク（bit i = スロット i）なので、MaxSlots は 32 以下に限る。
+    // 33 以上にすると 0 での割り算になり、コンパイルエラーで止まる（1 << 32 は 1 に戻り、マスクが黙って壊れるため）
+    private const int MaxSlotsFitsInMask = 1 / (MaxSlots <= 32 ? 1 : 0);
 
     [Header("対象")]
     [Tooltip("SpiderWeb / SpiderCocoon マテリアル（_PullEnable ON）を付けた Renderer")]
@@ -230,10 +233,16 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private bool[] _externalAnchorSet;
     private Vector3[] _externalAnchors;
     private float[] _externalParams;
-    // 外から読む API 用: 誰かが付いているスロット（bit i = スロット i。MaxSlots は 31 以下であること）と、その数。
-    // 同期配列を書いた・受け取ったときだけ RefreshOccupiedSlots() で作り直し、毎フレームは計算しない
+    // 誰かが付いているスロット（bit i = スロット i）と、その数。外から読む API と登録制の判定が使う。
+    // スロットを書き換えた所（ClaimSlotCore・ClearSlot）でその 1 bit だけ直し、同期を受け取ったときは
+    // RefreshOccupiedSlots() で作り直す。毎フレームは数え直さない
     private int _occupiedMask = 0;
     private int _occupiedCount = 0;
+    // 占有スロットが変わるたびに 1 増える番号（外から「前に読んだときから変わったか」を確かめる用）
+    private int _slotVersion = 0;
+    // GameObject が有効で、この巣が動いている間だけ true。無効の間は同期も退室の掃除も届かず
+    // スロットが古いまま残るので、外から読む API は「誰も付いていない」を返す
+    private bool _live = false;
 
     private void EnsureInit()
     {
@@ -334,6 +343,29 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         UpdateRegistration();
     }
 
+    // 無効から戻ったとき: 無効の間に退室した人のスロットをオーナーが掃除し、登録を戻す
+    // （初回は Start より先に呼ばれる。そのときは掃除するものが無い）
+    private void OnEnable()
+    {
+        EnsureInit();
+        _live = true;
+        _slotVersion++;
+        if (Utilities.IsValid(Networking.LocalPlayer)) { PurgeInvalidSlots(); } // 入室直後（ネットワークの準備前）は掃除しない
+        UpdateRegistration();
+    }
+
+    // 無効にされたとき: マネージャから外し（無効の巣を Tick し続けないように）、外から読む API を空にする
+    private void OnDisable()
+    {
+        _live = false;
+        _slotVersion++;
+        if (_registered)
+        {
+            _registered = false;
+            if (manager != null) { manager.Unregister(this); }
+        }
+    }
+
     // ================= トリガー =================
     public override void OnPlayerTriggerEnter(VRCPlayerApi player)
     {
@@ -350,7 +382,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private void UpdateRegistration()
     {
         EnsureInit();
-        bool want = _localInside || ActiveSlotCount() > 0;
+        bool want = _live && (_localInside || _occupiedCount > 0);
         if (want == _registered) { return; }
         _registered = want;
         if (manager != null)
@@ -362,13 +394,6 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         {
             ApplyPull();
         }
-    }
-
-    private int ActiveSlotCount()
-    {
-        int n = 0;
-        for (int i = 0; i < MaxSlots; i++) { if (_slotPlayer[i] > 0) { n++; } }
-        return n;
     }
 
     // ================= 毎フレーム（マネージャから駆動）=================
@@ -385,7 +410,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         ApplyPull();
 
         // トリガー外＆全スロット解放になったら登録を外す
-        if (!_localInside && ActiveSlotCount() == 0) { UpdateRegistration(); }
+        if (!_localInside && _occupiedCount == 0) { UpdateRegistration(); }
     }
 
     // manager 無しの構成でも動くよう PostLateUpdate も一応持つ（登録済みなら二重駆動を避ける）
@@ -547,12 +572,13 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             if (slot < 0) { return; } // 満員
             _slotPlayer[slot] = playerId;
             _slotBone[slot] = boneIndex;
+            _occupiedMask |= 1 << slot; // 新しく埋まったスロットだけ足す（既存スロットの更新では数え直さない）
+            _occupiedCount++;
+            _slotVersion++;
         }
         _slotAnchor[slot] = anchorLocal; // 既存なら捕縛点だけ更新（冪等）
         _slotParam[slot] = Mathf.Clamp01(param);
-        RefreshOccupiedSlots();
-        RequestSerialization();
-        UpdateRegistration(); // オーナーは OnDeserialization を受けないので自分で反映
+        CommitSlots();
     }
 
     private void ReleaseSlotCore(int playerId, int boneIndex)
@@ -562,9 +588,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         int slot = FindSlot(playerId, boneIndex);
         if (slot < 0) { return; }
         ClearSlot(slot);
-        RefreshOccupiedSlots();
-        RequestSerialization();
-        UpdateRegistration();
+        CommitSlots();
     }
 
     private void ReleasePlayerCore(int playerId)
@@ -576,7 +600,15 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         {
             if (_slotPlayer[i] == playerId) { ClearSlot(i); changed = true; }
         }
-        if (changed) { RefreshOccupiedSlots(); RequestSerialization(); UpdateRegistration(); }
+        if (changed) { CommitSlots(); }
+    }
+
+    // スロットを書き換えた後（オーナーのみ）: 全員へ配り、登録を更新する。
+    // オーナーは OnDeserialization を受けないので、自分の分はここで反映する
+    private void CommitSlots()
+    {
+        RequestSerialization();
+        UpdateRegistration();
     }
 
     // 退室済み・無効なプレイヤーのスロットを掃除（オーナーのみ）
@@ -590,14 +622,14 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             VRCPlayerApi p = VRCPlayerApi.GetPlayerById(_slotPlayer[i]);
             if (p == null || !p.IsValid()) { ClearSlot(i); changed = true; }
         }
-        if (changed) { RefreshOccupiedSlots(); RequestSerialization(); UpdateRegistration(); }
+        if (changed) { CommitSlots(); }
     }
 
     // ================= 同期・退室・リスポーン =================
     public override void OnDeserialization()
     {
         EnsureInit();
-        RefreshOccupiedSlots(); // 届いた同期配列から占有スロットを作り直す（オーナーは *Core で作り直す）
+        RefreshOccupiedSlots(); // 届いた同期配列から占有スロットを作り直す（オーナーは ClaimSlotCore・ClearSlot で直す）
         if (!_gotFirstSync)
         {
             _gotFirstSync = true;
@@ -1056,26 +1088,36 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     // 別の UdonBehaviour（捕まった部位から全身の繭を組み立てるスクリプトなど）が
     // 「どのスロットに、誰の、どの部位が付いているか」を読むための入口。
     // 値は同期済みのスロット（オーナーが書いて全員に配ったもの）なので、全クライアントで同じになる。
-    // どれも読むだけで、同期・捕縛の状態は変えない。多数の巣を調べるときは、先に GetOccupiedSlotMask() が
-    // 0 かどうかを見て、誰も付いていない巣を 1 回の呼び出しで飛ばす
+    // どれも読むだけで、同期・捕縛の状態は変えない。多数の巣を調べるときは、全部の巣ではなく
+    // SurfaceContactDeformerManager の GetActiveCount / GetActive で「動いている巣」だけを回り、
+    // 先に GetOccupiedSlotMask() が 0 かどうかを見て、誰も付いていない巣を 1 回の呼び出しで飛ばす。
+    // GameObject が無効の巣は、無効の間スロットが古いまま残るので「誰も付いていない」を返す
 
-    // スロットの総数（= MaxSlots。空きも含む）
+    // スロットの総数（= MaxSlots。空きも含む）。UdonSharp からは定数 SurfaceContactDeformer.MaxSlots を
+    // 直接使うほうが、別の UdonBehaviour を呼ぶ手間が無い分だけ軽い（このメソッドは互換のため残している）
     public int GetSlotCount()
     {
         return MaxSlots;
     }
 
     // 誰かが付いているスロットのビットマスク（スロット i に付いていれば bit i が 1。0 なら誰も付いていない）。
-    // 同期を受け取ったときとオーナーがスロットを書き換えたときに作っておいた値を返すだけなので、毎フレーム呼んでも軽い
+    // スロットが変わったときに作っておいた値を返すだけなので、毎フレーム呼んでも軽い。無効の巣は 0
     public int GetOccupiedSlotMask()
     {
-        return _occupiedMask;
+        return _live ? _occupiedMask : 0;
     }
 
-    // 誰かが付いているスロットの数（0〜MaxSlots）
+    // 誰かが付いているスロットの数（0〜MaxSlots）。無効の巣は 0
     public int GetOccupiedSlotCount()
     {
-        return _occupiedCount;
+        return _live ? _occupiedCount : 0;
+    }
+
+    // 占有スロットが変わるたびに増える番号。前に読んだ値と同じなら、マスク・playerId・ボーンは前のまま
+    // （捕縛点の位置の更新では増えない）。巣の有効・無効が切り替わったときも増える
+    public int GetSlotVersion()
+    {
+        return _slotVersion;
     }
 
     // スロット slot に付いているプレイヤーの playerId。空きは 0、範囲外の slot は -1。
@@ -1083,6 +1125,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public int GetSlotPlayerId(int slot)
     {
         if (slot < 0 || slot >= MaxSlots) { return -1; }
+        if (!_live) { return 0; }
         int pid = _slotPlayer[slot];
         return (pid > 0) ? pid : 0;
     }
@@ -1090,7 +1133,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     // スロット slot に付いているボーンの bones 配列での番号（ClaimLocalBone の boneIndex と同じ）。空き・範囲外は -1
     public int GetSlotBoneIndex(int slot)
     {
-        if (slot < 0 || slot >= MaxSlots || _slotPlayer[slot] <= 0) { return -1; }
+        if (slot < 0 || slot >= MaxSlots || !_live || _slotPlayer[slot] <= 0) { return -1; }
         int b = _slotBone[slot];
         if (bones == null || b < 0 || b >= bones.Length) { return -1; }
         return b;
@@ -1106,9 +1149,11 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     }
 
     // 占有スロットのキャッシュ（_occupiedMask / _occupiedCount）を同期配列から作り直す。
-    // 同期配列を書いた後（オーナー）と受け取った後（OnDeserialization）に呼ぶ
+    // 同期配列を受け取った後（OnDeserialization）と初期化で呼ぶ。オーナーの書き換えは ClaimSlotCore・ClearSlot が 1 bit ずつ直す。
+    // 同じマスクのまま別の人が入れ替わることもあるので、受け取るたびに番号を進める（変わっていなくても進むことがある）
     private void RefreshOccupiedSlots()
     {
+        _slotVersion++;
         int mask = 0, count = 0;
         for (int i = 0; i < MaxSlots; i++)
         {
@@ -1139,6 +1184,12 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
 
     private void ClearSlot(int i)
     {
+        if (_slotPlayer[i] > 0)
+        {
+            _occupiedMask &= ~(1 << i);
+            _occupiedCount--;
+            _slotVersion++;
+        }
         _slotPlayer[i] = 0;
         _slotBone[i] = 0;
         _slotAnchor[i] = Vector3.zero;

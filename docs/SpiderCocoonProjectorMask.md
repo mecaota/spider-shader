@@ -2,7 +2,7 @@
 
 シェーダー名: `mecaota/SpiderCocoonProjectorMask`
 
-> **試験実装です。** 駆動する Udon（被害者の骨の位置を毎フレーム渡すスクリプト）はこのパッケージに含まれていません。
+> **試験実装です。** 実機の VRChat（VR の両目・ミラー・多人数）での確認は済んでいません。駆動する Udon は [`SpiderCocoonProjectorMaskDriver`](#駆動スクリプトspidercocoonprojectormaskdriver) として同梱しています。
 
 ## ひとことで
 
@@ -23,12 +23,37 @@
 
 1. **マテリアル**: `mecaota/SpiderCocoonProjectorMask` のマテリアルを、**Projector 1 つにつき 1 つ**作ります（共有すると全員が同じ人として扱われます）。「輪郭の外への膨張」は繭のマテリアルの「糸の厚み」（`_GlueThickness`）と同じ値にします。
 2. **Projector**: 空の GameObject に Projector を付けます。
-   - Orthographic を ON。捕まった人の頭の上から下へ向け、スクリプトで毎フレーム追従させます。
+   - Orthographic を ON。Orthographic Size は 1.2 前後（両腕を広げた幅の半分より少し大きく）。Near Clip Plane は 0.1、Far Clip Plane は 3（頭の上 0.5 m から足元まで届く長さ）。
+   - 向きと位置は駆動スクリプトが毎フレーム決めます（捕まった人の頭の上から真下へ）。
    - Ignore Layers ＝ `Player`・`PlayerLocal`・`MirrorReflection` **以外すべて**。
    - GameObject 自身のレイヤーは Default（ミラーに映るレイヤー。ミラーの中でも目印が立ちます）。
    - Material ＝ 1 のマテリアル。
 3. **繭のマテリアル**: 体に張り付く繭のマテリアルを `_GlueStencilRef` 32 / `_GlueStencilReadMask` 240 にします（[レンダーステート](SpiderCocoonDepthDecal.md#レンダーステート固有)）。
-4. **スクリプト**: 毎フレーム、マスクのマテリアルに `_OwnerRoot`（足元）・`_OwnerHips`（腰）・`_OwnerPt0`〜`_OwnerPt5`（頭・胸・左手・右手・左足・右足）を `Material.SetVector` で渡します（xyz ＝ 位置、w ＝ 許容半径 m）。解放したら w を 0 以下（または y を -9999）に戻します。
+4. **駆動スクリプト**: 別の GameObject に [`SpiderCocoonProjectorMaskDriver`](#駆動スクリプトspidercocoonprojectormaskdriver) を付け、Projector Transform に 2 の GameObject、Mask Material に 1 のマテリアルを入れます。捕まった人が決まったら、捕獲を扱うスクリプトから `SetOwner(playerId)` を呼びます。
+
+## 駆動スクリプト（SpiderCocoonProjectorMaskDriver）
+
+`Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs`。毎フレーム、マスクのマテリアルに `_OwnerRoot`（足元）・`_OwnerHips`（腰）・`_OwnerPt0`〜`_OwnerPt5`（頭・胸・左手・右手・左足・右足）を `Material.SetVector` で渡し（xyz ＝ 位置、w ＝ 許容半径 m）、Projector を捕まった人の頭の上へ動かして真下へ向けます。誰も捕まっていない間は、Projector の GameObject を無効にして、描き直しの負荷をなくします。
+
+| 設定項目 | 既定値 | 説明 |
+|---|---|---|
+| Projector Transform | （必須） | Projector を付けた GameObject。誰もいない間は GameObject ごと無効にするので、**このスクリプトとは別の GameObject** にする |
+| Mask Material | （必須） | Projector に入れたマスクのマテリアル |
+| Follow Local Player | OFF | ON で、`SetOwner` を呼ばなくても自分を対象にする（動作確認用。デバッグ表示と組み合わせると、自分の体に緑が乗るのを確かめられる） |
+| Height Above Head | 0.5 | 頭からどれだけ上に Projector を置くか m |
+| Root Radius | 0.35 | アバターのメッシュの原点が足元からこの距離以内なら本人とみなす |
+| Hips Radius | 0.35 | 原点が腰の骨からこの距離以内なら本人とみなす |
+| Attachment Radius | 0.25 | 手に持つ物・帽子・靴など骨の下の物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない |
+
+| メソッド | 内容 |
+|---|---|
+| `SetOwner(int playerId)` | この人のアバターにだけ繭を描かせる |
+| `ClearOwner()` | やめる（Projector を無効にする） |
+| `GetOwnerId()` | 今の対象の playerId（いなければ 0） |
+
+- 対象の人が退室すると自動で `ClearOwner` します。
+- このスクリプトは同期しません。全員に同じ見え方をさせたいときは、捕獲を同期しているスクリプトから、全員のクライアントで `SetOwner` を呼びます。
+- 同時に何人もの繭を描き分けるときは、人数分の「Projector ＋ マスクのマテリアル ＋ 駆動スクリプト」を用意します。
 
 ## インスペクタの項目
 
@@ -62,3 +87,4 @@ Unity 標準のインスペクタで表示されます（このパッケージ�
 | ファイル | 内容 |
 |---|---|
 | `Runtime/SpiderCocoonProjectorMask.shader` | シェーダー本体（先頭のコメントにセットアップの要点あり） |
+| `Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs` | 駆動スクリプト |

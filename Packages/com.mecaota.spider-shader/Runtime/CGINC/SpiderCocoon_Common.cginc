@@ -24,7 +24,7 @@ float  _WindingCount;         // 円周方向に巻く本数 W。シーム維持
 float  _ThreadDensity;        // 巻き数の倍率（_WindingCount に乗算してから丸め）
 float  _FiberAngle;           // 基準の糸の角度（度）。0=軸に平行、±で傾く（連続値）
 
-// ---- 質感（トゥーン・リム・粘液の色と光沢。4 シェーダー共通） ------------
+// ---- 質感（トゥーン・リム・粘液の色と光沢。5 シェーダー共通） ------------
 // 宣言は SpiderSilk_Look.cginc の 1 か所だけ。巣・繭・デカールはこの値を
 // 「継承元の蜘蛛糸マテリアル」から受け継ぐ（Editor/SpiderSilkLook.cs）。
 #include "SpiderSilk_Look.cginc"

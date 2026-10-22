@@ -13,9 +13,10 @@ Shader "mecaota/SpiderGooSilkSheet"
 {
     Properties
     {
-        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 4 シェーダーで
+        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
+        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカールではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分けは CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は標準インスペクタ向けのフォールバック表示。
         // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
