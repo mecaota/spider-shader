@@ -76,4 +76,13 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
             d.Tick();
         }
     }
+
+    // 無効にされると Tick が止まり、各巣は「はがれた」に気付けなくなるので、先に知らせておく（くっついている間の減速が残らないように）
+    private void OnDisable()
+    {
+        for (int i = 0; i < _count; i++)
+        {
+            if (_active[i] != null) { _active[i]._OnManagerDisabled(); }
+        }
+    }
 }

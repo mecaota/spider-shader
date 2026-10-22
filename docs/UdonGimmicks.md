@@ -136,15 +136,18 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 |---|---|---|
 | Local Stuck Receivers | なし | イベントを送る UdonBehaviour（`PlayerSpeedLimiter` を付けた GameObject など）。空なら送らない |
 | Local Stuck Event | SubtractSpeed | どこか 1 か所でもくっついたときに送るイベント名 |
-| Local Unstuck Event | AddSpeed | 全部はがれたときに送るイベント名。リスポーンしたときと、巣の GameObject が無効になったときにも送る |
+| Local Unstuck Event | AddSpeed | 全部はがれたときに送るイベント名。くっついている間にリスポーンしたときや、巣・Manager の GameObject が無効になったときも送る |
 
 - イベントは自分のクライアントだけで、自分がくっついた／はがれたときだけ送ります（ほかの人がくっついても送りません）。速さはローカル専用の設定なので、同期は要りません。
+- 2 つのイベントは必ず交互に送ります（「くっついた」の次は必ず「はがれた」）。千切れたときやリスポーンしたときは、解放を送った時点で「はがれた」を送るので、通信の往復を待たずに速さが戻ります。
 - このパッケージは送るだけで、速さには触りません。イベント名で呼ぶだけなので、restraint が入っていないプロジェクトでもコンパイルできます。Web でいえば、巣は `dispatchEvent` するだけで、聞き手（`PlayerSpeedLimiter`）がいれば反応する、という関係です。
 - `PlayerSpeedLimiter` は、速さを `SetSpeed`（決めた倍率にする）・`AddSpeed` / `SubtractSpeed`（決めた量だけ増減）・`ResetSpeed`（元の速さに戻す）で変える汎用の部品です。巣は既定で、くっついたら `SubtractSpeed`、はがれたら `AddSpeed` を対で送ります。
 - 何枚の巣から同じ `PlayerSpeedLimiter` に送っても構いません。増減は範囲の外に出た分も覚えているので、全部はがれたときに必ず元の速さに戻ります。
   - 何枚くっついても 1/3 にしたい（重ねて遅くしない）: `PlayerSpeedLimiter` の「Step Ratio」0.6667・「Min Ratio」0.3333
   - くっついた巣が増えるほど遅くしたい: 「Step Ratio」を小さく（例: 0.3 なら 1 枚で 0.7 倍、2 枚で 0.4 倍）
   - 巣ごとに遅さを変えたいときは、遅さごとに `PlayerSpeedLimiter` を分けます
+- 巣につなぐ `PlayerSpeedLimiter` は巣専用にしてください。RestraintCore やボタンから `SetSpeed` / `ResetSpeed` が届く部品と共有すると、巣が減らした分がリセットで消え、その後の「はがれた」で元より上の値が残って、次にくっついても遅くならなくなります。
+- `PlayerSpeedLimiter` は常に有効な場所に置き、実行中に「Local Stuck Receivers」やイベント名を差し替えないでください。無効の間に届いたイベントは捨てられるので、「くっついた」と「はがれた」の片方だけが届いて数がずれます。
 - 元の速さの保存と復元は restraint の `PlayerMovementLock` が受け持ちます。ほかのギミックの減速と重なっても、解除の順番に関係なく正しく戻ります。
 
 > 0.12.0 より前の「Slow Local When Stuck」「Stuck Speed Ratio」は、この形に置き換えました。上げると巣にくっついても遅くならなくなるので、`PlayerSpeedLimiter` を置いて「Local Stuck Receivers」につないでください。以前と同じ動き（何枚くっついても「Stuck Speed Ratio」の倍率。既定は 1/3）にするには、「Min Ratio」に以前の倍率、「Step Ratio」に 1 − 以前の倍率を入れます（1/3 なら 0.3333 と 0.6667）。
