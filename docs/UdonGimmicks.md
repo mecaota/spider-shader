@@ -8,7 +8,8 @@
 |---|---|---|---|
 | [接触追従の変形](#接触追従の変形surfacecontactdeformer) | ○ `SurfaceContactDeformer` | 蜘蛛の巣・繭・ねばねばネット | 手足が触れた所が貼り付き、上げると伸び、押すと凹む |
 | [繭のまとめ描き](#繭のまとめ描きcocoongrouplinker) | ○ `CocoonGroupLinker` | 体に張り付く繭 | くっついた複数の繭を、同じ糸でまとめて巻いたように描く |
-| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | × 駆動スクリプトは別途必要 | 蜘蛛の巣・ねばねばネット | 投げた網が体の形に沿ってかぶさる |
+| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・ねばねばネット | 投げた網が体の形に沿ってかぶさる |
+| [受け手マスクの駆動](SpiderCocoonProjectorMask.md#駆動スクリプトspidercocoonprojectormaskdriver) | ○ `SpiderCocoonProjectorMaskDriver` | 受け手マスク（体に張り付く繭と組む） | 体に張り付く繭を、捕まった人のアバターにだけ描く |
 
 **前提**: VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）が入ったプロジェクトが必要です。
 
@@ -369,7 +370,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)と[ねばねばネット](SpiderGooSilkSheet.md)が対応しています。
 
-> **駆動する Udon はこのパッケージに含まれていません。** 体の形（ボーンから作ったカプセル）と網の位置・向きを、MaterialPropertyBlock で毎フレーム渡すスクリプトが必要です。作者のワールドでは `CaptureNetDrape` という Udon で駆動しています（[開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯)）。値が渡されない間は、変形は何も起きません。
+体の形（ボーンから作ったカプセル）と網の位置・向きを、Udon が MaterialPropertyBlock で毎フレーム渡します。パッケージには、そのための汎用の駆動スクリプト [SpiderWebDrapeDriver](#駆動スクリプトspiderwebdrapedriver) が入っています。値が渡されない間は、変形は何も起きません。作者のワールドでは、網の飛行や着弾の同期まで含めた独自の `CaptureNetDrape` で駆動しています（[開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯)）。
 
 ### しくみ
 
@@ -402,6 +403,49 @@ public class WebSlotScanner : UdonSharpBehaviour
 | 姿勢追従: 体から離れた余りを重力で垂らす | `_DrapeFollowHang` | 1 | 体から離れた余りを重力で垂らす強さ |
 | 姿勢追従: 重力で垂れきる体からの距離 m | `_DrapeFollowHangDist` | 0.25 | この距離まで離れると完全に垂れる |
 | 有効カプセル数 Udonが設定 | `_DrapeCount` | 0 | スクリプトが設定する値。手で触らない |
+
+### 駆動スクリプト（SpiderWebDrapeDriver）
+
+`Runtime/WebDrape/SpiderWebDrapeDriver.cs`。網を 1 枚、指定したプレイヤーにかぶせ、毎フレーム体に合わせて値を渡します。網を飛ばす動き・当たり判定・全員への同期は含みません。それらは呼び出す側（投げ網のギミックなど）が受け持ち、当たったと決まったら全員のクライアントでこのスクリプトのメソッドを呼びます。
+
+**しくみ**: 頭・首・胸・背骨・骨盤・両腕（上腕・前腕・手）・両脚（腿・すね・足）の 17 本のカプセルを、骨の位置と目の高さから作ります（太さは目の高さに対する割合）。姿勢追従が ON なら、かぶせた瞬間のカプセルを「基準」として残し、骨ごとに「基準 → 今」の回転と移動（剛体変換）を毎フレーム渡します。シェーダーはこれを使って、網の各点を近くの部位と一緒に動かします（アバターのメッシュがボーンについて動くのと同じ考え方）。
+
+**セットアップ**:
+
+1. 網の GameObject を作り、MeshFilter に WebPlane（**Tools > SpiderShader > Generate WebPlane Mesh...** で生成）、MeshRenderer に蜘蛛の巣かねばねばネットのマテリアルを入れます。マテリアルの「体に覆いかぶさる変形 有効」を ON にします（蜘蛛の巣ならプリセット「覆いかぶさる捕獲網」）。
+2. 同じ GameObject（または別の GameObject）に `SpiderWebDrapeDriver` を付け、Target Renderer に 1 の MeshRenderer を入れます。
+3. 網の GameObject の Static はすべて OFF、マテリアルの GPU Instancing も OFF にします。
+4. 別の UdonSharp スクリプトから `DrapeThrown` か `DrapeFromAbove` を呼びます。試すだけなら、ボタンなどから `SendCustomEvent("DrapeLocalPlayerFromFront")` で自分にかぶせられます。
+
+| 設定項目 | 既定値 | 説明 |
+|---|---|---|
+| Target Renderer | （空なら同じ GameObject の Renderer） | 網の Renderer |
+| Move Renderer To Body | ON | 網の Transform を毎フレーム腰の位置へ動かす。網の形は Transform と関係なく決まるが、画面に映っているかの判定範囲（バウンズ）を体に付いてこさせるため |
+| Hide When Released | ON | かぶせていない間は Renderer を非表示にする |
+| Net Radius | 1 | 網の半径 m（WebPlane の中心から辺まで）。1 m 四方の WebPlane なら 0.5、2 倍に広げて使うなら 1 |
+| Cover Time | 0.35 | 平らな網が体に沿うまでの秒数 |
+| Sag Wobble | 1 | たるみの揺れの倍率 |
+| Body Radius Scale | 1 | 体のカプセルの太さの倍率。網が体にめり込むときは上げる |
+| Follow Pose | ON | 横から投げた網の姿勢追従。OFF だと毎フレーム今の姿勢へかぶせ直す（体を動かすと網が滑る） |
+| Anchor Distance | 0 | 壁などに貼り付いた網。体からこの距離 m より離れた所は動かない（姿勢追従のときだけ） |
+| Fall Height / Fall Time | 1.2 / 0.5 | 上から降る網が落ち始める高さ m と、落ちきるまでの秒数 |
+| Fall Hang | 0.6 | 上から降る網の垂れ下がり。0 で体に貼りつき、1 で一番張り出した所から真下へ |
+| Fall Edge Lift | 0.15 | 落下中にふちが持ち上がる高さ m |
+| Floor Layers | Nothing（＝Default と Environment） | 床として Raycast するレイヤー |
+| Floor Probe | 3 | 腰から下へ床を探す距離 m。見つからなければ床なし |
+
+| メソッド | 内容 |
+|---|---|
+| `DrapeThrown(int playerId, Vector3 direction)` | 横から投げた網をかぶせる。direction は網が進む向き（投げた人 → 当たった人） |
+| `DrapeFromAbove(int playerId)` | 頭の上から降ってくる網をかぶせる |
+| `SetAnchorDistance(float m)` | 壁などに貼り付いた網にする（0 で解除） |
+| `Release()` | 網を外す |
+| `GetDrapedPlayerId()` | 今かぶせている人の playerId（いなければ 0） |
+| `DrapeLocalPlayerFromFront()` / `DrapeLocalPlayerFromAbove()` | 引数なし。自分にかぶせる（動作確認・UI ボタン用。`SendCustomEvent` で呼べる） |
+
+- かぶせた人が退室すると自動で外れます。
+- このスクリプトは同期しません。全員に同じ網を見せたいときは、同期している側（捕獲の判定など）から、全員のクライアントで同じメソッドを呼びます（たとえば `SendCustomNetworkEvent` で全員に「この人に当たった」を伝え、受け取った各クライアントが `DrapeThrown` を呼ぶ）。
+- 網 1 枚につき 1 つ付けます。同じ網を 2 人に同時にはかぶせられません。
 
 ### スクリプトが渡す値（駆動スクリプトを自作する人向け）
 

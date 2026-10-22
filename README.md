@@ -15,12 +15,12 @@
 | [繭（SpiderCocoon）](docs/SpiderCocoon.md) | 糸がぐるぐる巻いた繭。中に入ると内壁に包まれる | 円柱メッシュ | |
 | [体に張り付く繭（SpiderCocoonDepthDecal）](docs/SpiderCocoonDepthDecal.md) | プレイヤーの体の表面に沿って巻きつく繭 | 体を包む Cube | **PC 専用**。影付きのリアルタイムライトが必要 |
 | [ねばねばネット（SpiderGooSilkSheet）](docs/SpiderGooSilkSheet.md) | 体にかぶさる粘液のシート（最大 8 層） | 平面などのメッシュ | **PC 専用**。使う前に模様の「焼き込み」が必要 |
-| [受け手マスク（SpiderCocoonProjectorMask）](docs/SpiderCocoonProjectorMask.md) | 体に張り付く繭を、捕まった人のアバターにだけ描くための目印 | Projector コンポーネント | 試験実装。**PC 専用**。駆動する Udon は同梱していない |
+| [受け手マスク（SpiderCocoonProjectorMask）](docs/SpiderCocoonProjectorMask.md) | 体に張り付く繭を、捕まった人のアバターにだけ描くための目印 | Projector コンポーネント | 試験実装。**PC 専用**。駆動する Udon（`SpiderCocoonProjectorMaskDriver`）と組で使う |
 
 複数のシェーダーで共通の機能:
 
 - [共通機能](docs/CommonFeatures.md) — インスペクタの見方、質感の継承、プリセット、Editor のメニュー
-- [Udon ギミック](docs/UdonGimmicks.md) — 触れた手足に巣が貼り付いて伸びる（SurfaceContactDeformer）、くっついた繭をまとめて描く（CocoonGroupLinker）、投げた網が体にかぶさる
+- [Udon ギミック](docs/UdonGimmicks.md) — 触れた手足に巣が貼り付いて伸びる（SurfaceContactDeformer）、くっついた繭をまとめて描く（CocoonGroupLinker）、投げた網が体にかぶさる（SpiderWebDrapeDriver）
 
 ### このパッケージでよく出てくる言葉
 
@@ -79,7 +79,7 @@
 | 巣・繭の色やツヤの項目が灰色で変えられない | 色やツヤは継承元の吐いた糸マテリアルで決まるため、巣・繭の側では変えられません。紫の欄の「継承元を開く」で継承元を開いて変えるか、「今の質感から新しい継承元を作る…」でその巣専用の継承元を作ります（[質感の継承](docs/CommonFeatures.md#質感の継承)）。 |
 | 体に張り付く繭が何も表示されない | ワールドに**影付きのリアルタイム Directional Light**（Shadow Type が Soft Shadows か Hard Shadows）が必要です。影を描くために Unity が作る奥行きの情報（深度）を使って、体の表面の位置を求めているためです。Cube が体を包んでいるか（位置・向き・スケール）も確認してください（[確認チェックリスト](docs/SpiderCocoonDepthDecal.md#確認チェックリスト)）。 |
 | ねばねばネットが何も表示されない | 模様を焼き込むまでは表示されません。インスペクタ下部の黄緑の「焼き込みの状態」欄で **「焼き直す」** を押します。帯の幅などの形を変えたときも押し直します（[焼き込み](docs/SpiderGooSilkSheet.md#焼き込み)）。 |
-| 網が体にかぶさらない | 体に覆いかぶさる変形には、体の形と網の位置を毎フレーム渡す Udon が必要です。この Udon はパッケージに含まれていません（[詳しく](docs/UdonGimmicks.md#体に覆いかぶさる変形drape)）。 |
+| 網が体にかぶさらない | 体に覆いかぶさる変形には、体の形と網の位置を毎フレーム渡す Udon が必要です。同梱の `SpiderWebDrapeDriver` を網に付け、別のスクリプトから `DrapeThrown` などを呼びます。マテリアルの「体に覆いかぶさる変形 有効」が ON かも確認してください（[詳しく](docs/UdonGimmicks.md#駆動スクリプトspiderwebdrapedriver)）。 |
 | 足に貼り付いて持ち上がった巣の一部が、画面の端で消える | GameObject の Static のうち **Batching Static を OFF** にしてください。頂点を動かす変形は Unity の「画面に映っているか」の判定範囲（バウンズ）に反映されないため、WebPlane は判定範囲を広げて作ってあります。Batching Static が ON だとメッシュが結合され、この広げた範囲が失われます。2 m 以上持ち上げる場合は、WebPlane の生成画面で **Bounds Up** を上げて作り直します（[詳しく](docs/UdonGimmicks.md#注意制約)）。 |
 | 繭の中で、背を向けると内壁が丸ごと消える | 視界ジャックの判定範囲（「内側判定の半径」「内側判定の高さ」）が、繭のメッシュの外にはみ出しています。Unity はメッシュが画面外だと描画ごと省くので、判定範囲をメッシュの内側に収めてください（[詳しく](docs/SpiderCocoon.md#視界ジャック包まれ演出のしくみ)）。 |
 | 吐いた糸が重力でたわまない | パーティクルの糸をたわませるには、マテリアルにプリセット「粘液の吐き糸」か「乾いた糸＋重力のたゆみ」を当てたうえで、Particle System 側に 3 つの設定（Trails の Texture Mode を Tile・Custom Vertex Streams・Color over Trail の青チャンネルのグラデーション）が必要です（[詳しく](docs/SpiderThreadTrail.md#重力のたゆみ)）。 |
