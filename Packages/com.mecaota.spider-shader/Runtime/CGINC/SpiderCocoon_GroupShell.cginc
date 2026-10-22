@@ -33,6 +33,9 @@ float _GroupMarchSteps; // 外殻レイマーチの最大歩数（全身の 2 m 
 // 絞った接続部位の半分の高さ = 短いほうの部位の半分の高さ × この値。
 // w = 0 の組（腿↔腿など）と、組を使わない木の繭には効かない。
 float _GroupBridgeHeightScale;
+// 言葉の対応: コード上の Bridge / bridge（_GroupBridge*・SCG_PairBridge・bridgeCenter など）＝繭同士の接続部位。
+// 接続部位は 2 つの部位の中心を結ぶ線分に沿って断面を動かした線織面（ruled surface）に厚みを付けた形。
+// 名前を Bridge のままにしている理由は SpiderCocoon_Group.cginc の _GroupBridgeCount の注記。
 // 遠い外殻の最大歩数（2026-10-14 Phase 3）。カメラ（両目の中点）から箱の中心までの距離が
 // _GroupMarchFarStart m までは _GroupMarchSteps、_GroupMarchFarEnd m 以上は _GroupMarchStepsFar で、
 // 間はなめらかに減らす。遠い外殻は画面上で小さいので、歩数切れで輪郭の外周が 1 画素細る程度。
@@ -172,7 +175,7 @@ SCG_FieldConst SCG_MakeFieldConst()
 // 形には効かないほど小さい
 #define SCG_SKIP_MARGIN 0.0001
 
-// Members plus ruled connections from the stable representative. Squared axis
+// Members plus ruled-surface connections (the "bridges": 繭同士の接続部位) from the stable representative. Squared axis
 // projections interpolate the unoriented axes: +Y/-Y and 90 degree crossings
 // never trigger a sign flip or a vanishing lerped axis.
 //
@@ -218,7 +221,7 @@ float SCG_VolumeFieldC(float3 p, SCG_FieldConst fc, bool allowSkip, out float ca
         delta = p - bridgeCenter;
         float rr = lerp(_GroupMemA[fc.lead].w, _GroupMemA[k].w, t) * fc.radiusScale;
         float hh = lerp(fc.h0, hk, t);
-        // No binary distance cutoff: a continuous fade limits unusually long connections.
+        // No binary distance cutoff: a continuous fade limits unusually long ruled-surface connections.
         float gap = max(length(segment) - _GroupMemA[fc.lead].w - _GroupMemA[k].w - fc.h0 - hk, 0.0);
         float gate = 1.0 - smoothstep(_GroupBridgeSpan, _GroupBridgeSpan + fc.thickness, gap);
         float extra = (1.0 - gate) * (length(segment) + rr + hh + fc.thickness);
@@ -491,7 +494,7 @@ fixed4 SCG_ShadeGroupShell(float2 screenUV, float3 worldDir, float2 svPos, out f
         d = SCG_VolumeDistanceC(origin + ray * t, fc);
         if (oldD * d < 0.0)
         {
-            // Refine any bracketed crossing (tilted connection fields are conservative approximations).
+            // Refine any bracketed crossing (tilted ruled-surface connection fields are conservative approximations).
             float a = oldT, b = t;
             [unroll] for (int k = 0; k < 6; k++)
             {

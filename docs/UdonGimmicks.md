@@ -177,16 +177,31 @@ LineRenderer の設定:
 
 | メソッド | 返す値 |
 |---|---|
-| `GetSlotCount()` | スロットの総数（`MaxSlots` = 16。空きも含む） |
+| `GetSlotCount()` | スロットの総数（`MaxSlots` = 16。空きも含む）。UdonSharp からは定数 `SurfaceContactDeformer.MaxSlots` を直接使うほうが軽い |
 | `GetOccupiedSlotMask()` | 誰かが付いているスロットのビットマスク。スロット i に付いていれば bit i が 1。0 なら誰も付いていない |
 | `GetOccupiedSlotCount()` | 誰かが付いているスロットの数（0〜16） |
+| `GetSlotVersion()` | スロットの中身が変わるたびに増える番号。前に読んだ値と同じなら、マスク・playerId・ボーンは前のまま（変わっていなくても増えることはある） |
 | `GetSlotPlayerId(int slot)` | そのスロットに付いている人の `playerId`。空きは 0、範囲外の slot は -1 |
 | `GetSlotBoneIndex(int slot)` | 付いているボーンの `Bones` での番号（`ClaimLocalBone` の boneIndex と同じ）。空き・範囲外は -1 |
 | `GetSlotHumanBone(int slot)` | 付いているボーンの種類。[TrackBone](#trackboneボーンの指定) は `HumanBodyBones` と同じ整数なので、`(HumanBodyBones)値` でそのまま変換できる。空き・範囲外は -1 |
 
-**考え方**: スロットの中身は全員で同じ値になる同期配列ですが、巣が 100 個以上あるワールドで、毎回すべての巣の 16 スロットを調べると無駄が大きくなります。そこで巣の側で「誰かが付いているスロット」を 1 つの整数（ビットマスク）にまとめておき、同期を受け取ったときと、オーナーがスロットを書き換えたときだけ作り直します。毎フレームの計算は増えません。読む側は、`GetOccupiedSlotMask()` が 0 の巣（ほとんどの巣）を 1 回の呼び出しで飛ばせます。Web でいえば、一覧を毎回 `filter` して数えるのではなく、データが変わったときだけ「件数」や「未読フラグ」を更新しておき、画面はそれを読むだけにするイメージです。
+GameObject が無効になっている巣は、無効の間スロットが古いまま残る（同期も退室の掃除も届かない）ため、上のメソッドは「誰も付いていない」（マスク 0・playerId 0・ボーン -1）を返します。有効に戻ると、オーナーが退室した人のスロットを掃除してから、また本当の値を返します。
 
-多数の巣を 1 フレームに少しずつ調べる例（UdonSharp）:
+マネージャ（`SurfaceContactDeformerManager`）にも、いま動いている巣を読むメソッドがあります。
+
+| メソッド | 返す値 |
+|---|---|
+| `GetActiveCount()` | いま登録されている巣の数（誰かが付いている巣と、自分がトリガーの中にいる巣） |
+| `GetActive(int i)` | その i 番目の巣（範囲外は null）。並びは登録・解除で入れ替わるので、番号を次のフレームまで持ち越さない |
+
+**考え方**: スロットの中身は全員で同じ値になる同期配列ですが、巣が 100 個以上あるワールドで、毎フレームすべての巣の 16 スロットを調べると無駄が大きくなります。そこで 2 段階で絞ります。
+
+1. 誰かが付いている巣は、必ずマネージャに登録されています（登録制は [負荷対策](#surfacecontactdeformermanager) のための仕組みで、各自のクライアントで同期を受け取ったときに登録されます）。だから全部の巣ではなく、マネージャの一覧（ふだんは 0〜数個）だけを回れば足ります。
+2. 巣の側で「誰かが付いているスロット」を 1 つの整数（ビットマスク）にまとめておき、スロットが変わったときだけ直します。読む側は `GetOccupiedSlotMask()` が 0 の巣を 1 回の呼び出しで飛ばせます。
+
+Web でいえば、全件を毎回 `filter` するのではなく、サーバーが「更新のあった項目の一覧」と「未読フラグ」を持っておき、画面はそれだけを読むイメージです。
+
+巣を調べる例（UdonSharp）:
 
 ```csharp
 using UdonSharp;
@@ -196,23 +211,19 @@ using VRC.SDKBase;
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class WebSlotScanner : UdonSharpBehaviour
 {
-    public SurfaceContactDeformer[] deformers; // 調べる巣
-    public int perFrame = 16;                  // 1 フレームに調べる巣の数
-    private int _cursor;
+    public SurfaceContactDeformerManager manager; // シーンの SurfaceContactDeformerManager
 
     void Update()
     {
-        if (deformers == null || deformers.Length == 0) { return; }
-        int n = Mathf.Min(perFrame, deformers.Length);
+        if (manager == null) { return; }
+        int n = manager.GetActiveCount();
         for (int k = 0; k < n; k++)
         {
-            SurfaceContactDeformer d = deformers[_cursor];
-            _cursor = (_cursor + 1) % deformers.Length;
+            SurfaceContactDeformer d = manager.GetActive(k);
             if (d == null) { continue; }
             int mask = d.GetOccupiedSlotMask();
-            if (mask == 0) { continue; }           // 誰も付いていない巣はここで終わり
-            int slots = d.GetSlotCount();          // ループの外で 1 回だけ呼ぶ
-            for (int s = 0; s < slots; s++)
+            if (mask == 0) { continue; }           // 自分がトリガーに入っているだけの巣はここで終わり
+            for (int s = 0; s < SurfaceContactDeformer.MaxSlots; s++)
             {
                 if ((mask & (1 << s)) == 0) { continue; }
                 int playerId = d.GetSlotPlayerId(s);
@@ -230,8 +241,9 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 - 値は同期済みのスロットなので、全員のクライアントで同じになります（スクリプトは各自のクライアントで読むだけでよく、同期は要りません）。自分が触れた直後は、捕縛の要求がオーナーとやり取りされるまでの間（通信の遅れの分）、まだ入っていません。
 - 退室した人のスロットは、オーナーが掃除するまで少しの間残ることがあります。`VRCPlayerApi.GetPlayerById` の結果を `Utilities.IsValid` で確かめてください。
-- 少しずつ調べる場合、外れたスロットは次にその巣を調べたときにわかります。1 周するごとに結果を作り直してください。
-- 別の UdonBehaviour のメソッドを呼ぶたびに少し手間がかかるので、`GetSlotCount()` などはループの外で 1 回だけ呼びます。
+- `GetOccupiedSlotCount()` は、ボーンを引けないスロット（実行中に `Bones` を短くしたときなど、`GetSlotHumanBone` が -1 のスロット）も数えます。部位の数が要るときは、上の例のように 1 つずつ確かめて数えてください。
+- 毎フレーム組み立て直すのが重いときは、巣ごとに `GetSlotVersion()` を覚えておき、変わった巣だけ読み直します。
+- マネージャを置かない構成では、調べる巣の配列を自分で持って回ります。そのときは GameObject が無効の巣を飛ばしてください（一度も有効になっていない巣は、呼んでも値が返らないことがあります）。
 
 ### 推奨設定の例（地面・木などに固定した巣）
 

@@ -63,6 +63,20 @@ public class SurfaceContactDeformerManager : UdonSharpBehaviour
         }
     }
 
+    // 外から読む用: いま登録されている（捕縛中、またはローカルがトリガーの中にいる）巣の数と、その i 番目。
+    // 誰かが付いている巣は必ずこの中にいるので、スロットを調べるスクリプトは全部の巣ではなくここだけを回ればよい。
+    // 並びは登録・解除で入れ替わるので、番号を次のフレームまで持ち越さない
+    public int GetActiveCount()
+    {
+        return _count;
+    }
+
+    public SurfaceContactDeformer GetActive(int i)
+    {
+        if (i < 0 || i >= _count) { return null; }
+        return _active[i];
+    }
+
     public override void PostLateUpdate()
     {
         // Tick 中に Unregister されると詰めで同じ index に別要素が来るので、

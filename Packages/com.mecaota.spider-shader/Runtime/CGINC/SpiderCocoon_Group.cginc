@@ -40,8 +40,8 @@ float4 _GroupMemB[SCG_MAX_MEMBERS];   // xyz = 軸方向 × 半分の高さ（wo
                                       //     木の繭の CocoonGroupLinker は 0 を渡す）
 float  _GroupMemCount;
 
-// 部位どうしを結ぶ「繭同士の接続部位」（2 つの部位のあいだを繭の外皮で埋めてつなぐ組）の一覧。
-// 名前の Bridge は繭同士の接続部位のこと（互換のため名前はそのまま）。
+// 「繭同士の接続部位」を作る部位の組の一覧。接続部位は、1 つの外殻の中で 2 つの部位（腿と腿など）の
+// あいだを繭の外皮で埋めて継ぎ目なくつなぐ部分で、別々の外殻どうしをつなぐものではない。
 // 全身繭では Udon が「どの部位同士を接続部位でつなぐか」を渡す（腿↔腿、胴↔上腕など）。
 //   x = 部位 a の番号, y = 部位 b の番号（_GroupMemA/B の添字）
 //   z = この組だけの「つなぐ距離」の倍率（0 なら _GroupBridgeSpan そのまま）
@@ -53,6 +53,9 @@ float  _GroupMemCount;
 #define SCG_MAX_BRIDGES 16
 float4 _GroupBridgePairs[SCG_MAX_BRIDGES];
 float  _GroupBridgeCount;
+// 名前の Bridge（_GroupBridgePairs / _GroupBridgeCount / _GroupBridgeSpan / _GroupBridgeHeightScale）は
+// 繭同士の接続部位のこと。マテリアルのプロパティ名で、作成済みのマテリアルと、MaterialPropertyBlock で
+// 値を渡す Udon（CocoonGroupLinker やワールドのスクリプト）が名前で参照しているので変えない。
 
 // ---- マテリアル ----
 float _GroupBulge;     // grouped shell thickness beyond the original glue (m)

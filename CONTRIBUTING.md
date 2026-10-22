@@ -60,7 +60,7 @@ Website/                              配布ページのテンプレート
 - ShaderLab の属性の引数（`[Header(...)]` など）は ASCII のみです（日本語を書くとパースエラー）。表示名の日本語は問題ありません。
 - **ステンシルのビット**: 繭の視界ジャック 128（`_StencilRef`）、吐いた糸の芯 64（`_SilkStencilBit`）、受け手マスク 32（`_StencilReceiverBit`）、蜘蛛の体 16（ワールド側のシェーダーが立てる）。デカールの体表 glue は `_GlueStencilRef` / `_GlueStencilReadMask`（既定 0 / 208 = 128 + 64 + 16、受け手マスクと組むときは 32 / 240）。どれかを変えたら合計をそろえます。
 - **描画順**: 吐いた糸は `Transparent-10`、それ以外は `Transparent`。理由は [吐いた糸の「描画順とステンシル」](docs/SpiderThreadTrail.md#描画順とステンシル)。
-- **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）。
+- **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16。スロットの状態を外から読む API が int のビットマスクを使うため 32 以下に限る。超えるとコンパイルエラーになる）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）。
 - 繭・デカールはオブジェクト空間を使う判定があるため `DisableBatching` タグを付けています。
 - 巣の lilToon 焼き込み（`Editor/SpiderWebLilToonBaker.cs`）の焼き方（座標・色・ミップ・lilToon の設定）を変えたら `ToolVersion` を上げます。`SpiderWeb_Core.cginc` を変えると焼き込みの色も変わりますが、焼いた巣には自動では反映されません（焼き直しが必要）。
 
