@@ -1,5 +1,5 @@
 // =============================================================================
-// SpiderWeb.shader — 蜘蛛の巣 シェーダー (VRChat / Built-in RP 専用)
+// SpiderWeb.shader — 蜘蛛の巣シェーダー (VRChat / Built-in RP 専用)
 //
 //  平面（Quad など）の UV 空間に、縦糸（放射スポーク）と横糸（渦巻きリング）を
 //  テクスチャ無しの数式（距離場）で描く。
@@ -40,14 +40,14 @@
 //
 //  ■ 揺れアニメ（_SwayAnimEnable）
 //    緯糸（リング）のみ揺らす。縦糸・ハブ・接続点は固定。
-//    弾性の波形は吐いた糸と SpiderSilk_Motion.cginc で共通化。
+//    弾性の波形は蜘蛛糸と SpiderSilk_Motion.cginc で共通化。
 //    横糸は区間ごとに弧全体を動かすので、波の細かさ（_SwayAnimWaves）は使わない。
 //    接触追従の変形（_PullEnable）とは別の処理で、触れていても揺れは止めない。
 //
 //  ■ 質感（粘液）
 //    縦糸・横糸の距離場を smooth-min で融合し、すき間の角を水かき状の膜で
 //    埋め、横糸に糊の玉を付ける。塗り（丸い断面のトゥーン・ハイライトの筋・
-//    輪郭線・透け）は吐いた糸・繭と共通の CGINC/SpiderGoo_Shading.cginc。
+//    輪郭線・透け）は蜘蛛糸・繭と共通の CGINC/SpiderGoo_Shading.cginc。
 //    _SpokeGoo / _RingGoo で縦横の粘液を独立調整。交点は常につなぐ。
 //    縦糸と横糸は粘液の量によらず 1 つの距離場でつなぐ（交点は切れない）。_SpokeGoo を
 //    下げると縦糸の太り・玉・膜・ツヤだけが弱まり、0 で太さ一定の乾いた細い直線になる。
@@ -83,9 +83,9 @@ Shader "mecaota/SpiderWeb"
     Properties
     {
         // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
-        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
+        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・繭デカール・蜘蛛の巣ドレープではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分けは CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は標準インスペクタ向けのフォールバック表示。
         // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
@@ -113,7 +113,7 @@ Shader "mecaota/SpiderWeb"
         _Organic ("自然な太細の偏り (Organic Width)", Range(0, 1)) = 0
         _JunctionSize ("交点の粘着だまり (Sticky Junction)", Range(0, 4)) = 0
 
-        // ---- 粘液の質感（吐いた糸・繭と同じ塗り） ----
+        // ---- 粘液の質感（蜘蛛糸・繭と同じ塗り） ----
         // 粘液感を下げると太り・玉・膜・ツヤ・透けが一緒に弱まる（0 で乾いた細い糸）
         [Header(Goo Shape)]
         _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))     = 1
@@ -230,10 +230,10 @@ Shader "mecaota/SpiderWeb"
     {
         Tags
         {
-            // 吐いた糸（SpiderThreadTrail）は Transparent-10 で巣より「先」に描かれる。
+            // 蜘蛛糸（SpiderSilk）は Transparent-10 で巣より「先」に描かれる。
             // 巣の向こうの糸は、この巣が半透明で重なって必ず透けて見える（巣の深度で消えない）。
             // 手前の糸は芯の深度を書いているので、その画素では巣が深度テストに負けて糸の上に重ならない
-            // （SpiderThreadTrail 側の説明参照）
+            // （SpiderSilk 側の説明参照）
             "Queue"           = "Transparent"
             "RenderType"      = "Transparent"
             "IgnoreProjector" = "True"
@@ -254,7 +254,7 @@ Shader "mecaota/SpiderWeb"
         // 色の計算はコンパイラが省く。
         CGINCLUDE
             // 頂点・フラグメントの処理（巣の模様の計算）は CGINC/SpiderWeb_Core.cginc にある。
-            // 2026-10-14: lilToon への焼き込み（Editor/Shaders/SpiderWebBake.shader）と同じ式を使うため、
+            // 2026-10-14: lilToon への焼き込み（Editor/Shaders/SpiderWebBaker.shader）と同じ式を使うため、
             // シェーダー本体から切り出した。中身は切り出す前と同じ（描画が画素一致することを確認済み）。
             #include "CGINC/SpiderWeb_Core.cginc"
         ENDCG

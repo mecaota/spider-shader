@@ -3,7 +3,7 @@ using UnityEngine;
 using VRC.SDKBase;
 
 /// <summary>
-/// 受け手マスク（mecaota/SpiderCocoonProjectorMask）を動かす役。体に張り付く繭（SpiderCocoonDepthDecal）を、
+/// 繭プロジェクター（mecaota/CocoonProjector）を動かす役。繭デカール（CocoonDecal）を、
 /// 捕まった人のアバターにだけ描かせる（床・壁・隣に立つ人には繭が出ない）。
 ///
 /// しくみ:
@@ -20,7 +20,7 @@ using VRC.SDKBase;
 ///
 /// 注意:
 /// ・Projector コンポーネントの設定（Orthographic・大きさ・Ignore Layers）は Udon から変えられないので、
-///   シーンで設定しておく（docs/SpiderCocoonProjectorMask.md の「セットアップ」）
+///   シーンで設定しておく（docs/CocoonProjector.md の「セットアップ」）
 /// ・マスクのマテリアルは Projector 1 つにつき 1 つ（共有すると全員が同じ人として扱われる）
 /// </summary>
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
@@ -30,7 +30,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     [Tooltip("Projector コンポーネントを付けた GameObject の Transform。頭の上へ動かして真下へ向ける。誰もいない間は GameObject ごと無効にするので、このスクリプトとは別の GameObject にする")]
     public Transform projectorTransform;
 
-    [Tooltip("Projector に入れたマスクのマテリアル（mecaota/SpiderCocoonProjectorMask）。Projector ごとに別のマテリアルにする")]
+    [Tooltip("Projector に入れたマスクのマテリアル（mecaota/CocoonProjector）。Projector ごとに別のマテリアルにする")]
     public Material maskMaterial;
 
     [Tooltip("ON: SetOwner を呼ばなくても、自分（ローカルプレイヤー）を対象にする（動作確認用）")]

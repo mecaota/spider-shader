@@ -8,7 +8,7 @@
 
 平面や球のメッシュに、**縦糸（放射状の支持糸）と横糸（渦巻き状の捕獲糸）でできた蜘蛛の巣**を描くシェーダーです。テクスチャは使わず、糸の配置・太さ・粘液の玉・すき間の膜をすべて計算で描くので、本数や半径を数値で自由に変えられます。
 
-- 糸は常に粘液の糸として塗ります（色・ツヤ・陰影は吐いた糸から[継承](CommonFeatures.md#質感の継承)）。縦糸と横糸の粘液感は別々に決められます。
+- 糸は常に粘液の糸として塗ります（色・ツヤ・陰影は蜘蛛糸から[継承](CommonFeatures.md#質感の継承)）。縦糸と横糸の粘液感は別々に決められます。
 - 扇形の巣・木の幹に張り付く曲面の巣も描けます。
 - Udon と組み合わせると、**触れた手足に巣が貼り付いて伸びる**（接触追従の変形）・**投げた網が体に覆いかぶさる**（体に覆いかぶさる変形）表現ができます。
 - 対応環境: Unity Built-in Render Pipeline。PC で動作確認しています。Quest（Android）では未検証です。
@@ -26,7 +26,7 @@
 2. 空の GameObject を作り、**MeshFilter** に `WebPlane`、**MeshRenderer** を追加します。平面は XZ 平面（上が +Y）なので、壁に貼るときは X を 90° 回転させます。
 3. マテリアルを作って Shader を `mecaota/SpiderWeb` にし、MeshRenderer に入れます。
 4. インスペクタ先頭の「プリセット」欄で用途に合うものを押します（例: **「蜘蛛の住処の巣」** は触れても形が変わらない据え置きの巣）。
-5. 色やツヤを変えたいときは、紫の「蜘蛛糸の質感（継承）」欄で継承元の吐いた糸マテリアルを選びます。巣のマテリアルでは質感を直接編集できません（[理由](CommonFeatures.md#質感の継承)）。
+5. 色やツヤを変えたいときは、紫の「蜘蛛糸の質感（継承）」欄で継承元の蜘蛛糸マテリアルを選びます。巣のマテリアルでは質感を直接編集できません（[理由](CommonFeatures.md#質感の継承)）。
 
 > Unity 標準の Quad でも描けます（UV が 0〜1 の平面なら何でも可）。ただし接触追従の変形を使うときは、細かく分割された WebPlane が必要です。
 
@@ -36,7 +36,7 @@
 2. **縦糸**はハブ（中心結節点）からの放射線です。角度を本数で等分し、糸ごとにランダムな角度のずれ（揺らぎ）を足します。
 3. **横糸**は同心円で、縦糸と縦糸の間で中心側へ垂れ下がります。区間ごとに垂れ方を変えても、縦糸の上では必ずつながるように計算しているので、横糸が途中で切れません。
 4. **粘液の融合**: 縦糸と横糸の距離を smooth-min（なめらかな最小値）で合成すると、交点が水かき状に埋まり、粘りが溜まったように見えます。すき間の角には、場所ごとにまだらな量の膜を張ります。
-5. **塗り**: 糸の断面を丸い棒とみなして、トゥーン陰影・ハイライトの筋・輪郭線を付けます。吐いた糸・繭と同じ処理（`SpiderGoo_Shading.cginc`）なので、質感をそろえると見た目がつながります。
+5. **塗り**: 糸の断面を丸い棒とみなして、トゥーン陰影・ハイライトの筋・輪郭線を付けます。蜘蛛糸・繭と同じ処理（`SpiderGoo_Shading.cginc`）なので、質感をそろえると見た目がつながります。
 6. **模様は UV に貼りつく**ので、メッシュを曲げたり頂点を動かしたりしても糸は面に沿って伸びます（テクスチャを貼った布を引っぱるのと同じ）。
 
 ### 縦糸と横糸の粘液感（`_SpokeGoo` / `_RingGoo`）
@@ -178,7 +178,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 ## 標準プリセット
 
-インスペクタの「プリセット」欄から使えます。巣のプリセットは**質感（色・ツヤ）を含みません**。見た目の色は継承元の吐いた糸で決まります。
+インスペクタの「プリセット」欄から使えます。巣のプリセットは**質感（色・ツヤ）を含みません**。見た目の色は継承元の蜘蛛糸で決まります。
 
 | カテゴリ | プリセット | 使いどころ |
 |---|---|---|
@@ -268,7 +268,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 **対象外**（確認画面に理由が出て、焼けません）:
 
 - パーティクルで飛ばす巣（ParticleSystemRenderer）と SkinnedMeshRenderer。形が実行時に変わるので、1 枚の画像に焼けません。
-- 吐いた糸・繭・体に張り付く繭・ねばねばネットのマテリアル。
+- 蜘蛛糸・繭・繭デカール・蜘蛛の巣ドレープのマテリアル。
 - 体に覆いかぶさる網（`_DrapeEnable` が ON のもの）と、ワールド側で「焼けない」と登録したスクリプト（[API](#apiスクリプトから使うとき) の `RegisterKnownScript`）が参照しているもの。焼くと体への巻き付きが無くなり、網を動かす Udon がマテリアルの値を読んでいるとエラーログが出るためです。
 - もう焼き込んであるレンダラー。焼き直すときは、先に「元に戻す…」で戻します。
 - Project の prefab アセットの中のレンダラーと、Prefab Mode の中のレンダラー。prefab 本体を書き換えると、使っている全部のシーンに波及するためです。シーンに置いたインスタンスなら焼けます。
@@ -284,7 +284,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 | 触れたときの変形 | 「接触追従の変形」（`_PullEnable`）が ON | 注意 |
 | 近接表示のフェード | 「近接表示 有効」（`_RevealEnable`・`SW_REVEAL`）が ON。近づくと少しずつ現れるフェードと、下端の切り取り（`_ClipLine`）が無くなり、距離に関係なく全体が見える | 重大 |
 | 見る角度・光の向きで動く艶・リム・陰影 | ツヤ・リム・シーン光の反映度のどれかが 0 でない | 注意 |
-| 質感の継承 | 継承元の吐いた糸とつながっている。あとで継承元を変えても、焼いた巣は変わらない | 注意 |
+| 質感の継承 | 継承元の蜘蛛糸とつながっている。あとで継承元を変えても、焼いた巣は変わらない | 注意 |
 | 半透明（Cutout のとき） | 不透明度が 1 未満か、中心の透けがある | 注意 |
 | 糸がほとんど見えなくなる | 不透明度の上限が、しきい値の近くか、それより低い（うっすら見せる目印の巣など） | 重大 |
 | スクリプトが操作している効果 | このレンダラーを参照しているスクリプトがある（下記） | 重大 / 注意 / 参考 |
@@ -300,7 +300,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 注意事項も同じ画面に出ます。
 
-- 描画順の変化。Cutout は 2450 になって深度を書くので、体に張り付く繭（SpiderCocoonDepthDecal）ののりが巣の上に塗られることがあります。Transparent は 3000 で、深度を書きません。半透明の巣・繭・糸との前後関係が変わることがあります。
+- 描画順の変化。Cutout は 2450 になって深度を書くので、繭デカール（CocoonDecal）ののりが巣の上に塗られることがあります。Transparent は 3000 で、深度を書きません。半透明の巣・繭・糸との前後関係が変わることがあります。
 - 影。レンダラーの影を切ります（元の巣も影を落としていません。元の値は控えに残ります）。
 - 描画のパス。基本のパスは 2 回から 1 回に減ります。ただし lilToon は、ポイントライト・スポットライトが当たると ForwardAdd のパスが増えます。
 - テクスチャの容量（BC7・ミップ込み）と、糸 1 本のテクセル数。陰影の向き（焼くときの太陽）。
@@ -310,7 +310,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 ### 焼き方の要点（シェーダー初心者向け）
 
-- **UV の平面に広げて描く**: 巣のメッシュを「頂点の位置 = UV」にして、テクスチャと同じ大きさの画面に描きます（`Editor/Shaders/SpiderWebBake.shader`）。1 画素がテクスチャの 1 テクセルになります。
+- **UV の平面に広げて描く**: 巣のメッシュを「頂点の位置 = UV」にして、テクスチャと同じ大きさの画面に描きます（`Editor/Shaders/SpiderWebBaker.shader`）。1 画素がテクスチャの 1 テクセルになります。
   - 扇形の曲面の巣の UV2（外周までの距離）や、0〜1 をはみ出す UV もそのまま扱えます。
   - UV の範囲は実際のメッシュから測り、lilToon のタイリング・オフセット（`_MainTex_ST`）で合わせます。
 - **巣と同じ式で描く**: 模様の計算は、巣のシェーダーと同じ `Runtime/CGINC/SpiderWeb_Core.cginc` を使います。焼き込み用のシェーダーは `SW_BAKE` を定義してから読み込み、視線を「面を正面から見る」向きに、光を「焼くときのシーンの太陽」の向きに置き換えます。
@@ -394,7 +394,7 @@ static class MyWorldWebBakeRegistration
 
 ## 描画について
 
-- 描画順は `Transparent` です。吐いた糸（`Transparent-10`）より後に描きます（理由は [吐いた糸のページ](SpiderThreadTrail.md#描画順とステンシル)）。
+- 描画順は `Transparent` です。蜘蛛糸（`Transparent-10`）より後に描きます（理由は [蜘蛛糸のページ](SpiderSilk.md#描画順とステンシル)）。
 - 2 つのパスで描きます。Pass 0 `DEPTHSOLID` は不透明度 0.5 以上の芯だけ深度を書き、Pass 1 `FORWARD` で全体を塗ります。半透明でも、濃い糸の前後関係が保たれます。
 - Projector の投影を受けません（`IgnoreProjector`）。
 - ポイントライト・スポットライトは効きません。影も落としません。
@@ -410,7 +410,7 @@ static class MyWorldWebBakeRegistration
 ## 確認チェックリスト
 
 1. 縦糸・横糸の本数、半径、ハブの位置を変えると形が変わり、横糸が途中で切れないこと。
-2. 継承元の吐いた糸の「粘液感」を下げると、巣も乾いた細い糸に近づくこと。
+2. 継承元の蜘蛛糸の「粘液感」を下げると、巣も乾いた細い糸に近づくこと。
 3. 縦糸の粘液感を 0 にすると、縦糸がまっすぐな一定幅の糸になり、横糸の上に粘液が残ること。
 4. 扇形: 開き角度・向きを変えると扇の範囲が変わり、横糸がメッシュの端で止まること。
 5. 揺れアニメ: ON で横糸だけが揺れ、縦糸・ハブは動かないこと。
@@ -422,10 +422,10 @@ static class MyWorldWebBakeRegistration
 |---|---|
 | `Runtime/SpiderWeb.shader` | シェーダー本体（プロパティとパス） |
 | `Runtime/CGINC/SpiderWeb_Core.cginc` | 巣の頂点・フラグメントの処理（模様の計算。焼き込み用のシェーダーと共通） |
-| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（吐いた糸・繭と共通） |
-| `Runtime/CGINC/SpiderCocoon_Pull.cginc` | 接触追従の変形（繭・ねばねばネットと共通） |
-| `Runtime/CGINC/SpiderWeb_Drape.cginc` | 体に覆いかぶさる変形（ねばねばネットと共通） |
-| `Runtime/CGINC/SpiderSilk_Motion.cginc` | 揺れの波形（吐いた糸の重力たゆみと共通） |
+| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（蜘蛛糸・繭と共通） |
+| `Runtime/CGINC/SpiderCocoon_Pull.cginc` | 接触追従の変形（繭・蜘蛛の巣ドレープと共通） |
+| `Runtime/CGINC/SpiderWeb_Drape.cginc` | 体に覆いかぶさる変形（蜘蛛の巣ドレープと共通） |
+| `Runtime/CGINC/SpiderSilk_Motion.cginc` | 揺れの波形（蜘蛛糸の重力たゆみと共通） |
 | `Editor/WebPlaneMeshGenerator.cs` | WebPlane メッシュの生成ツール |
 | `Editor/SpiderWebLilToonBaker.cs` | lilToon への焼き込み・元に戻す処理（確認内容の調査、API） |
 | `Editor/SpiderWebLilToonBakeWindow.cs` | 焼き込みの確認画面（同意画面）とメニュー |
@@ -433,6 +433,6 @@ static class MyWorldWebBakeRegistration
 | `Editor/SpiderWebBakeBackupEditor.cs` | 控えのインスペクタ（「元に戻す…」） |
 | `Editor/SpiderWebMaterialSnapshotUtil.cs` | マテリアルの全部の値の写し（控え用） |
 | `Editor/SpiderWebBakeBuildStrip.cs` | ワールドのビルドで控えをシーンから取り除く |
-| `Editor/Shaders/SpiderWebBake.shader` | 焼き込み用のシェーダー（Editor 専用） |
+| `Editor/Shaders/SpiderWebBaker.shader` | 焼き込み用のシェーダー（Editor 専用） |
 | `Runtime/WebBake/SpiderWebBakeBackup.cs` | 焼き込みの控え（エディター専用のコンポーネント） |
 | `Presets/SpiderWeb/` | 標準プリセット 9 種 |

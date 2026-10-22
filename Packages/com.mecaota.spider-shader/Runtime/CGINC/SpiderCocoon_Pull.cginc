@@ -1,5 +1,5 @@
 // =============================================================================
-//  SpiderCocoon_Pull.cginc — 接触追従の頂点変形（巣・繭 共通）
+//  SpiderCocoon_Pull.cginc — 接触追従の頂点変形（蜘蛛の巣・繭 共通）
 //
 //  「巣や繭に手足が触れた場所がその手足に追従して伸びる／凹む」表現。
 //  Udon（SurfaceContactDeformer）が MaterialPropertyBlock で渡す

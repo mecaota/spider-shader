@@ -3,7 +3,7 @@
 
 // ---------------------------------------------------------------------------
 // SpiderGoo_Shading.cginc
-// 粘液の塗り（SpiderThreadTrail / SpiderWeb / SpiderCocoon / SpiderCocoonDepthDecal で共通）。
+// 粘液の塗り（SpiderSilk / SpiderWeb / Cocoon / CocoonDecal で共通）。
 //
 // 形（距離場 d = 輪郭までの符号付き距離。負=粘液の中）は各シェーダーが作り、
 // ここでは「その形を、ぬめっとした丸い粘液として塗る」部分だけを受け持つ。
@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 // 粘液感・色・陰影・光沢（_GooAmount / _GooColor … / _GooGloss*）は「質感」として
-// 5 シェーダー（吐いた糸・巣・繭・デカール・ねばねばネット）で共通の uniform。宣言は SpiderSilk_Look.cginc の 1 か所だけ
+// 5 シェーダー（蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で共通の uniform。宣言は SpiderSilk_Look.cginc の 1 か所だけ
 // （Common 経由で読み込み済み。ここでも明示しておく。ガードで二重にはならない）。
 #include "SpiderSilk_Look.cginc"
 

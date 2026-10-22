@@ -39,12 +39,12 @@ internal static class SpiderShaderPresetPanel
         }
 
         var presets = SpiderShaderPresetLibrary.For(shader);
-        // 継承元の蜘蛛糸に当てると、継承している巣・繭・デカール・ねばねばネットにも伝わることを知らせる
+        // 継承元の蜘蛛糸に当てると、継承している巣・繭・繭デカール・蜘蛛の巣ドレープにも伝わることを知らせる
         if (SpiderSilkLook.GetRole(shader) == SpiderSilkLook.Role.Source && materials.Count == 1)
         {
             int deps = SpiderSilkLookIndex.DependentsOf(materials[0]).Count;
             if (deps > 0)
-                EditorGUILayout.HelpBox("このマテリアルは " + deps + " 個の巣・繭・デカール・ねばねばネットの質感の継承元です。プリセットを当てると質感がそれらにも反映されます。", MessageType.Info);
+                EditorGUILayout.HelpBox("このマテリアルは " + deps + " 個の巣・繭・繭デカール・蜘蛛の巣ドレープの質感の継承元です。プリセットを当てると質感がそれらにも反映されます。", MessageType.Info);
         }
         else if (SpiderSilkLook.GetRole(shader) == SpiderSilkLook.Role.Inheritor)
             EditorGUILayout.HelpBox("質感（色・陰影・ツヤ・トゥーン・リム）は継承元の蜘蛛糸で決まるので、プリセットでは形などだけが変わります。", MessageType.None);

@@ -1,14 +1,14 @@
 // =============================================================================
-// SpiderThreadTrail.shader — 蜘蛛が吐いた糸（トレイルパーティクル用）
+// SpiderSilk.shader — 蜘蛛糸シェーダー（トレイルパーティクル用）
 //
 //  - Trail Renderer / Particle System の Trails モジュールで使う前提の
 //    リボン（帯）用シェーダー。帯の長さ方向に数本の糸が走る。
 //  - 乾いた糸モードの糸（太さの乱雑性・うねり・トゥーン陰影・リムライト・レイヤー重ね）は
-//    CGINC/SpiderCocoon_Compose.cginc の SC_CompositeLayers で描く。いまこれを使うのは吐いた糸だけで、
+//    CGINC/SpiderCocoon_Compose.cginc の SC_CompositeLayers で描く。いまこれを使うのは蜘蛛糸だけで、
 //    繭は粘液の帯（SpiderCocoon_Goo.cginc）で描く。ノイズ・糸の位相・リムライトなどの
 //    部品（SpiderCocoon_Common / Noise / Thread / Lighting）は繭・巣と共通。
 //  - 色・ツヤなどの質感 21 項目は、巣・繭などの「継承元」としてここで決める（SpiderSilk_Look.cginc）。
-//  - 揺れアニメ: 糸のパターンを帯の幅方向へ sin 波でずらし、吐いた糸が
+//  - 揺れアニメ: 糸のパターンを帯の幅方向へ sin 波でずらし、蜘蛛糸が
 //    左右にたなびいているように見せる（ジオメトリは動かさないので
 //    トレイルの軌跡そのものは崩れない）。
 //  - Gravity Sag > 0 は頂点をワールド下方向へたわませる。両端は固定。
@@ -31,14 +31,14 @@
 //    トレイルの Texture Mode は Tile 推奨（uv.x がメートル単位になり、
 //    玉や蛇行の間隔がトレイルの長さに関係なく一定になる）。
 // =============================================================================
-Shader "mecaota/SpiderThreadTrail"
+Shader "mecaota/SpiderSilk"
 {
     Properties
     {
         // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
-        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
+        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・繭デカール・蜘蛛の巣ドレープではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分け・共通/固有の区別は CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描く。
@@ -138,8 +138,8 @@ Shader "mecaota/SpiderThreadTrail"
         _GooGlossOffset     ("ハイライトを光源側へ (Gloss Offset)", Range(-1, 1)) = 0.3
         _GooGlossBreak      ("ハイライトの途切れ (Gloss Break)", Range(0, 1))  = 0.3
 
-        // ---- 描画順（巣・繭との重なり） ----
-        // 糸の芯が立てるステンシルビット。繭デカール（SpiderCocoonDepthDecal）は、このビットが立った画素へ
+        // ---- 描画順（蜘蛛の巣・繭との重なり） ----
+        // 糸の芯が立てるステンシルビット。繭デカール（CocoonDecal）は、このビットが立った画素へ
         // 体表の glue を上塗りしない（手前を通る糸が繭の下へ潜って見えないように）。
         // 付け替えたらデカール側の _GlueStencilReadMask（既定 208 = 128 + 64 + 16）も合わせること。
         [Header(Render Order)]

@@ -2,7 +2,7 @@ using UdonSharp;
 using UnityEngine;
 
 /// <summary>
-/// くっついた巻き付き繭（mecaota/SpiderCocoonDepthDecal）を「同じ糸でまとめて巻かれた」
+/// くっついた巻き付き繭（mecaota/CocoonDecal）を「同じ糸でまとめて巻かれた」
 /// 見え方で描かせる（見た目のみ）。
 ///
 /// ・decals の各繭を箱の内接円筒とみなす。円筒は体より大きめに作ってあるので、
@@ -23,13 +23,13 @@ using UnityEngine;
 /// ・距離の総当たりは表示中の繭どうしだけ
 ///
 /// 注意:
-/// ・円筒の式はシェーダーの SpiderCocoonDepthDecal（_RadiusFit / _HeightFit の内接円筒）と一致させる
+/// ・円筒の式はシェーダーの CocoonDecal（_RadiusFit / _HeightFit の内接円筒）と一致させる
 /// ・追従器がボーン位置へ動かした後に読むため PostLateUpdate で動く
 /// </summary>
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
 public class CocoonGroupLinker : UdonSharpBehaviour
 {
-    [Tooltip("まとめる候補の巻き付き繭（SpiderCocoonDepthDecal を使うレンダラー）")]
+    [Tooltip("まとめる候補の巻き付き繭（CocoonDecal を使うレンダラー）")]
     public Renderer[] decals;
 
     [Tooltip("decals と同じ並びの追従器（targetPlayerId を持つ PlayerBoneConstraint 等）。設定すると装着中の繭だけを、同じプレイヤーどうしでまとめる。空なら表示中の繭すべてが対象")]

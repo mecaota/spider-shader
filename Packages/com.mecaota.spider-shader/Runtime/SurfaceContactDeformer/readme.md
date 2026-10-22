@@ -1,6 +1,6 @@
 # SurfaceContactDeformer
 
-蜘蛛の巣・繭・ねばねばネット（`mecaota/SpiderWeb`・`mecaota/SpiderCocoon`・`mecaota/SpiderGooSilkSheet`。マテリアルの「接触追従の変形」を ON）に手足が触れた場所を、その手足に追従させて伸ばしたり凹ませたりする Udon ギミックです。見た目だけの表現で、プレイヤーの移動は拘束しません。
+蜘蛛の巣・繭・蜘蛛の巣ドレープ（`mecaota/SpiderWeb`・`mecaota/Cocoon`・`mecaota/SpiderWebDrape`。マテリアルの「接触追従の変形」を ON）に手足が触れた場所を、その手足に追従させて伸ばしたり凹ませたりする Udon ギミックです。見た目だけの表現で、プレイヤーの移動は拘束しません。
 
 | スクリプト | 役割 |
 |---|---|

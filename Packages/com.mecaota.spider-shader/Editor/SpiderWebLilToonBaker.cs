@@ -168,7 +168,7 @@ public static class SpiderWebLilToonBaker
     // 焼き方（座標・色・ミップ・lilToon の設定）を変えたら上げる
     public const string ToolVersion = "SWL-1.0";
     public const string WebShaderName = "mecaota/SpiderWeb";
-    public const string BakeShaderName = "Hidden/mecaota/SpiderWebBake";
+    public const string BakeShaderName = "Hidden/mecaota/SpiderWebBaker";
     public const string LilCutoutShaderName = "Hidden/lilToonCutout";
     public const string LilTransparentShaderName = "Hidden/lilToonTransparent";
     public const string DefaultRoot = "Assets/mecaota/BakedWebs";
@@ -330,7 +330,7 @@ public static class SpiderWebLilToonBaker
             var others = r.sharedMaterials.Where(m => m != null && m.shader != null).Select(m => m.shader.name).Distinct().ToArray();
             a.Blockers.Add("巣のシェーダー（" + WebShaderName + "）のマテリアルがありません" +
                            (others.Length > 0 ? "（このレンダラー: " + string.Join("、", others) + "）" : "") +
-                           "。糸・繭・繭デカール・捕獲網・ねばねばネットは対象外です。");
+                           "。糸・繭・繭デカール・捕獲網・蜘蛛の巣ドレープは対象外です。");
         }
 
         // ---- スロットごとの UV 範囲と、テクスチャの大きさ ----
@@ -600,7 +600,7 @@ public static class SpiderWebLilToonBaker
         if (s.mode == SpiderWebBakeMode.Cutout)
             a.Notes.Add(Item(SpiderWebBakeSeverity.Caution, "描画順が変わる",
                 (queue == 2450 ? "キューは 2450（AlphaTest）のままですが、" : "キューが " + queueText + "から 2450（AlphaTest）に変わり、") +
-                "深度を書いて深度テクスチャに入ります。繭デカール（SpiderCocoonDepthDecal）ののりが巣の上に塗られることがあります。半透明の巣・繭・糸との前後関係も変わります。"));
+                "深度を書いて深度テクスチャに入ります。繭デカール（CocoonDecal）ののりが巣の上に塗られることがあります。半透明の巣・繭・糸との前後関係も変わります。"));
         else
             a.Notes.Add(Item(SpiderWebBakeSeverity.Caution, "描画順が変わる",
                 (queue == 3000 ? "キューは 3000（半透明）のままですが、" : "キューが " + queueText + "から 3000（半透明）に変わり、") +

@@ -166,7 +166,7 @@ public class SpiderShaderPreset : ScriptableObject
             SpiderCocoonShaderGUI.SyncKeywords(m);
             EditorUtility.SetDirty(m);
         }
-        // 吐いた糸に当てたら、その質感を継承している巣・繭・デカールにも伝える
+        // 蜘蛛糸に当てたら、その質感を継承している巣・繭・繭デカールにも伝える
         SpiderSilkLook.NotifyChanged(targets);
         return targets.Count;
     }
@@ -186,7 +186,7 @@ public class SpiderShaderPreset : ScriptableObject
     public bool Matches(Material m)
     {
         if (m == null || shader == null || m.shader != shader || ValueCount == 0) return false;
-        // プリセットの対象外になった値（巣・繭・デカールの質感など）は比べない
+        // プリセットの対象外になった値（蜘蛛の巣・繭・繭デカールの質感など）は比べない
         System.Func<string, bool> skip = n => !m.HasProperty(n) || !SpiderCocoonShaderGUI.TryGetPresetGroup(m.shader, n, out _, out _);
         foreach (var v in floats)
             if (!skip(v.name) && Mathf.Abs(m.GetFloat(v.name) - v.value) > 1e-4f) return false;

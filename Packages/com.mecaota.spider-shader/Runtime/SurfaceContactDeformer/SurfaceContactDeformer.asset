@@ -100,7 +100,7 @@ MonoBehaviour:
       Data: 6|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: "SpiderWeb / SpiderCocoon \u30DE\u30C6\u30EA\u30A2\u30EB\uFF08_PullEnable
+      Data: "SpiderWeb / Cocoon \u30DE\u30C6\u30EA\u30A2\u30EB\uFF08_PullEnable
         ON\uFF09\u3092\u4ED8\u3051\u305F Renderer"
     - Name: 
       Entry: 8

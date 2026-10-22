@@ -6,10 +6,10 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 // =============================================================================
-// 繭・デカール・吐いた糸・蜘蛛の巣・ねばねばネット系で共用のカスタムインスペクタ。
+// 繭・繭デカール・蜘蛛糸・蜘蛛の巣・蜘蛛の巣ドレープ系で共用のカスタムインスペクタ。
 // lilToon 風にカテゴリごとの折りたたみボックスで整理し、色分けして表示する。
-//   ・紫系「質感」: 蜘蛛糸の質感 21 項目（Editor/SpiderSilkLook.cs）。吐いた糸のマテリアルで
-//     決めて、巣・繭・デカール・ねばねばネットはそれを継承する（継承先では「蜘蛛糸の質感（継承）」欄に
+//   ・紫系「質感」: 蜘蛛糸の質感 21 項目（Editor/SpiderSilkLook.cs）。蜘蛛糸のマテリアルで
+//     決めて、巣・繭・繭デカール・蜘蛛の巣ドレープはそれを継承する（継承先では「蜘蛛糸の質感（継承）」欄に
 //     読み取り専用で出る）
 //   ・青系「共通」: 複数のシェーダーが同じ名前で持つ値（単位はシェーダーごとに違うこともある）
 //   ・オレンジ系「固有」: そのシェーダー専用の値
@@ -28,7 +28,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
     {
         public string   Title;
         public bool     Common;   // 複数のシェーダーが同じ名前で持つ値か（青系）
-        public bool     SilkLook; // 蜘蛛糸の質感（紫系。巣・繭・デカール・ねばねばネットでは継承して読み取り専用）
+        public bool     SilkLook; // 蜘蛛糸の質感（紫系。巣・繭・繭デカール・蜘蛛の巣ドレープでは継承して読み取り専用）
         public string   Require;  // このプロパティを持つシェーダーにだけ表示（null=常時）
         public string[] Props;
         public PresetPart Part;   // プリセット適用時の区分（既定は見た目）
@@ -45,7 +45,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
 
     private static readonly Category[] Categories =
     {
-        // ---- 質感（蜘蛛糸 → 巣・繭・デカール・ねばねばネットへ継承） ----
+        // ---- 質感（蜘蛛糸 → 巣・繭・繭デカール・蜘蛛の巣ドレープへ継承） ----
         new Category{ Title = SpiderSilkLook.GroupGoo,   SilkLook = true, Props = LookProps(SpiderSilkLook.GroupGoo) },
         new Category{ Title = SpiderSilkLook.GroupGloss, SilkLook = true, Props = LookProps(SpiderSilkLook.GroupGloss) },
         new Category{ Title = SpiderSilkLook.GroupToon,  SilkLook = true, Props = LookProps(SpiderSilkLook.GroupToon) },
@@ -56,19 +56,19 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_ThreadColor", "_ThreadThickness", "_ThreadJitter", "_ThreadFuzz", "_ThreadFuzzScale" } },
         new Category{ Title = "巻きのレイアウト", Common = true,
             Props = new[]{ "_WindingCount", "_ThreadDensity", "_FiberAngle" } },
-        // 粘液モード OFF の吐いた糸だけが使う陰影（継承しない）
+        // 粘液モード OFF の蜘蛛糸だけが使う陰影（継承しない）
         new Category{ Title = "乾いた糸の陰影（粘液モード OFF）", Common = false, Require = "_FiberNormalStrength",
             Props = new[]{ "_ShadowColor", "_FiberNormalStrength", "_RimShadowColor", "_RimShadowStrength" } },
         new Category{ Title = "レイヤー", Common = true,
             Props = new[]{ "_LayerCount", "_LayerAngleStep", "_LayerPosStepX", "_LayerPosStepY", "_LayerThicknessFalloff" } },
-        // 揺れアニメは対応シェーダー（SpiderWeb / SpiderCocoon 本体）だけに表示
+        // 揺れアニメは対応シェーダー（SpiderWeb / Cocoon 本体）だけに表示
         new Category{ Title = "揺れアニメ", Common = true, Require = "_SwayAnimEnable",
             Props = new[]{ "_SwayAnimEnable", "_SwayAnimAmount", "_SwayAnimSpeed", "_SwayAnimWaves", "_SwayAnimAnchor" } },
-        // 繭デカールの表面を「ねばねばネット」風にする設定（_SurfaceStyle=1 で有効。デカールだけが持つ）。
-        // 束・膜の設定（_GooStrands / _GooWeb …）は吐いた糸・ネットと同じ名前なので、下の「粘液の形」
-        // 「粘液の膜」「吐いた糸の粘液の束」にも名前が載っている。ここを先に置き、
+        // 繭デカールの表面を「蜘蛛の巣ドレープ」風にする設定（_SurfaceStyle=1 で有効。デカールだけが持つ）。
+        // 束・膜の設定（_GooStrands / _GooWeb …）は蜘蛛糸・ネットと同じ名前なので、下の「粘液の形」
+        // 「粘液の膜」「蜘蛛糸の粘液の束」にも名前が載っている。ここを先に置き、
         // 同じプロパティは最初に載ったカテゴリにだけ表示する（下の描画ループで重複を飛ばす）。
-        new Category{ Title = "ねばねばネット風の表面", Common = false, Require = "_SurfaceStyle",
+        new Category{ Title = "蜘蛛の巣ドレープ風の表面", Common = false, Require = "_SurfaceStyle",
             Part = PresetPart.Shape,
             Props = new[]{ "_SurfaceStyle", "_SheetBandWidth", "_SheetRotation", "_SheetAlongScale", "_SheetSeed",
                            "_SheetLayers", "_SheetLayerTwist", "_SheetLayerShift", "_SheetLayerOpacity",
@@ -84,7 +84,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         new Category{ Title = "粘液の細部", Common = true, Require = "_GooAmount",
             Props = new[]{ "_GooFiberMix", "_GooFiberLines", "_GooOverlapShadow" } },
 
-        // ---- メッシュ版（SpiderCocoon）固有 ----
+        // ---- メッシュ版（Cocoon）固有 ----
         new Category{ Title = "ビルボード", Common = false, Require = "_Billboard",
             Props = new[]{ "_Billboard", "_BillboardSeamOffset" } },
         new Category{ Title = "裏面と視界ジャック", Common = false, Require = "_VisionJackRadius",
@@ -95,7 +95,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         new Category{ Title = "レンダーステート", Common = false,
             Props = new[]{ "_ZWrite", "_StencilRef", "_GlueStencilRef", "_GlueStencilReadMask", "_SilkStencilBit" } },
 
-        // ---- デカール版（SpiderCocoonDepthDecal）固有 ----
+        // ---- デカール版（CocoonDecal）固有 ----
         new Category{ Title = "投影フィット", Common = false, Require = "_RadiusFit",
             Props = new[]{ "_RadiusFit", "_HeightFit", "_ProjectRange" } },
         new Category{ Title = "繭まとめ描きのボリューム", Common = false, Require = "_GroupBulge",
@@ -117,7 +117,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         new Category{ Title = "視界ジャック", Common = false, Require = "_RadiusFit",
             Props = new[]{ "_VisionJackEnable", "_VisionJackInMirror", "_JackRadius", "_JackStretch" } },
 
-        // ---- トレイル版（SpiderThreadTrail）固有 ----
+        // ---- トレイル版（SpiderSilk）固有 ----
         // _GravityTrailColor（トレイルの頂点色の青を全長として使う）は
         // パーティクルのトレイル用マテリアルだけが ON にする隠し設定
         new Category{ Title = "重力によるたゆみ", Common = false, Require = "_GravitySag",
@@ -125,13 +125,13 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Hidden = new[]{ "_GravityTrailColor" } },
         new Category{ Title = "トレイルの揺れ", Common = false, Require = "_SwayAmount",
             Props = new[]{ "_SwayAmount", "_SwaySpeed", "_SwayWaves", "_SwayAnchor", "_TrailEdgeSoft" } },
-        // 粘液モード（_GooEnable=ON で有効）の束の形。吐いた糸だけが持つ
-        new Category{ Title = "吐いた糸の粘液の束", Common = false, Require = "_GooStrands",
+        // 粘液モード（_GooEnable=ON で有効）の束の形。蜘蛛糸だけが持つ
+        new Category{ Title = "蜘蛛糸の粘液の束", Common = false, Require = "_GooStrands",
             Props = new[]{ "_GooStrands", "_GooWidth", "_GooSpread", "_GooWobble", "_GooWobbleFreq",
                            "_GooFlow", "_GooTailThin" } },
 
-        // ---- ねばねばネット（蜘蛛糸の粘液シート、SpiderGooSilkSheet）固有 ----
-        // 帯の中の形は「吐いた糸の粘液の束」「粘液の形」「粘液の膜」に吐いた糸と同じ名前で出る。
+        // ---- 蜘蛛の巣ドレープ（蜘蛛糸の粘液シート、SpiderWebDrape）固有 ----
+        // 帯の中の形は「蜘蛛糸の粘液の束」「粘液の形」「粘液の膜」に蜘蛛糸と同じ名前で出る。
         // 焼き込みの入力だけをここへ。形状・質感・変形の既存項目は元のカテゴリに1回ずつ表示。
         new Category{ Title = "粘液シートの形", Common = false, Require = "_SheetBandWidth",
             Part = PresetPart.Shape,
@@ -193,8 +193,8 @@ public class SpiderCocoonShaderGUI : ShaderGUI
 
         var drawn = new HashSet<string>();
 
-        // 質感の継承: 巣・繭・デカール・ねばねばネットは継承元の欄（質感は読み取り専用でその中に表示）、
-        // 吐いた糸はこの質感を継承しているマテリアルの一覧
+        // 質感の継承: 巣・繭・繭デカール・蜘蛛の巣ドレープは継承元の欄（質感は読み取り専用でその中に表示）、
+        // 蜘蛛糸はこの質感を継承しているマテリアルの一覧
         var role = SpiderSilkLook.GetRole(((Material)materialEditor.target).shader);
         if (role == SpiderSilkLook.Role.Inheritor)
         {
@@ -221,7 +221,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             foreach (var mp in list) drawn.Add(mp.name);
 
             string label = cat.SilkLook
-                ? cat.Title + (role == SpiderSilkLook.Role.Source ? "（巣・繭・デカール・ねばねばネットへ継承）" : "")
+                ? cat.Title + (role == SpiderSilkLook.Role.Source ? "（蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープへ継承）" : "")
                 : cat.Title + (cat.Common ? "（共通）" : "（固有）");
             bool open = cat.SilkLook ? DrawSectionFoldout(label, SpiderSilkLookPanel.LookColor) : DrawSectionFoldout(label, cat.Common);
             if (open)
@@ -264,7 +264,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
     }
 
     // インスペクタで値が変わったとき（Unity が全ターゲットについて呼ぶ）。
-    // 吐いた糸の質感が変われば継承先へ、継承先の継承元が変われば値の書き写しを依頼する
+    // 蜘蛛糸の質感が変われば継承先へ、継承先の継承元が変われば値の書き写しを依頼する
     public override void ValidateMaterial(Material material)
     {
         base.ValidateMaterial(material);
@@ -281,7 +281,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
 
     // -------------------------------------------------------------------------
     // 数値のプロパティとシェーダーキーワードの同期（2026-10-14 軽量化）
-    //   繭デカールの表面の模様（_SurfaceStyle: 0 = 繭の帯 / 1 = ねばねばネット）は、シェーダーの中では
+    //   繭デカールの表面の模様（_SurfaceStyle: 0 = 繭の帯 / 1 = 蜘蛛の巣ドレープ）は、シェーダーの中では
     //   キーワード SC_SURFACE_NET で切り替える。実行時の if をやめて、使わない側の処理を
     //   シェーダーから消すため（描画が少し軽くなる）。数値はインスペクタの表示・保存用で、
     //   キーワードはこの関数が数値に合わせて付け外しする。インスペクタで値を変えたとき・表示したとき・
@@ -397,7 +397,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         group = null;
         part  = PresetPart.Look;
         if (shader == null || RuntimeOnlyProps.Contains(prop)) return false;
-        // 巣・繭・デカール・ねばねばネットの質感は継承元の蜘蛛糸マテリアルが決める（プリセットでは扱わない）
+        // 巣・繭・繭デカール・蜘蛛の巣ドレープの質感は継承元の蜘蛛糸マテリアルが決める（プリセットでは扱わない）
         if (SpiderSilkLook.IsInheritedProperty(shader, prop)) return false;
         int index = shader.FindPropertyIndex(prop);
         if (index < 0) return false;

@@ -5,7 +5,7 @@
 // SpiderCocoon_Compose.cginc
 // 「レイヤー線対称ループ → ライティング → over 合成 → α割り戻し」の共通実装
 // （細い繊維を半透明で重ねる描き方）。
-// 現在は SpiderThreadTrail の通常モードが使用。繭（本体・デカール）は粘液の糸
+// 現在は SpiderSilk の通常モードが使用。繭（本体・デカール）は粘液の糸
 // （SpiderCocoon_Goo.cginc の SC_CompositeGoo）で描く。
 //
 // 前提 include（.shader 側でこの順に読み込むこと）:

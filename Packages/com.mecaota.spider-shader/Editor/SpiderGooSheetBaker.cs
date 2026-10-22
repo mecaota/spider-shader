@@ -9,14 +9,14 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// ねばねばネット（蜘蛛糸の粘液シート、mecaota/SpiderGooSilkSheet）の模様を Texture2DArray へ焼く Editor 専用処理。
-/// 吐いた糸（SpiderThreadTrail）の粘液の帯をすき間なく並べた模様を焼く（Editor/CGINC/SpiderGooSheet_BakeSource.cginc）。
+/// 蜘蛛の巣ドレープ（蜘蛛糸の粘液シート、mecaota/SpiderWebDrape）の模様を Texture2DArray へ焼く Editor 専用処理。
+/// 蜘蛛糸（SpiderSilk）の粘液の帯をすき間なく並べた模様を焼く（Editor/CGINC/SpiderGooSheet_BakeSource.cginc）。
 /// シーン・Prefab は扱わない。同じ有効入力と生成コードからは同じ 3 アセットを共有する。
 /// </summary>
 public static class SpiderGooSheetBaker
 {
-    public const string ShaderName = "mecaota/SpiderGooSilkSheet";
-    public const string BakeShaderName = "Hidden/mecaota/SpiderGooSheetBake";
+    public const string ShaderName = "mecaota/SpiderWebDrape";
+    public const string BakeShaderName = "Hidden/mecaota/SpiderWebDrapeBaker";
     public const string DefaultFolder = "Assets/mecaota/GooNet/Baked";
     // C# 側の座標・模様数・エンコード・ミップ処理を変えたら必ず更新する。
     // HLSL / include 側は AssetDatabase の依存ハッシュでも自動検出する。
@@ -24,7 +24,7 @@ public static class SpiderGooSheetBaker
     private const string HashTag = "MecaotaGooSheetBakeHash";
 
     // 正本: SGS_Evaluate が読むマテリアルの入力。Inspector の説明にも使う。
-    // 帯の中の形（_Goo*）は吐いた糸の粘液モードと同じ名前・意味。
+    // 帯の中の形（_Goo*）は蜘蛛糸の粘液モードと同じ名前・意味。
     public static readonly string[] ShapeInputs =
     {
         "_Seed", "_SheetBandWidth", "_SheetRotation", "_SheetAlongScale",
@@ -66,7 +66,7 @@ public static class SpiderGooSheetBaker
     /// </summary>
     public static Plan Describe(Material material)
     {
-        if (!IsBaked(material)) throw new ArgumentException("ねばねばネット（粘液シート）のマテリアルを指定してください。");
+        if (!IsBaked(material)) throw new ArgumentException("蜘蛛の巣ドレープ（粘液シート）のマテリアルを指定してください。");
         var bakeShader = Shader.Find(BakeShaderName);
         if (bakeShader == null) throw new InvalidOperationException("焼き込み専用シェーダーが見つかりません。");
         var plan = new Plan
@@ -209,7 +209,7 @@ public static class SpiderGooSheetBaker
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling)
             throw new InvalidOperationException("編集モードで、コンパイル完了後に焼き込んでください。");
-        if (!IsBaked(material)) throw new ArgumentException("ねばねばネット（粘液シート）のマテリアルではありません。");
+        if (!IsBaked(material)) throw new ArgumentException("蜘蛛の巣ドレープ（粘液シート）のマテリアルではありません。");
         // 継承元のGooAmountも形状入力。親の最新値を写してから識別子を作る。
         var sync = SpiderSilkLook.Sync(new[] { material });
         if (sync.Problems.Count > 0) throw new InvalidOperationException(string.Join("\n", sync.Problems));

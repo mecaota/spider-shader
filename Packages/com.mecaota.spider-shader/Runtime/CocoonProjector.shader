@@ -1,5 +1,5 @@
 // =============================================================================
-// SpiderCocoonProjectorMask.shader — Projector で「繭の受け手」ビットをステンシルに書く (VRChat / Built-in RP)
+// CocoonProjector.shader — 繭プロジェクターシェーダー（Projector で「繭の受け手」ビットをステンシルに書く）(VRChat / Built-in RP)
 //
 //  色を一切描かないシェーダー（ColorMask 0）。Unity の Projector コンポーネントは
 //  「視錐台に入ったレンダラーを、Projector のマテリアルでもう一度描く」部品なので、
@@ -7,7 +7,7 @@
 //  アバターのメッシュだけがこのマテリアルで描き直される。そのとき、見えている画素の
 //  ステンシルに受け手ビット（既定 32）を立てるのが唯一の仕事。
 //
-//  繭そのものを描くのは従来どおり SpiderCocoonDepthDecal（Pass 2/3）。そちらの
+//  繭そのものを描くのは従来どおり CocoonDecal（Pass 2/3）。そちらの
 //  Stencil を Glue Stencil Ref 32 / ReadMask 240（受け手ビットあり・ジャック 128 と
 //  糸の芯 64 と蜘蛛の体 16 なし。2026-10-14 に 224 から変更）にすると、
 //  床・壁・木・ピックアップには構造的に繭が出なくなる。
@@ -45,16 +45,16 @@
 //     - LQ ミラー（Default を映さない反射マスク）の中では繭が出ない。
 //     - Quest は深度デカール自体が非対応（PC 専用）。SPS-I では片目に出ない Unity の既知問題あり。
 // =============================================================================
-Shader "mecaota/SpiderCocoonProjectorMask"
+Shader "mecaota/CocoonProjector"
 {
     Properties
     {
         // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
         [Header(Receiver Stencil)]
         // デカールの Glue Stencil Ref と同じ値にする（既定 32。64 = 糸の芯、128 = ジャックは使えない）
-        [IntRange] _StencilReceiverBit ("受け手ビット デカールの Glue Stencil Ref と同じ (Receiver Bit)", Range(0, 255)) = 32
+        [IntRange] _StencilReceiverBit ("受け手ビット 繭デカールの Glue Stencil Ref と同じ (Receiver Bit)", Range(0, 255)) = 32
         // デカールの糸の厚み（_GlueThickness）と同じ値にする
-        _Inflate ("輪郭の外への膨張 m デカールの糸の厚みと同じ (Inflate)", Range(0, 0.2)) = 0.06
+        _Inflate ("輪郭の外への膨張 m 繭デカールの糸の厚みと同じ (Inflate)", Range(0, 0.2)) = 0.06
 
         [Header(Owner)]
         [Enum(Everyone In Frustum,0,Owner Only,1)] _OwnerMode ("対象 0=視錐台の全員 1=所有者のみ (Owner Mode)", Float) = 1

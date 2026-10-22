@@ -1,17 +1,17 @@
-# 吐いた糸（SpiderThreadTrail）
+# 蜘蛛糸（SpiderSilk）
 
-シェーダー名: `mecaota/SpiderThreadTrail`
+シェーダー名: `mecaota/SpiderSilk`
 
 [← README に戻る](../README.md) ｜ 関連: [共通機能（インスペクタ・質感の継承・プリセット）](CommonFeatures.md) ／ [Udon ギミック](UdonGimmicks.md)
 
 ## ひとことで
 
-蜘蛛が吐いた糸を、**Trail Renderer・Particle System の Trails モジュール・LineRenderer** が作る細長い帯（リボン）の上に描くシェーダーです。テクスチャは使わず、帯の中の糸をシェーダーの計算だけで描きます。
+蜘蛛糸を、**Trail Renderer・Particle System の Trails モジュール・LineRenderer** が作る細長い帯（リボン）の上に描くシェーダーです。テクスチャは使わず、帯の中の糸をシェーダーの計算だけで描きます。
 
 - 見た目は 2 種類から選べます。
   - **乾いた糸**（既定）: 細い糸が数本、帯に沿って走ります。
   - **粘液モード**: 太い粘液の束が蛇行し、束の間に穴の空いた膜が張ります（アニメの「いとをはく」のような見た目）。
-- このシェーダーの「質感」（粘液の色・ツヤ・トゥーン・リム）は、蜘蛛の巣・繭・体に張り付く繭・ねばねばネットに**継承**されます。くわしくは [質感の継承](CommonFeatures.md#質感の継承) を参照してください。
+- このシェーダーの「質感」（粘液の色・ツヤ・トゥーン・リム）は、蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープに**継承**されます。くわしくは [質感の継承](CommonFeatures.md#質感の継承) を参照してください。
 - 対応環境: Unity Built-in Render Pipeline。PC で動作確認しています。Quest（Android）では未検証です。
 
 ## こんなときに使う
@@ -22,7 +22,7 @@
 
 ## クイックスタート（Trail Renderer で試す）
 
-1. Project ウィンドウで右クリック → **Create > Material** でマテリアルを作り、Shader を `mecaota/SpiderThreadTrail` にします。
+1. Project ウィンドウで右クリック → **Create > Material** でマテリアルを作り、Shader を `mecaota/SpiderSilk` にします。
 2. インスペクタ先頭の緑色の「プリセット」欄で **「粘液の吐き糸」** を押します（乾いた糸にしたいときは「乾いた糸（従来）」）。
 3. 動くオブジェクトに **Trail Renderer** を付け、Materials に 2 のマテリアルを入れます。
 4. Trail Renderer の **Texture Mode を Tile** にします（粘液の玉や穴の間隔が、トレイルの長さに関係なく一定になります）。
@@ -184,7 +184,7 @@ Trails モジュール用のマテリアルは、Renderer モジュールの **T
 | 揺れ始めの距離 uv.x | `_SwayAnchor` | 0.2 | 吐き出し口から揺れが最大になるまでの距離。口元で糸が千切れて見えるのを防ぐ |
 | 帯の端のフェード幅 | `_TrailEdgeSoft` | 0.15 | 帯の上下の縁をぼかす幅。揺れで縁に寄った糸がスパッと切れるのを防ぐ |
 
-### 吐いた糸の粘液の束（固有）
+### 蜘蛛糸の粘液の束（固有）
 
 粘液モードの束の形です。
 
@@ -204,7 +204,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 ## 標準プリセット
 
-インスペクタの「プリセット」欄から使えます（[プリセットの使い方](CommonFeatures.md#プリセット)）。吐いた糸のプリセットは質感（色・ツヤ）も含むので、継承元のマテリアルに当てると、継承している巣・繭にも伝わります。
+インスペクタの「プリセット」欄から使えます（[プリセットの使い方](CommonFeatures.md#プリセット)）。蜘蛛糸のプリセットは質感（色・ツヤ）も含むので、継承元のマテリアルに当てると、継承している巣・繭にも伝わります。
 
 | カテゴリ | プリセット | 内容 | 使いどころ |
 |---|---|---|---|
@@ -220,7 +220,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
   - Pass 0 `DEPTHSOLID`: 色は塗らず、不透明度 0.5 以上の芯だけ深度とステンシル（`_SilkStencilBit`）を書きます。
   - Pass 1 `FORWARD`: 深度は書かずに全体を塗ります。
 - 先に描く理由: 巣や繭は、半透明でも前後関係を保つために濃い所だけ深度を書きます。糸を後から描くと、その深度に負けて「巣の向こうに透けて見えるはずの糸」が消えてしまいます。先に描けば、奥の糸の上に巣や繭が半透明で重なるので、糸は必ず透けて見えます。
-- ステンシルは、[体に張り付く繭（SpiderCocoonDepthDecal）](SpiderCocoonDepthDecal.md)が「体の手前を通る糸の上に繭を塗らない」ための目印です。`_SilkStencilBit` を変えたら、体に張り付く繭のマテリアル（インスペクタでは「デカール」）の `_GlueStencilReadMask`（既定 208 = 視界ジャック用の 128 ＋ 糸の 64 ＋ 蜘蛛の体の 16）も合わせてください。
+- ステンシルは、[繭デカール（CocoonDecal）](CocoonDecal.md)が「体の手前を通る糸の上に繭を塗らない」ための目印です。`_SilkStencilBit` を変えたら、体に張り付く繭のマテリアル（インスペクタでは「繭デカール」）の `_GlueStencilReadMask`（既定 208 = 視界ジャック用の 128 ＋ 糸の 64 ＋ 蜘蛛の体の 16）も合わせてください。
 
 ## 注意・制約
 
@@ -241,10 +241,10 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 | ファイル | 内容 |
 |---|---|
-| `Runtime/SpiderThreadTrail.shader` | シェーダー本体 |
+| `Runtime/SpiderSilk.shader` | シェーダー本体 |
 | `Runtime/CGINC/SpiderThread_Goo.cginc` | 粘液モードの束・膜の形（距離場） |
-| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（巣・繭・体に張り付く繭・ねばねばネットと共通） |
+| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープと共通） |
 | `Runtime/CGINC/SpiderCocoon_Compose.cginc` ほか `SpiderCocoon_*.cginc` | 乾いた糸モードの糸の計算 |
 | `Runtime/CGINC/SpiderSilk_Motion.cginc` | 重力のたゆみ（巣の揺れと共通の波形） |
 | `Runtime/CGINC/SpiderSilk_Look.cginc` | 質感 21 項目の宣言 |
-| `Presets/SpiderThreadTrail/` | 標準プリセット 4 種 |
+| `Presets/SpiderSilk/` | 標準プリセット 4 種 |

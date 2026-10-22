@@ -6,7 +6,7 @@
 // 視界ジャック＝「包まれ演出」の共通実装。
 // カメラ（VRでは両目の中点）がオブジェクトの内側に入ったら、オブジェクトを
 // 中心とした「上下が閉じた紡錘形（楕円体）の繭の内壁」を実寸の深度付きで描く。
-// 本体 SpiderCocoon.shader と SpiderCocoonDepthDecal.shader の両方がこれを使う。
+// 本体 Cocoon.shader と CocoonDecal.shader の両方がこれを使う。
 //
 // ★ 旧実装との違い（描画順・深度の扱い）:
 //   旧: 深度を近クリップ面に書き ZTest Always → 視界を完全に乗っ取り、
@@ -53,7 +53,7 @@ bool SC_VisionJackActiveEx(float radius, float height)
     return (length(camOS.xz) < radius) && (abs(camOS.y) < height);
 }
 
-// 本体 SpiderCocoon 用の発火判定（専用プロパティを束ねただけの別名）
+// 本体 Cocoon 用の発火判定（専用プロパティを束ねただけの別名）
 bool SC_VisionJackActive()
 {
     return SC_VisionJackActiveEx(_VisionJackRadius, _VisionJackHeight);

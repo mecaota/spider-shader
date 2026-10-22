@@ -98,7 +98,7 @@ internal static class SpiderSilkLookMenu
     static void MenuCleanup()
     {
         if (!EditorUtility.DisplayDialog("親と同じ値の上書きを掃除",
-                "巣・繭・デカールの Material Variant で、親と同じ値なのに残っている質感と継承元の上書きを外します。\n" +
+                "巣・繭・繭デカールの Material Variant で、親と同じ値なのに残っている質感と継承元の上書きを外します。\n" +
                 "見た目は変わりません。この操作は Ctrl+Z では戻せません。", "実行", "キャンセル")) return;
         int total = 0;
         foreach (var m in SpiderSilkLookIndex.Inheritors)

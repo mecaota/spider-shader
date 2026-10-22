@@ -1,5 +1,5 @@
 // =============================================================================
-// SpiderCocoon.shader  —  蜘蛛の糸で巻かれた繭 シェーダー (VRChat / Built-in RP 専用)
+// Cocoon.shader — 繭シェーダー（蜘蛛の糸で巻かれた繭） (VRChat / Built-in RP 専用)
 //
 //  - 円柱メッシュに「筒状に巻きついた」平行な糸を手続き生成（テクスチャ不要）
 //  - 巻き数 W は円周方向(uv.y)に整数本でシームレス。角度は軸方向(uv.x)の
@@ -17,17 +17,17 @@
 //    実装はデカール版と共通（CGINC/SpiderCocoon_VisionJack.cginc）
 //  - 質感は粘液の糸（CGINC/SpiderCocoon_Goo.cginc）: 全レイヤーの糸を丸い粘液の
 //    管として smooth-min で融合し、交差部は水かき状につながり、隣り合う糸の間には
-//    まだらに膜が張る。塗りは吐いた糸・蜘蛛の巣と共通（SpiderGoo_Shading.cginc）。
+//    まだらに膜が張る。塗りは蜘蛛糸・蜘蛛の巣と共通（SpiderGoo_Shading.cginc）。
 //    粘液感（_GooAmount）を下げると乾いた細い糸に近づく
 // =============================================================================
-Shader "mecaota/SpiderCocoon"
+Shader "mecaota/Cocoon"
 {
     Properties
     {
         // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
-        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
+        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・繭デカール・蜘蛛の巣ドレープではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分け・共通/固有の区別は CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描くため
@@ -64,7 +64,7 @@ Shader "mecaota/SpiderCocoon"
         _LayerPosStepY      ("レイヤー位置ステップ Y 円周 (Pos Step Y)", Float) = 0.02
         _LayerThicknessFalloff ("奥レイヤーの減衰 (Thickness Falloff)", Range(0, 1)) = 0.0
 
-        // ---- 粘液の質感（吐いた糸・蜘蛛の巣と同じ塗り） ----
+        // ---- 粘液の質感（蜘蛛糸・蜘蛛の巣と同じ塗り） ----
         // 粘液感を下げると太り・玉・膜・ツヤ・透けが一緒に弱まる（0 で乾いた細い糸）
         [Header(Goo Shape)]
         _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))       = 1

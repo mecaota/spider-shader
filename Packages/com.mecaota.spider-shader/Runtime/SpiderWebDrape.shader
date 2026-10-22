@@ -1,22 +1,22 @@
 // =============================================================================
-// ねばねばネット（蜘蛛糸の粘液シート）（PC / Unity 2022.3 / Built-in RP）
-// 初心者向け: 吐いた糸（SpiderThreadTrail）の粘液モードの帯（束＋穴の空いた膜）を、
+// SpiderWebDrape.shader — 蜘蛛の巣ドレープシェーダー（蜘蛛糸の粘液シート）（PC / Unity 2022.3 / Built-in RP）
+// 初心者向け: 蜘蛛糸（SpiderSilk）の粘液モードの帯（束＋穴の空いた膜）を、
 // すき間なく並べた模様を Editor で画像（距離・補助・被覆率の 3 配列）へ焼きます。
 // 実行中は各層がその画像を少し回転・ずらして読み、体に覆いかぶさる粘液の膜（Drape）として
-// 最大 8 層に重ねます（深度は一番内側の層だけ書く 9 パス）。帯の中の形の設定は吐いた糸と同じ名前・意味で、糸に沿った方向の単位も
+// 最大 8 層に重ねます（深度は一番内側の層だけ書く 9 パス）。帯の中の形の設定は蜘蛛糸と同じ名前・意味で、糸に沿った方向の単位も
 // 同じメートルです（_SheetAlongScale = メッシュ UV 1 あたりのメートル。WebPlane は 1 m 四方で、
-// 投げ網 CaptureNetDrape では約 1.95 倍＝約 2 m。既定の 3 は吐いた糸より玉・穴が少し細かい）。
+// 投げ網 CaptureNetDrape では約 1.95 倍＝約 2 m。既定の 3 は蜘蛛糸より玉・穴が少し細かい）。
 // 形の入力を変えたら Inspector の「焼き直す」を押します。色・光沢・層数・層ごとの太さは不要です。
-// 2026-10-08 採用（他のねばねばネット系シェーダーは撤去）。
+// 2026-10-08 採用（他の蜘蛛の巣ドレープ系シェーダーは撤去）。
 // =============================================================================
-Shader "mecaota/SpiderGooSilkSheet"
+Shader "mecaota/SpiderWebDrape"
 {
     Properties
     {
         // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
-        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
+        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・繭デカール・蜘蛛の巣ドレープではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分けは CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は標準インスペクタ向けのフォールバック表示。
         // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
@@ -54,7 +54,7 @@ Shader "mecaota/SpiderGooSilkSheet"
         _SheetRotation ("帯の向き 角度 (Band Rotation)", Range(0, 180)) = 17
         _SheetAlongScale ("帯に沿った長さ m/UV (Along Scale)", Range(0.1, 10)) = 3
 
-        // ---- 帯の中の形（吐いた糸 SpiderThreadTrail の粘液モードと同じ名前・範囲・既定値） ----
+        // ---- 帯の中の形（蜘蛛糸 SpiderSilk の粘液モードと同じ名前・範囲・既定値） ----
         [Header(Silk Strands)]
         [IntRange] _GooStrands ("束の本数 (Strands)", Range(1, 4))           = 3
         _GooWidth           ("束の太さ 帯幅比 (Strand Width)", Range(0.02, 1)) = 0.24
@@ -69,7 +69,7 @@ Shader "mecaota/SpiderGooSilkSheet"
         _GooWebRows         ("幅方向の穴の列数 (Hole Rows)", Range(1, 8))     = 2.5
         _GooWebHole         ("穴の開き具合 (Hole Size)", Range(0, 1))         = 0.85
 
-        // ---- 粘液の質感（吐いた糸・繭と同じ塗り） ----
+        // ---- 粘液の質感（蜘蛛糸・繭と同じ塗り） ----
         [Header(Goo Shape)]
         _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))     = 1
 
@@ -156,10 +156,10 @@ Shader "mecaota/SpiderGooSilkSheet"
     {
         Tags
         {
-            // 吐いた糸（SpiderThreadTrail）は Transparent-10 で巣より「先」に描かれる。
+            // 蜘蛛糸（SpiderSilk）は Transparent-10 で巣より「先」に描かれる。
             // 巣の向こうの糸は、この巣が半透明で重なって必ず透けて見える（巣の深度で消えない）。
             // 手前の糸は芯の深度を書いているので、その画素では巣が深度テストに負けて糸の上に重ならない
-            // （SpiderThreadTrail 側の説明参照）
+            // （SpiderSilk 側の説明参照）
             "Queue"           = "Transparent"
             "RenderType"      = "Transparent"
             "IgnoreProjector" = "True"
@@ -191,7 +191,7 @@ Shader "mecaota/SpiderGooSilkSheet"
             #include "CGINC/SpiderCocoon_Common.cginc"
             #include "CGINC/SpiderCocoon_Thread.cginc"
             #include "CGINC/SpiderCocoon_Lighting.cginc"
-            // 粘液の塗り（吐いた糸・繭と共通）
+            // 粘液の塗り（蜘蛛糸・繭と共通）
             #include "CGINC/SpiderGoo_Shading.cginc"
             #include "CGINC/SpiderGooSheet_BakedPattern.cginc"
 

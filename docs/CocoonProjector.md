@@ -1,12 +1,12 @@
-# 受け手マスク（SpiderCocoonProjectorMask）
+# 繭プロジェクター（CocoonProjector）
 
-シェーダー名: `mecaota/SpiderCocoonProjectorMask`
+シェーダー名: `mecaota/CocoonProjector`
 
 > **試験実装です。** 実機の VRChat（VR の両目・ミラー・多人数）での確認は済んでいません。駆動する Udon は [`SpiderCocoonProjectorMaskDriver`](#駆動スクリプトspidercocoonprojectormaskdriver) として同梱しています。
 
 ## ひとことで
 
-[体に張り付く繭](SpiderCocoonDepthDecal.md)を、**捕まった人のアバターにだけ**描くための目印を付けるシェーダーです。色は一切塗りません。
+[繭デカール](CocoonDecal.md)を、**捕まった人のアバターにだけ**描くための目印を付けるシェーダーです。色は一切塗りません。
 
 - 体に張り付く繭は「深度テクスチャに写っている、円筒の中の面」ならどこにでも繭を描くので、円筒に入った床・木・壁や、隣に立つ別の人にも繭が乗ることがあります。
 - このシェーダーを Projector で使うと、捕まった人のアバターの見えている画素にだけ、ステンシルの目印（ビット 32）が立ちます。繭のマテリアルを「目印のある画素にだけ描く」設定にすると、床・壁・隣の人には繭が出なくなります。
@@ -14,21 +14,21 @@
 
 ## しくみ（シェーダー初心者向け）
 
-- **ステンシル**は、画面の画素ごとに持てる 8 ビットの小さなメモです。このパッケージでは 128 ＝ 視界ジャックの内壁、64 ＝ 吐いた糸の芯、**32 ＝ 受け手（繭を描いてよいアバター）**、16 ＝ 蜘蛛の体（ワールド側のシェーダーが立てる）に使います。
+- **ステンシル**は、画面の画素ごとに持てる 8 ビットの小さなメモです。このパッケージでは 128 ＝ 視界ジャックの内壁、64 ＝ 蜘蛛糸の芯、**32 ＝ 受け手（繭を描いてよいアバター）**、16 ＝ 蜘蛛の体（ワールド側のシェーダーが立てる）に使います。
 - Unity の **Projector** は「投影範囲に入ったレンダラーを、Projector のマテリアルでもう一度描く」部品です。Projector の Ignore Layers で `Player`・`PlayerLocal`・`MirrorReflection` 以外をすべて無視すると、アバターのメッシュだけがこのシェーダーで描き直されます。
 - このシェーダーは、描き直された相手が捕まった本人かどうかを、相手のメッシュの原点（足元か腰）と、スクリプトが渡す本人の骨の位置で判定します。本人でなければ何も描きません。本人なら、見えている画素（手前の柱・壁・他人には負ける）に目印のビットを立てます。
 - 体に張り付く繭は輪郭の少し外（糸の厚みの分）にも糸を盛るので、このシェーダーも頂点を同じ幅だけ外へ膨らませます。
 
 ## セットアップ
 
-1. **マテリアル**: `mecaota/SpiderCocoonProjectorMask` のマテリアルを、**Projector 1 つにつき 1 つ**作ります（共有すると全員が同じ人として扱われます）。「輪郭の外への膨張」は繭のマテリアルの「糸の厚み」（`_GlueThickness`）と同じ値にします。
+1. **マテリアル**: `mecaota/CocoonProjector` のマテリアルを、**Projector 1 つにつき 1 つ**作ります（共有すると全員が同じ人として扱われます）。「輪郭の外への膨張」は繭のマテリアルの「糸の厚み」（`_GlueThickness`）と同じ値にします。
 2. **Projector**: 空の GameObject に Projector を付けます。
    - Orthographic を ON。Orthographic Size は 1.2 前後（両腕を広げた幅の半分より少し大きく）。Near Clip Plane は 0.1、Far Clip Plane は 3（頭の上 0.5 m から足元まで届く長さ）。
    - 向きと位置は駆動スクリプトが毎フレーム決めます（捕まった人の頭の上から真下へ）。
    - Ignore Layers ＝ `Player`・`PlayerLocal`・`MirrorReflection` **以外すべて**。
    - GameObject 自身のレイヤーは Default（ミラーに映るレイヤー。ミラーの中でも目印が立ちます）。
    - Material ＝ 1 のマテリアル。
-3. **繭のマテリアル**: 体に張り付く繭のマテリアルを `_GlueStencilRef` 32 / `_GlueStencilReadMask` 240 にします（[レンダーステート](SpiderCocoonDepthDecal.md#レンダーステート固有)）。
+3. **繭のマテリアル**: 体に張り付く繭のマテリアルを `_GlueStencilRef` 32 / `_GlueStencilReadMask` 240 にします（[レンダーステート](CocoonDecal.md#レンダーステート固有)）。
 4. **駆動スクリプト**: 別の GameObject に [`SpiderCocoonProjectorMaskDriver`](#駆動スクリプトspidercocoonprojectormaskdriver) を付け、Projector Transform に 2 の GameObject、Mask Material に 1 のマテリアルを入れます。捕まった人が決まったら、捕獲を扱うスクリプトから `SetOwner(playerId)` を呼びます。
 
 ## 駆動スクリプト（SpiderCocoonProjectorMaskDriver）
@@ -71,8 +71,8 @@ Unity 標準のインスペクタで表示されます（このパッケージ�
 
 ## 描画について
 
-- 描画順は `Transparent-100`（2900）です。アバター（不透明 2000、カットアウト 2450、lilToon の半透明 2460 など）の後、吐いた糸（2990）と繭（3000）の前に描きます。
-- Frame Debugger で、アバター → このマスク → 吐いた糸の `DEPTHSOLID` → 体に張り付く繭のパス 2、の順に並んでいることを確かめてください。
+- 描画順は `Transparent-100`（2900）です。アバター（不透明 2000、カットアウト 2450、lilToon の半透明 2460 など）の後、蜘蛛糸（2990）と繭（3000）の前に描きます。
+- Frame Debugger で、アバター → このマスク → 蜘蛛糸の `DEPTHSOLID` → 体に張り付く繭のパス 2、の順に並んでいることを確かめてください。
 
 ## 注意・制約
 
@@ -86,5 +86,5 @@ Unity 標準のインスペクタで表示されます（このパッケージ�
 
 | ファイル | 内容 |
 |---|---|
-| `Runtime/SpiderCocoonProjectorMask.shader` | シェーダー本体（先頭のコメントにセットアップの要点あり） |
+| `Runtime/CocoonProjector.shader` | シェーダー本体（先頭のコメントにセットアップの要点あり） |
 | `Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs` | 駆動スクリプト |

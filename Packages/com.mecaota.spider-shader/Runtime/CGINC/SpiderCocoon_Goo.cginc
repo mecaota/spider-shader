@@ -3,8 +3,8 @@
 
 // ---------------------------------------------------------------------------
 // SpiderCocoon_Goo.cginc
-// 繭（SpiderCocoon 本体・SpiderCocoonDepthDecal の glue/殻/視界ジャック）の
-// 「粘液の帯」合成。吐いた糸・蜘蛛の巣と同じ塗り（SpiderGoo_Shading.cginc）を使う。
+// 繭（Cocoon 本体・CocoonDecal の glue/殻/視界ジャック）の
+// 「粘液の帯」合成。蜘蛛糸・蜘蛛の巣と同じ塗り（SpiderGoo_Shading.cginc）を使う。
 //
 // 糸の並び（巻き数・角度・レイヤーの線対称オフセット・太さの乱雑性）は従来の
 // SC_CompositeLayers と同じ。違うのは「描き方」:
@@ -21,7 +21,7 @@
 //               → SpiderGoo_Shading → 本ファイル
 // ---------------------------------------------------------------------------
 
-// 次の 6 つは巣・吐いた糸と同じ名前なので、宣言は SpiderCocoon_Common.cginc の 1 か所
+// 次の 6 つは巣・蜘蛛糸と同じ名前なので、宣言は SpiderCocoon_Common.cginc の 1 か所
 // （同名を 2 回宣言するとエラーになるため）。繭での意味:
 //   _GooThick    : 粘液の太さ倍率（_ThreadThickness に掛かる）
 //   _GooBeads    : 糊の玉（帯の太さのふくらみ）0..1
@@ -37,9 +37,9 @@ float _GooOverlapShadow; // 上の帯が下の帯に落とす影の濃さ
 float _WindEnable;
 float _WindProgress;
 
-// ねばねばネット風の表面（SpiderCocoonDepthDecal だけ。.shader が SC_COCOON_SHEET_STYLE を
+// 蜘蛛の巣ドレープ風の表面（CocoonDecal だけ。.shader が SC_COCOON_SHEET_STYLE を
 // define し、本ファイルの後で SpiderCocoon_Sheet.cginc を読み込む）。
-// 本体 SpiderCocoon.shader では define しないので、ここも分岐も無い＝従来どおり。
+// 本体 Cocoon.shader では define しないので、ここも分岐も無い＝従来どおり。
 // どちらの模様で塗るかは、シェーダーキーワード SC_SURFACE_NET（_SurfaceStyle = 1 のとき ON）で決める
 // （2026-10-14。以前は実行時の if。キーワードにすると使わない側の処理がシェーダーから消える）。
 // キーワードはマテリアルのインスペクタ（Editor/SpiderCocoonShaderGUI.cs）が _SurfaceStyle と自動で揃える。
@@ -218,7 +218,7 @@ fixed4 SC_CompositeGooUnclippedStop(float2 uv, float3 N, float3 T, float3 B, flo
         float shadow = (1.0 - smoothstep(0.0, shW, d)) * smoothstep(-aaL, aaL, d);
         accRGB = lerp(accRGB, accRGB * _GooShadowColor.rgb, shadow * _GooOverlapShadow);
 
-        // ---- この帯を塗る（吐いた糸・蜘蛛の巣と共通の塗り） ----
+        // ---- この帯を塗る（蜘蛛糸・蜘蛛の巣と共通の塗り） ----
         STG_GooSurface gs = STG_GooProfileW(d, rl, oL, N);
         // 平たい帯: 断面の法線は縁の近くだけ曲げる（中央は面の向きのまま）
         float qn = saturate((gs.q - _GooFlat) / max(1.0 - _GooFlat, 1e-3));
@@ -278,7 +278,7 @@ fixed4 SC_CompositeGoo(float2 uv, float3 N, float3 T, float3 B, float3 worldPos,
 
 // ---------------------------------------------------------------------------
 // 円筒マッピングの共通シェーディングヘルパー
-// 「メッシュUVを持たない任意のローカル点」を、本体 SpiderCocoon と同じ
+// 「メッシュUVを持たない任意のローカル点」を、本体 Cocoon と同じ
 // 粘液の帯で着色する。デカールの glue（深度復元した体表点）と
 // 視界ジャックの内壁（レイ交差点）の両方から使う共用部品。
 // ---------------------------------------------------------------------------
@@ -338,7 +338,7 @@ fixed4 SC_ShadeCocoonBandsAtExUnclipped(float3 localPos, float3 worldPos, float3
 }
 
 // 表面の模様を選んで塗る。SC_COCOON_SHEET_STYLE を define したシェーダー（デカール）だけ、
-// キーワード SC_SURFACE_NET（_SurfaceStyle = 1）で「ねばねばネット風」（帯が平行に並び、間に穴の空いた膜）になる。
+// キーワード SC_SURFACE_NET（_SurfaceStyle = 1）で「蜘蛛の巣ドレープ風」（帯が平行に並び、間に穴の空いた膜）になる。
 // キーワードが無いマテリアルは従来の繭の帯。
 // （earlyStop / stopAlpha は SC_CompositeGooUnclippedStop を参照。色を使うパスは false）
 fixed4 SC_ShadeCocoonAtExUnclippedStop(float3 localPos, float3 worldPos, float3 N,

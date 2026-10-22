@@ -5,7 +5,7 @@ using VRC.SDK3.UdonNetworkCalling;
 using VRC.Udon.Common.Interfaces;
 
 /// <summary>
-/// 面（蜘蛛の巣・繭など。mecaota/SpiderWeb・mecaota/SpiderCocoon シェーダー、_PullEnable ON）に
+/// 面（蜘蛛の巣・繭など。mecaota/SpiderWeb・mecaota/Cocoon シェーダー、_PullEnable ON）に
 /// 手足が触れた場所をその手足に追従させて伸ばす／凹ませるギミック（見た目のみ）。
 ///
 /// ・追従ボーンは bones 配列で任意本数。面（Plane/Sphere/Cylinder/TreeFan）から接触距離以内に
@@ -62,7 +62,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private const int MaxSlotsFitsInMask = 1 / (MaxSlots <= 32 ? 1 : 0);
 
     [Header("対象")]
-    [Tooltip("SpiderWeb / SpiderCocoon マテリアル（_PullEnable ON）を付けた Renderer")]
+    [Tooltip("SpiderWeb / Cocoon マテリアル（_PullEnable ON）を付けた Renderer")]
     public Renderer targetRenderer;
 
     [Tooltip("多数の Deformer を1つの PostLateUpdate で駆動する管理役（シーンに1個）")]
@@ -156,7 +156,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public float stuckSpeedRatio = 1f / 3f;
 
     [Header("粘液の糸（任意）")]
-    [Tooltip("くっついた場所（面）とボーンの間に張る太い粘液の糸（LineRenderer。SpiderThreadTrail の粘液マテリアル）。スロット番号ごとに 1 本、最大 MaxSlots 本。空なら糸は描かない")]
+    [Tooltip("くっついた場所（面）とボーンの間に張る太い粘液の糸（LineRenderer。SpiderSilk の粘液マテリアル）。スロット番号ごとに 1 本、最大 MaxSlots 本。空なら糸は描かない")]
     public LineRenderer[] threadBySlot;
     [Tooltip("糸の太さ（m。アバターの目の高さ 1.6m 基準で拡縮）")]
     public float threadWidth = 0.08f;

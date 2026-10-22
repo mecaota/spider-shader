@@ -1,8 +1,8 @@
-# 繭（SpiderCocoon）
+# 繭（Cocoon）
 
-シェーダー名: `mecaota/SpiderCocoon`
+シェーダー名: `mecaota/Cocoon`
 
-[← README に戻る](../README.md) ｜ 関連: [体に張り付く繭（SpiderCocoonDepthDecal）](SpiderCocoonDepthDecal.md) ／ [共通機能](CommonFeatures.md) ／ [Udon ギミック](UdonGimmicks.md)
+[← README に戻る](../README.md) ｜ 関連: [繭デカール（CocoonDecal）](CocoonDecal.md) ／ [共通機能](CommonFeatures.md) ／ [Udon ギミック](UdonGimmicks.md)
 
 ## ひとことで
 
@@ -10,9 +10,9 @@
 
 - カメラ（VR では頭）が繭の中に入ると、**周りを繭の内壁が囲む「包まれ演出」（視界ジャック）**を出せます。
 - 対応環境: Unity Built-in Render Pipeline。深度テクスチャは使いません。PC で動作確認しています。Quest（Android）では未検証です。
-- 色・ツヤ・陰影は、吐いた糸のマテリアルから[継承](CommonFeatures.md#質感の継承)します。
+- 色・ツヤ・陰影は、蜘蛛糸のマテリアルから[継承](CommonFeatures.md#質感の継承)します。
 
-> プレイヤーの**体の表面**に繭を張り付けたいときは、[体に張り付く繭（SpiderCocoonDepthDecal）](SpiderCocoonDepthDecal.md)を使います。このページの繭は「円柱の形をした繭のオブジェクト」です。
+> プレイヤーの**体の表面**に繭を張り付けたいときは、[繭デカール（CocoonDecal）](CocoonDecal.md)を使います。このページの繭は「円柱の形をした繭のオブジェクト」です。
 
 ## こんなときに使う
 
@@ -22,9 +22,9 @@
 ## クイックスタート
 
 1. Hierarchy で **3D Object > Cylinder** を作ります（半径 0.5・高さ 2 の円柱）。
-2. マテリアルを作って Shader を `mecaota/SpiderCocoon` にし、円柱に入れます。
+2. マテリアルを作って Shader を `mecaota/Cocoon` にし、円柱に入れます。
 3. 中に入って包まれたいときは、インスペクタの「裏面と視界ジャック」で **視界ジャック有効** を ON にします。
-4. 色やツヤは、このマテリアルでは変えられません。紫の「蜘蛛糸の質感（継承）」欄で継承元（吐いた糸のマテリアル）を選び、「継承元を開く」から継承元のほうで変えます。継承元がまだ無ければ「今の質感から新しい継承元を作る…」で作れます（[質感の継承](CommonFeatures.md#質感の継承)）。
+4. 色やツヤは、このマテリアルでは変えられません。紫の「蜘蛛糸の質感（継承）」欄で継承元（蜘蛛糸のマテリアル）を選び、「継承元を開く」から継承元のほうで変えます。継承元がまだ無ければ「今の質感から新しい継承元を作る…」で作れます（[質感の継承](CommonFeatures.md#質感の継承)）。
 
 ### メッシュの条件
 
@@ -41,7 +41,7 @@
    - 糸の角度（`_FiberAngle`）= 軸に対する傾き。0 で軸と平行
 2. **レイヤー**: この模様を角度と位置を少しずつずらして何枚も重ねます。角度は偶数番目と奇数番目で左右対称に振る（1 枚目 0、2・3 枚目 ±1 段、4・5 枚目 ±2 段…）ので、左右にクロスする乱雑な巻きになります。
 3. **粘液の帯**: 1 本 1 本の糸を、縁だけ丸い平たい帯として塗り、奥のレイヤーから順に重ねます。上の帯の縁は輪郭線として見え、そのすぐ外の下の帯には影が落ちます。帯の中には細い筋が数本走り、隣の帯との間にはまだらな膜が張ります。
-4. **塗り**: 吐いた糸・蜘蛛の巣と同じ粘液の塗り（トゥーン陰影・ハイライト・輪郭線・透け）です。
+4. **塗り**: 蜘蛛糸・蜘蛛の巣と同じ粘液の塗り（トゥーン陰影・ハイライト・輪郭線・透け）です。
 
 ### 継ぎ目が出ない理由
 
@@ -203,9 +203,9 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 
 | ファイル | 内容 |
 |---|---|
-| `Runtime/SpiderCocoon.shader` | シェーダー本体 |
+| `Runtime/Cocoon.shader` | シェーダー本体 |
 | `Runtime/CGINC/SpiderCocoon_Goo.cginc` | 粘液の帯（体に張り付く繭と共通） |
 | `Runtime/CGINC/SpiderCocoon_VisionJack.cginc` | 視界ジャック（体に張り付く繭と共通） |
-| `Runtime/CGINC/SpiderCocoon_Pull.cginc` | 接触追従の変形（巣・ねばねばネットと共通） |
+| `Runtime/CGINC/SpiderCocoon_Pull.cginc` | 接触追従の変形（蜘蛛の巣・蜘蛛の巣ドレープと共通） |
 | `Runtime/CGINC/SpiderCocoon_Common.cginc` / `_Thread` / `_Noise` / `_Lighting` | 糸の位相・ノイズ・揺れなどの共通処理 |
 | `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り |

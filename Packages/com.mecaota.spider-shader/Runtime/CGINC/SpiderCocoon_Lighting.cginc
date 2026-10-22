@@ -36,7 +36,7 @@ float SC_ToonRamp(float x, float steps, float softness)
     return (lo + e) / steps;
 }
 
-// 糸1本ぶんのトゥーン陰影（SpiderCocoon 本体と SpiderWeb で共通の質感）。
+// 糸1本ぶんのトゥーン陰影（Cocoon 本体と SpiderWeb で共通の質感）。
 //   陰影は「面法線 × 光源」を主役にする（カメラ非依存。光の当たる面の裏側が
 //   陰る）。各糸ごとの曲げ法線は detail として混ぜる。
 //   N,T,B        : 面の基底（VFACE 反転済み）
