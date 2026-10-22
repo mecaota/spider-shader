@@ -2,6 +2,7 @@ using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 using VRC.SDK3.UdonNetworkCalling;
+using VRC.Udon;
 using VRC.Udon.Common.Interfaces;
 
 /// <summary>
@@ -40,8 +41,12 @@ using VRC.Udon.Common.Interfaces;
 ///   その点に面を追従させる
 /// ・pullOnly: くっついた後は「くっついた側へ引っ張る向き」と面に沿った向きにだけ追従し、
 ///   手足を面に近づけても面の奥へは凹ませない
-/// ・slowLocalWhenStuck: どこか 1 か所でもくっついている間、ローカルの移動速度を stuckSpeedRatio 倍に
-///   する（どのボーンでも同じ。manager がまとめて適用・解除する）
+///
+/// くっついたときの通知（localStuckReceivers）:
+/// ・ローカルプレイヤーがこの巣のどこか 1 か所でもくっついたら localStuckEvent、全部はがれたら localUnstuckEvent を、
+///   localStuckReceivers の各 UdonBehaviour へ SendCustomEvent で送る（ローカルのみ。リスポーンと巣の無効化でも「はがれた」を送る）
+/// ・restraint の PlayerSpeedLimiter に送れば「くっついている間の減速」になる。イベント名で送るだけなので、
+///   このパッケージは restraint が無くてもコンパイルできる（以前の slowLocalWhenStuck はこの形で restraint へ移した）
 ///
 /// 面ごとの座標（boneSurfaces）:
 /// ・boneSurfaces[b] を与えると、ボーン b の接触判定・捕縛点ローカル座標・投影を
@@ -149,11 +154,15 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     [Tooltip("ON: くっついた後は引っ張る向き（くっついた側）と面に沿った向きにだけ追従し、手足を面に近づけても面の奥へは凹ませない")]
     public bool pullOnly = false;
 
-    [Tooltip("ON: ローカルプレイヤーがどこか 1 か所でもくっついている間、移動速度を stuckSpeedRatio 倍にする（manager が適用）")]
-    public bool slowLocalWhenStuck = false;
+    [Header("くっついたときの通知（任意）")]
+    [Tooltip("ローカルプレイヤーがこの巣にくっついた／全部はがれたときにイベントを送る UdonBehaviour（restraint の PlayerSpeedLimiter で減速するなど）。空なら送らない")]
+    public UdonBehaviour[] localStuckReceivers;
 
-    [Tooltip("くっついている間の移動速度の倍率（歩き・走り・横歩き）")]
-    public float stuckSpeedRatio = 1f / 3f;
+    [Tooltip("ローカルプレイヤーがどこか 1 か所でもくっついたときに送るイベント名")]
+    public string localStuckEvent = "Engage";
+
+    [Tooltip("ローカルプレイヤーが全部はがれたときに送るイベント名（リスポーンと巣の無効化でも送る）")]
+    public string localUnstuckEvent = "Disengage";
 
     [Header("粘液の糸（任意）")]
     [Tooltip("くっついた場所（面）とボーンの間に張る太い粘液の糸（LineRenderer。SpiderSilk の粘液マテリアル）。スロット番号ごとに 1 本、最大 MaxSlots 本。空なら糸は描かない")]
@@ -243,6 +252,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     // GameObject が有効で、この巣が動いている間だけ true。無効の間は同期も退室の掃除も届かず
     // スロットが古いまま残るので、外から読む API は「誰も付いていない」を返す
     private bool _live = false;
+    // localStuckReceivers へ最後に知らせた「ローカルプレイヤーがくっついているか」
+    private bool _localStuckNotified = false;
 
     private void EnsureInit()
     {
@@ -359,6 +370,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         _live = false;
         _slotVersion++;
+        NotifyLocalStuck(false);
         if (_registered)
         {
             _registered = false;
@@ -382,6 +394,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private void UpdateRegistration()
     {
         EnsureInit();
+        NotifyLocalStuck(_live && IsLocalStuck()); // スロットが変わると必ずここを通るので、くっつき状態の変化もここで見る
         bool want = _live && (_localInside || _occupiedCount > 0);
         if (want == _registered) { return; }
         _registered = want;
@@ -670,6 +683,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public override void OnPlayerRespawn(VRCPlayerApi player)
     {
         if (player == null || !player.isLocal) { return; }
+        // 解放の同期が届く前でも「はがれた」を先に送る（受け手の PlayerSpeedLimiter もリスポーンで数を 0 に戻すため）
+        NotifyLocalStuck(false);
         _ReleaseLocalBones();
     }
 
@@ -1067,12 +1082,25 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         return (v.sqrMagnitude < 1e-8f) ? Vector3.zero : v;
     }
 
-    // ローカルプレイヤーがこの面にくっついているか（manager の減速判定用）
+    // ローカルプレイヤーがこの面にくっついているか
     public bool IsLocalStuck()
     {
         VRCPlayerApi local = Networking.LocalPlayer;
         if (local == null) { return false; }
         return HasSlotOf(local.playerId);
+    }
+
+    // くっついているかが変わったときだけ、localStuckReceivers へ知らせる（ローカルのみ）
+    private void NotifyLocalStuck(bool stuck)
+    {
+        if (stuck == _localStuckNotified) { return; }
+        _localStuckNotified = stuck;
+        string eventName = stuck ? localStuckEvent : localUnstuckEvent;
+        if (localStuckReceivers == null || eventName == null || eventName.Length == 0) { return; }
+        for (int i = 0; i < localStuckReceivers.Length; i++)
+        {
+            if (localStuckReceivers[i] != null) { localStuckReceivers[i].SendCustomEvent(eventName); }
+        }
     }
 
     private bool HasSlotOf(int playerId)
