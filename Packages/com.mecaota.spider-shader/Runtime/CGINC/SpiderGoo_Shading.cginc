@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 // 粘液感・色・陰影・光沢（_GooAmount / _GooColor … / _GooGloss*）は「質感」として
-// 4 シェーダーで共通の uniform。宣言は SpiderSilk_Look.cginc の 1 か所だけ
+// 5 シェーダー（吐いた糸・巣・繭・デカール・ねばねばネット）で共通の uniform。宣言は SpiderSilk_Look.cginc の 1 か所だけ
 // （Common 経由で読み込み済み。ここでも明示しておく。ガードで二重にはならない）。
 #include "SpiderSilk_Look.cginc"
 

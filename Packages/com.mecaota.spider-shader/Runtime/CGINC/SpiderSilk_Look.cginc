@@ -6,9 +6,8 @@
 // 蜘蛛糸の「質感（Look）」21 個の uniform を、ここ 1 か所でだけ宣言する。
 //
 // SpiderThreadTrail（継承元の蜘蛛糸）/ SpiderWeb / SpiderCocoon /
-// SpiderCocoonDepthDecal / ねばねばネット系（SpiderGooQuadNet / SpiderGooQuadNetDecal /
-// SpiderGooWrapDecal / SpiderGooDotWeb）が同じ意味で使う値。
-// ※ ねばねばネット系はこのパッケージに含まれない（作者のワールド側にある）。
+// SpiderCocoonDepthDecal / SpiderGooSilkSheet（ねばねばネット）の 5 シェーダーが同じ意味で使う値。
+// （受け手マスク SpiderCocoonProjectorMask は色を描かないので使わない）
 // 巣・繭・デカール・ねばねばネットのマテリアルには、エディタ拡張が「継承元の蜘蛛糸マテリアル」の
 // 値をそのまま書き写す（実行時の処理は無い。Editor/SpiderSilkLook.cs）。
 //
