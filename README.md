@@ -83,6 +83,7 @@
 | 足に貼り付いて持ち上がった巣の一部が、画面の端で消える | GameObject の Static のうち **Batching Static を OFF** にしてください。頂点を動かす変形は Unity の「画面に映っているか」の判定範囲（バウンズ）に反映されないため、WebPlane は判定範囲を広げて作ってあります。Batching Static が ON だとメッシュが結合され、この広げた範囲が失われます。2 m 以上持ち上げる場合は、WebPlane の生成画面で **Bounds Up** を上げて作り直します（[詳しく](docs/UdonGimmicks.md#注意制約)）。 |
 | 繭の中で、背を向けると内壁が丸ごと消える | 視界ジャックの判定範囲（「内側判定の半径」「内側判定の高さ」）が、繭のメッシュの外にはみ出しています。Unity はメッシュが画面外だと描画ごと省くので、判定範囲をメッシュの内側に収めてください（[詳しく](docs/Cocoon.md#視界ジャック包まれ演出のしくみ)）。 |
 | 蜘蛛糸が重力でたわまない | パーティクルの糸をたわませるには、マテリアルにプリセット「粘液の吐き糸」か「乾いた糸＋重力のたゆみ」を当てたうえで、Particle System 側に 3 つの設定（Trails の Texture Mode を Tile・Custom Vertex Streams・Color over Trail の青チャンネルのグラデーション）が必要です（[詳しく](docs/SpiderSilk.md#重力のたゆみ)）。 |
+| 0.12.0 に上げたら、巣にくっついても遅くならない | 0.12.0 で「くっついている間の減速」（Slow Local When Stuck）を [vrc-restraint-scripts](https://github.com/mecaota/vrc-restraint-scripts) の `PlayerSpeedLimiter` へ移しました。restraint 0.4.0 以上を入れて `PlayerSpeedLimiter` を置き、巣の「Local Stuck Receivers」につないでください（[詳しく](docs/UdonGimmicks.md#くっついたときの通知local-stuck-receivers)）。 |
 | 0.11.0 に上げたら、自作のスクリプトでシェーダーが見つからない | 0.11.0 でシェーダー名を変えました。`mecaota/SpiderThreadTrail` → `mecaota/SpiderSilk`、`mecaota/SpiderCocoon` → `mecaota/Cocoon`、`mecaota/SpiderCocoonDepthDecal` → `mecaota/CocoonDecal`、`mecaota/SpiderCocoonProjectorMask` → `mecaota/CocoonProjector`、`mecaota/SpiderGooSilkSheet` → `mecaota/SpiderWebDrape` です（`mecaota/SpiderWeb` は変わりません）。マテリアルはシェーダーをファイルの GUID で覚えているので、そのまま使えます。`Shader.Find` などで名前を書いている場合だけ直してください。 |
 
 ## 開発者向け

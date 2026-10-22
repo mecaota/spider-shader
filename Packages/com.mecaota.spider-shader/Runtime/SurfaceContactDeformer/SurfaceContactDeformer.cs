@@ -2,6 +2,7 @@ using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 using VRC.SDK3.UdonNetworkCalling;
+using VRC.Udon;
 using VRC.Udon.Common.Interfaces;
 
 /// <summary>
@@ -40,8 +41,15 @@ using VRC.Udon.Common.Interfaces;
 ///   その点に面を追従させる
 /// ・pullOnly: くっついた後は「くっついた側へ引っ張る向き」と面に沿った向きにだけ追従し、
 ///   手足を面に近づけても面の奥へは凹ませない
-/// ・slowLocalWhenStuck: どこか 1 か所でもくっついている間、ローカルの移動速度を stuckSpeedRatio 倍に
-///   する（どのボーンでも同じ。manager がまとめて適用・解除する）
+///
+/// くっついたときの通知（localStuckReceivers）:
+/// ・ローカルプレイヤーがこの巣のどこか 1 か所でもくっついたら localStuckEvent、全部はがれたら localUnstuckEvent を、
+///   localStuckReceivers の各 UdonBehaviour へ SendCustomEvent で送る（ローカルのみ。2 つは必ず交互に送る）
+/// ・千切れ・リスポーンで解放を送った時点で「はがれた」とみなす（オーナーとの往復を待たない）。くっついている間に
+///   巣やマネージャが無効になったときも「はがれた」を送り、有効に戻ってまだくっついていれば送り直す
+/// ・restraint の PlayerSpeedLimiter に送れば「くっついている間の減速」になる（既定のイベント名は SubtractSpeed / AddSpeed。
+///   対で送るので、何枚の巣から同じ PlayerSpeedLimiter に送っても、全部はがれたら元に戻る）。イベント名で送るだけなので、
+///   このパッケージは restraint が無くてもコンパイルできる（以前の slowLocalWhenStuck はこの形で restraint へ移した）
 ///
 /// 面ごとの座標（boneSurfaces）:
 /// ・boneSurfaces[b] を与えると、ボーン b の接触判定・捕縛点ローカル座標・投影を
@@ -149,11 +157,15 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     [Tooltip("ON: くっついた後は引っ張る向き（くっついた側）と面に沿った向きにだけ追従し、手足を面に近づけても面の奥へは凹ませない")]
     public bool pullOnly = false;
 
-    [Tooltip("ON: ローカルプレイヤーがどこか 1 か所でもくっついている間、移動速度を stuckSpeedRatio 倍にする（manager が適用）")]
-    public bool slowLocalWhenStuck = false;
+    [Header("くっついたときの通知（任意）")]
+    [Tooltip("ローカルプレイヤーがこの巣にくっついた／全部はがれたときにイベントを送る UdonBehaviour（restraint の PlayerSpeedLimiter で減速するなど）。空なら送らない")]
+    public UdonBehaviour[] localStuckReceivers;
 
-    [Tooltip("くっついている間の移動速度の倍率（歩き・走り・横歩き）")]
-    public float stuckSpeedRatio = 1f / 3f;
+    [Tooltip("ローカルプレイヤーがどこか 1 か所でもくっついたときに送るイベント名")]
+    public string localStuckEvent = "SubtractSpeed";
+
+    [Tooltip("ローカルプレイヤーが全部はがれたときに送るイベント名（くっついている間にリスポーンしたときや、巣が無効になったときも送る）")]
+    public string localUnstuckEvent = "AddSpeed";
 
     [Header("粘液の糸（任意）")]
     [Tooltip("くっついた場所（面）とボーンの間に張る太い粘液の糸（LineRenderer。SpiderSilk の粘液マテリアル）。スロット番号ごとに 1 本、最大 MaxSlots 本。空なら糸は描かない")]
@@ -243,6 +255,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     // GameObject が有効で、この巣が動いている間だけ true。無効の間は同期も退室の掃除も届かず
     // スロットが古いまま残るので、外から読む API は「誰も付いていない」を返す
     private bool _live = false;
+    // localStuckReceivers へ最後に知らせた「ローカルプレイヤーがくっついているか」
+    private bool _localStuckNotified = false;
 
     private void EnsureInit()
     {
@@ -359,6 +373,9 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         _live = false;
         _slotVersion++;
+        // 無効の間はトリガーの出入りが届かないので、外にいる扱いに戻す（中にいれば、有効に戻ったときに入った通知が来る）
+        _localInside = false;
+        NotifyLocalStuck(false);
         if (_registered)
         {
             _registered = false;
@@ -382,6 +399,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private void UpdateRegistration()
     {
         EnsureInit();
+        NotifyLocalStuck(IsLocalHeld()); // スロットが変わると必ずここを通るので、登録を外す前にくっつき状態を見る
         bool want = _live && (_localInside || _occupiedCount > 0);
         if (want == _registered) { return; }
         _registered = want;
@@ -408,6 +426,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
             UpdateLocalContacts(local);
         }
         ApplyPull();
+        // 千切れで解放を送った瞬間や、解放の同期待ちが切れたときは、スロットが変わらなくても状態が変わるので毎フレーム見る
+        NotifyLocalStuck(IsLocalHeld());
 
         // トリガー外＆全スロット解放になったら登録を外す
         if (!_localInside && _occupiedCount == 0) { UpdateRegistration(); }
@@ -540,12 +560,14 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         ClaimSlotCore(playerId, boneIndex, anchorLocal, param);
     }
 
+    // 解放の要求に当てはまるスロットが無いときは、要求した人の手元に古いスロットが残っている（巣が無効の間に同期を
+    // 取りこぼしたなど）ので、今の状態を配り直す。配らないと、その人の手元ではくっついたままに見え続ける
     [NetworkCallable(20)]
     public void ReleaseSlot(int playerId, int boneIndex)
     {
         VRCPlayerApi caller = NetworkCalling.CallingPlayer;
         if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
-        ReleaseSlotCore(playerId, boneIndex);
+        if (!ReleaseSlotCore(playerId, boneIndex) && Networking.IsOwner(gameObject)) { RequestSerialization(); }
     }
 
     [NetworkCallable]
@@ -553,7 +575,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         VRCPlayerApi caller = NetworkCalling.CallingPlayer;
         if (Utilities.IsValid(caller) && caller.playerId != playerId) { return; }
-        ReleasePlayerCore(playerId);
+        if (!ReleasePlayerCore(playerId) && Networking.IsOwner(gameObject)) { RequestSerialization(); }
     }
 
     // 以下は実処理（オーナーのみ）。private なのでネットワークからは呼べない
@@ -581,26 +603,30 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         CommitSlots();
     }
 
-    private void ReleaseSlotCore(int playerId, int boneIndex)
+    // スロットを外したら true
+    private bool ReleaseSlotCore(int playerId, int boneIndex)
     {
         EnsureInit();
-        if (!Networking.IsOwner(gameObject)) { return; }
+        if (!Networking.IsOwner(gameObject)) { return false; }
         int slot = FindSlot(playerId, boneIndex);
-        if (slot < 0) { return; }
+        if (slot < 0) { return false; }
         ClearSlot(slot);
         CommitSlots();
+        return true;
     }
 
-    private void ReleasePlayerCore(int playerId)
+    // スロットを 1 つでも外したら true
+    private bool ReleasePlayerCore(int playerId)
     {
         EnsureInit();
-        if (!Networking.IsOwner(gameObject)) { return; }
+        if (!Networking.IsOwner(gameObject)) { return false; }
         bool changed = false;
         for (int i = 0; i < MaxSlots; i++)
         {
             if (_slotPlayer[i] == playerId) { ClearSlot(i); changed = true; }
         }
         if (changed) { CommitSlots(); }
+        return changed;
     }
 
     // スロットを書き換えた後（オーナーのみ）: 全員へ配り、登録を更新する。
@@ -671,6 +697,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         if (player == null || !player.isLocal) { return; }
         _ReleaseLocalBones();
+        NotifyLocalStuck(IsLocalHeld()); // 解放を送ったので「はがれた」になる（同期が届くのを待たない）
     }
 
     // 外部捕縛が終了したとき（無効化、席の解除を含む）。リスポーンの通常経路でも共有する。
@@ -1067,12 +1094,52 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         return (v.sqrMagnitude < 1e-8f) ? Vector3.zero : v;
     }
 
-    // ローカルプレイヤーがこの面にくっついているか（manager の減速判定用）
+    // ローカルプレイヤーがこの面にくっついているか
     public bool IsLocalStuck()
     {
         VRCPlayerApi local = Networking.LocalPlayer;
         if (local == null) { return false; }
         return HasSlotOf(local.playerId);
+    }
+
+    // 「くっついたときの通知」の判定: 自分のスロットがあり、そのボーンの解放を送って同期を待っている最中でない。
+    // 千切れ・リスポーンで解放を送った時点で「はがれた」とみなすので、オーナーとの往復を待たずに減速が戻る。
+    // 同期待ち（pendingTimeout 秒）が切れてもスロットが残っていれば、くっついている扱いに戻る
+    private bool IsLocalHeld()
+    {
+        if (!_live) { return false; }
+        VRCPlayerApi local = Networking.LocalPlayer;
+        if (local == null) { return false; }
+        int id = local.playerId;
+        float now = Time.time;
+        for (int i = 0; i < MaxSlots; i++)
+        {
+            if (_slotPlayer[i] != id) { continue; }
+            int b = _slotBone[i];
+            if (b >= 0 && b < _releaseUntil.Length && now < _releaseUntil[b]) { continue; }
+            return true;
+        }
+        return false;
+    }
+
+    // マネージャが無効になったとき（Tick が止まり、はがれたことに気付けなくなる）: 「はがれた」を送っておく。
+    // マネージャが有効に戻れば、次の Tick でまだくっついていれば送り直す
+    public void _OnManagerDisabled()
+    {
+        NotifyLocalStuck(false);
+    }
+
+    // くっついているかが変わったときだけ、localStuckReceivers へ知らせる（ローカルのみ）
+    private void NotifyLocalStuck(bool stuck)
+    {
+        if (stuck == _localStuckNotified) { return; }
+        _localStuckNotified = stuck;
+        string eventName = stuck ? localStuckEvent : localUnstuckEvent;
+        if (localStuckReceivers == null || eventName == null || eventName.Length == 0) { return; }
+        for (int i = 0; i < localStuckReceivers.Length; i++)
+        {
+            if (localStuckReceivers[i] != null) { localStuckReceivers[i].SendCustomEvent(eventName); }
+        }
     }
 
     private bool HasSlotOf(int playerId)

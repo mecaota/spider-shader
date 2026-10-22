@@ -23,7 +23,7 @@ MaterialPropertyBlock で渡す値は .mat に保存されず、インスペク�
 
 ## 接触追従の変形（SurfaceContactDeformer）
 
-地面に張った蜘蛛の巣に足を踏み入れると足が捕らわれ、**足を上げると巣がその部分だけ伸びる**表現です。巣の端（地面への係留）は動きません。見た目だけの表現で、プレイヤーの移動は拘束しません（任意で減速はできます）。手足が捕まった点から一定距離離れると「千切れて」元に戻ります。
+地面に張った蜘蛛の巣に足を踏み入れると足が捕らわれ、**足を上げると巣がその部分だけ伸びる**表現です。巣の端（地面への係留）は動きません。見た目だけの表現で、プレイヤーの移動は拘束しません（[くっついている間だけ遅くする](#くっついたときの通知local-stuck-receivers)こともできます）。手足が捕まった点から一定距離離れると「千切れて」元に戻ります。
 
 ### なぜ PhysBone ではないのか
 
@@ -127,10 +127,30 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 |---|---|---|
 | Segment Contact | OFF | ON で、ボーンの「点」ではなく「区間」（そのボーン → 子ボーン。すねなら膝 → 足首）と面の距離で判定する。区間を 9 点で調べ、手足の表面が初めて触れた瞬間にくっつき、触れた位置（区間上の割合）も同期する。接触距離は「区間の中心線から面まで」なので、手足の太さ＋少しの余裕にする |
 | Pull Only | OFF | ON で、くっついた後は引っ張る向きと面に沿った向きにだけ追従する。手足を面に近づけても面の奥へは凹まない |
-| Slow Local When Stuck | OFF | ON で、自分がどこか 1 か所でもくっついている間、歩き・走り・横歩きの速さを下の倍率にする（Manager が必要） |
-| Stuck Speed Ratio | 1/3 | くっついている間の速さの倍率 |
 
-- 減速は Manager がまとめて適用します。複数の巣にくっついても重ねがけせず、一番小さい倍率を 1 回だけかけます。解除は「自分が設定した速さのままのとき」だけ行うので、他のギミックが後から変えた速さは上書きしません。
+#### くっついたときの通知（Local Stuck Receivers）
+
+自分がこの巣にくっついた瞬間と、全部はがれた瞬間に、指定した UdonBehaviour へイベントを送ります（任意）。[vrc-restraint-scripts](https://github.com/mecaota/vrc-restraint-scripts) の `PlayerSpeedLimiter` に送ると、**くっついている間だけ歩く・走る・横歩きの速さを落とせます**（0 で動けない、0.5 で半分の速さ）。
+
+| 項目 | 既定値 | 説明 |
+|---|---|---|
+| Local Stuck Receivers | なし | イベントを送る UdonBehaviour（`PlayerSpeedLimiter` を付けた GameObject など）。空なら送らない |
+| Local Stuck Event | SubtractSpeed | どこか 1 か所でもくっついたときに送るイベント名 |
+| Local Unstuck Event | AddSpeed | 全部はがれたときに送るイベント名。くっついている間にリスポーンしたときや、巣・Manager の GameObject が無効になったときも送る |
+
+- イベントは自分のクライアントだけで、自分がくっついた／はがれたときだけ送ります（ほかの人がくっついても送りません）。速さはローカル専用の設定なので、同期は要りません。
+- 2 つのイベントは必ず交互に送ります（「くっついた」の次は必ず「はがれた」）。千切れたときやリスポーンしたときは、解放を送った時点で「はがれた」を送るので、通信の往復を待たずに速さが戻ります。
+- このパッケージは送るだけで、速さには触りません。イベント名で呼ぶだけなので、restraint が入っていないプロジェクトでもコンパイルできます。Web でいえば、巣は `dispatchEvent` するだけで、聞き手（`PlayerSpeedLimiter`）がいれば反応する、という関係です。
+- `PlayerSpeedLimiter` は、速さを `SetSpeed`（決めた倍率にする）・`AddSpeed` / `SubtractSpeed`（決めた量だけ増減）・`ResetSpeed`（元の速さに戻す）で変える汎用の部品です。巣は既定で、くっついたら `SubtractSpeed`、はがれたら `AddSpeed` を対で送ります。
+- 何枚の巣から同じ `PlayerSpeedLimiter` に送っても構いません。増減は範囲の外に出た分も覚えているので、全部はがれたときに必ず元の速さに戻ります。
+  - 何枚くっついても 1/3 にしたい（重ねて遅くしない）: `PlayerSpeedLimiter` の「Step Ratio」0.6667・「Min Ratio」0.3333
+  - くっついた巣が増えるほど遅くしたい: 「Step Ratio」を小さく（例: 0.3 なら 1 枚で 0.7 倍、2 枚で 0.4 倍）
+  - 巣ごとに遅さを変えたいときは、遅さごとに `PlayerSpeedLimiter` を分けます
+- 巣につなぐ `PlayerSpeedLimiter` は巣専用にしてください。RestraintCore やボタンから `SetSpeed` / `ResetSpeed` が届く部品と共有すると、巣が減らした分がリセットで消え、その後の「はがれた」で元より上の値が残って、次にくっついても遅くならなくなります。
+- `PlayerSpeedLimiter` は常に有効な場所に置き、実行中に「Local Stuck Receivers」やイベント名を差し替えないでください。無効の間に届いたイベントは捨てられるので、「くっついた」と「はがれた」の片方だけが届いて数がずれます。
+- 元の速さの保存と復元は restraint の `PlayerMovementLock` が受け持ちます。ほかのギミックの減速と重なっても、解除の順番に関係なく正しく戻ります。
+
+> 0.12.0 より前の「Slow Local When Stuck」「Stuck Speed Ratio」は、この形に置き換えました。上げると巣にくっついても遅くならなくなるので、`PlayerSpeedLimiter` を置いて「Local Stuck Receivers」につないでください。以前と同じ動き（何枚くっついても「Stuck Speed Ratio」の倍率。既定は 1/3）にするには、「Min Ratio」に以前の倍率、「Step Ratio」に 1 − 以前の倍率を入れます（1/3 なら 0.3333 と 0.6667）。
 
 #### 粘液の糸（Thread By Slot）
 
@@ -254,7 +274,8 @@ public class WebSlotScanner : UdonSharpBehaviour
 |---|---|
 | Bones | 次の 10 本をこの順に: LeftLowerLeg・RightLowerLeg（すね）、LeftUpperLeg・RightUpperLeg（もも）、LeftLowerArm・RightLowerArm（前腕）、LeftUpperArm・RightUpperArm（上腕）、Hips（腰）、Neck（首） |
 | Contact Distance By Bone | Bones と同じ順に 10 個: 0.09・0.09・0.12・0.12・0.07・0.07・0.08・0.08・0.15・0.08（m、区間の中心線から。すね 0.09 / もも 0.12 / 前腕 0.07 / 上腕 0.08 / 腰 0.15 / 首 0.08） |
-| Segment Contact / Pull Only / Slow Local When Stuck | ON / ON / ON（速さ 1/3） |
+| Segment Contact / Pull Only | ON / ON |
+| Local Stuck Receivers | 「Step Ratio」0.6667・「Min Ratio」0.3333（何枚くっついても速さ 1/3）の `PlayerSpeedLimiter`（restraint） |
 | Capture Only Below Surface | OFF（初めて触れたときにくっつく） |
 
 ### SurfaceContactDeformerManager
@@ -262,7 +283,6 @@ public class WebSlotScanner : UdonSharpBehaviour
 多数の巣を置くとき、各 Deformer が毎フレーム処理を回すと重くなります。シーンに 1 つ Manager を置き、各 Deformer の **Manager** に設定すると、Deformer は「誰かが捕縛中」か「自分がトリガーの中にいる」ときだけ Manager に登録され、そのときだけ処理されます（何もない間は Manager 1 つ分の負荷）。
 
 - 設定項目はありません。登録できる Deformer は最大 256 個です。
-- 「Slow Local When Stuck」の減速の適用と解除も Manager が行います。リスポーン時と無効化時には速さを元に戻します。
 - Manager を使う場合、Deformer はトリガーに入った時に登録されるので、**Require Trigger を OFF にしてもトリガーコライダーは必要**です。
 - Manager を設定しなくても、各 Deformer が自分で毎フレーム動きます（少数なら問題ありません）。
 
