@@ -3,7 +3,7 @@ using UnityEngine;
 using VRC.SDKBase;
 
 /// <summary>
-/// 網（mecaota/SpiderWeb・mecaota/SpiderGooSilkSheet。マテリアルの「体に覆いかぶさる変形」を ON）を
+/// 網（mecaota/SpiderWeb・mecaota/SpiderWebDrape。マテリアルの「体に覆いかぶさる変形」を ON）を
 /// プレイヤーの体にかぶせる駆動役（見た目のみ。プレイヤーの移動は拘束しない）。
 ///
 /// シェーダー（CGINC/SpiderWeb_Drape.cginc）は「体の形」と「網の位置・向き」を受け取って頂点を動かすだけなので、

@@ -25,15 +25,15 @@ float  _ThreadDensity;        // 巻き数の倍率（_WindingCount に乗算し
 float  _FiberAngle;           // 基準の糸の角度（度）。0=軸に平行、±で傾く（連続値）
 
 // ---- 質感（トゥーン・リム・粘液の色と光沢。5 シェーダー共通） ------------
-// 宣言は SpiderSilk_Look.cginc の 1 か所だけ。巣・繭・デカールはこの値を
+// 宣言は SpiderSilk_Look.cginc の 1 か所だけ。巣・繭・繭デカールはこの値を
 // 「継承元の蜘蛛糸マテリアル」から受け継ぐ（Editor/SpiderSilkLook.cs）。
 #include "SpiderSilk_Look.cginc"
 
-// ---- 乾いた糸モード（SpiderThreadTrail の _GOO_ON オフ）専用の陰影 --------
+// ---- 乾いた糸モード（SpiderSilk の _GOO_ON オフ）専用の陰影 --------
 float4 _ShadowColor;          // 影部の着色（質感の継承はしない）
 
 // ---- 粘液の「形」: 複数のシェーダーが同じ名前で使うが、単位・意味はシェーダーごとに違う
-// 例: _GooBeadFreq は 吐いた糸=uv.x 1 あたり / 巣=UV 1 あたり / 繭=糸方向 UV 1 あたり。
+// 例: _GooBeadFreq は 蜘蛛糸=uv.x 1 あたり / 巣=UV 1 あたり / 繭=糸方向 UV 1 あたり。
 // 単位が違うので質感の継承はしない（各マテリアルの値をそのまま使う）。
 // 同じ名前を 2 回宣言するとコンパイルエラーになるため、ここで 1 回だけ宣言する
 // （使わないシェーダーではコンパイラが削るのでコストは無い）。
@@ -70,7 +70,7 @@ float  _VisionJackInMirror;   // ミラー内でも発火するか 0/1
 float  _JackRadius;           // 内壁（楕円体）の半径倍率（発火判定半径に乗算）
 float  _JackStretch;          // 内壁が上下に閉じるまでの縦距離の倍率
 
-// ---- 揺れアニメ（SpiderWeb / SpiderCocoon 本体で共有） --------------------
+// ---- 揺れアニメ（SpiderWeb / Cocoon 本体で共有） --------------------
 float  _SwayAnimEnable;       // 0/1。UVドメインを歪ませて糸を揺らす
 float  _SwayAnimAmount;       // 揺れ幅（UV単位）
 float  _SwayAnimSpeed;        // 揺れの速さ

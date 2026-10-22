@@ -1,10 +1,10 @@
 // =============================================================================
-// SpiderCocoonDepthDecal.shader — 深度デカールでプレイヤー体表に繭 (VRChat / Built-in RP)
+// CocoonDecal.shader — 繭デカールシェーダー（深度デカールでプレイヤー体表に繭） (VRChat / Built-in RP)
 //
 //  胴を囲むボックスメッシュに貼る「スクリーンスペース深度デカール」。
 //  各画素で _CameraDepthTexture を読み、その先の表面（＝アバター）のワールド
 //  座標を復元。その点を「このボックスのローカル空間」へ変換し、ボックスの
-//  内接円筒（local XZ 半径・local Y 高さ）の中なら、本体 SpiderCocoon と
+//  内接円筒（local XZ 半径・local Y 高さ）の中なら、本体 Cocoon と
 //  同じ手続き糸を描く。実アバター表面のシルエットにピクセル単位で沿う＝張り付き。
 //  スクリプト駆動の uniform は不要（体軸はボックスの Transform から導出）。
 //
@@ -24,11 +24,11 @@
 //  ★ 視界ジャック（包まれ演出）: カメラが殻円筒の内側に入ると、カメラの周囲に
 //     繭の内壁（紡錘形楕円体）を「実寸の深度付き」で描く。壁より手前にある
 //     自分のアバターの体などは遮られず見える＝繭に包まれている見え方。
-//     実装は SpiderCocoon 本体と共通（CGINC/SpiderCocoon_VisionJack.cginc）。
+//     実装は Cocoon 本体と共通（CGINC/SpiderCocoon_VisionJack.cginc）。
 //     （近クリップ対策として、ジャック中はボックスを頂点で拡大する）
 //
 //  ★ 質感: 本体と同じ粘液の帯（CGINC/SpiderCocoon_Goo.cginc）。平たい帯を奥→手前へ
-//     重ね、上の帯の縁が下の帯に影を落とす。塗りは吐いた糸・蜘蛛の巣と共通
+//     重ね、上の帯の縁が下の帯に影を落とす。塗りは蜘蛛糸・蜘蛛の巣と共通
 //     （SpiderGoo_Shading.cginc）。粘液感（_GooAmount）を下げると乾いた細い糸に近づく。
 //
 //  ★ くっついた繭を 1 つに（CGINC/SpiderCocoon_Group.cginc）: CocoonGroupLinker（Udon）が
@@ -55,14 +55,14 @@
 //     - ワールドに「影付きリアルタイム Directional Light」（_CameraDepthTexture 供給）。
 //     - Quest は screen-space 非対応（PC 専用）。
 // =============================================================================
-Shader "mecaota/SpiderCocoonDepthDecal"
+Shader "mecaota/CocoonDecal"
 {
     Properties
     {
         // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
-        //   （吐いた糸・巣・繭・デカール・ねばねばネット）で
+        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・デカール・ねばねばネットではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・繭デカール・蜘蛛の巣ドレープではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分け・共通/固有の区別は CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は Editor スクリプトが無い環境（標準インスペクタ）向けの
         // フォールバック表示。カスタム GUI 側は Header 装飾をスキップして描くため
@@ -99,7 +99,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         _LayerPosStepY      ("レイヤー位置ステップ Y 軸 (Pos Step Y)", Float) = 0.0
         _LayerThicknessFalloff ("奥レイヤーの減衰 (Thickness Falloff)", Range(0, 1)) = 0.0
 
-        // ---- 粘液の質感（吐いた糸・蜘蛛の巣と同じ塗り） ----
+        // ---- 粘液の質感（蜘蛛糸・蜘蛛の巣と同じ塗り） ----
         // 粘液感を下げると太り・玉・膜・ツヤ・透けが一緒に弱まる（0 で乾いた細い糸）
         [Header(Goo Shape)]
         _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))       = 1
@@ -181,12 +181,12 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         //   （SpiderCocoonShaderGUI）がこの値と自動で揃える。スクリプトで値を変えるときはキーワードも一緒に変えること
         //   （material.EnableKeyword("SC_SURFACE_NET") / DisableKeyword）。キーワードが無ければ 0（繭の帯）として描く。
         //   0 = 従来の繭の帯（斜めに交差して巻いた粘液の帯）
-        //   1 = ねばねばネット（mecaota/SpiderGooSilkSheet）風: 粘液の束が平行に並び、間の膜に穴が空く。
+        //   1 = 蜘蛛の巣ドレープ（mecaota/SpiderWebDrape）風: 粘液の束が平行に並び、間の膜に穴が空く。
         //       長さの単位は m（ネットのメッシュ UV 1 = 1 m と同じ数字でよい）。巻きアニメは高さで現れる簡易版。
-        //       束・膜の設定は吐いた糸（SpiderThreadTrail の粘液モード）・ネットと同じ名前・意味。
+        //       束・膜の設定は蜘蛛糸（SpiderSilk の粘液モード）・ネットと同じ名前・意味。
         //       玉の 2 つだけは繭の _GooBeads と名前がぶつかるので _SheetBeads / _SheetBeadFreq。
         [Header(Surface Style)]
-        [Enum(Cocoon Bands,0,Sticky Net,1)] _SurfaceStyle ("表面の模様 0=繭の帯 1=ねばねばネット (Surface Style)", Float) = 0
+        [Enum(Cocoon Bands,0,Sticky Net,1)] _SurfaceStyle ("表面の模様 0=繭の帯 1=蜘蛛の巣ドレープ (Surface Style)", Float) = 0
         _SheetBandWidth     ("粘液の帯の幅 m (Band Width)", Range(0.02, 0.5)) = 0.12
         _SheetRotation      ("帯の向き 角度 0=体の周りを水平 (Band Rotation)", Range(0, 180)) = 10
         _SheetAlongScale    ("帯に沿った模様の細かさ (Along Scale)", Range(0.1, 10)) = 3
@@ -232,14 +232,14 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         [IntRange] _StencilRef ("ステンシル ビット (Stencil Bit)", Range(0, 255)) = 128
         // 体表の glue（Pass 2/3）を描く画素のステンシル条件: (stencil & ReadMask) == Ref。
         //   既定 Ref 0 / ReadMask 208 = ジャックのビット(_StencilRef 128)、蜘蛛糸の芯のビット
-        //   （SpiderThreadTrail の _SilkStencilBit 64）、蜘蛛の体のビット 16 のどれも立っていない画素に描く。
+        //   （SpiderSilk の _SilkStencilBit 64）、蜘蛛の体のビット 16 のどれも立っていない画素に描く。
         //   糸は繭より先に描かれ、芯にビット 64 を立てる。蜘蛛の体（Chaise の皮膚・spider.mat 系の体）は
         //   見えている画素にビット 16 を立てる。どちらも ZTest Always の glue が手前の糸・蜘蛛の脚を上塗りしないための目印。
         //   （2026-10-14: 192 → 208。以前は手前の蜘蛛の脚に奥の被害者ののりが塗られていた）
-        //   Projector マスク（SpiderCocoonProjectorMask）と組むギミックは Ref 32 / ReadMask 240
+        //   Projector マスク（CocoonProjector）と組むギミックは Ref 32 / ReadMask 240
         //   = 受け手ビット 32 が立ち、かつ 128 / 64 / 16 が立っていない画素だけに描く（床・壁へ漏れない）。
         //   どれかのビットを付け替えたら本体・デカール・糸・マスク・蜘蛛の体のマテリアルで揃えること。
-        [IntRange] _GlueStencilRef      ("glue を描く画素のステンシル値 0=従来 32=受け手マスク (Glue Stencil Ref)", Range(0, 255)) = 0
+        [IntRange] _GlueStencilRef      ("glue を描く画素のステンシル値 0=従来 32=繭プロジェクター (Glue Stencil Ref)", Range(0, 255)) = 0
         [IntRange] _GlueStencilReadMask ("glue のステンシル比較ビット 208=ジャック+糸+蜘蛛の体 240=+受け手 (Glue Stencil ReadMask)", Range(0, 255)) = 208
 
         // エディタ専用: 質感の継承元（蜘蛛糸マテリアル）の目印。描画には使わない（HLSL では宣言しない）。
@@ -264,7 +264,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
         #include "CGINC/SpiderCocoon_Lighting.cginc"
         #include "CGINC/SpiderCocoon_Compose.cginc"
         #include "CGINC/SpiderGoo_Shading.cginc"
-        // 表面の模様「ねばねばネット」（_SurfaceStyle）を使えるようにする。Goo の後に Sheet を読む
+        // 表面の模様「蜘蛛の巣ドレープ」（_SurfaceStyle）を使えるようにする。Goo の後に Sheet を読む
         #define SC_COCOON_SHEET_STYLE
         #include "CGINC/SpiderCocoon_Goo.cginc"
         #include "CGINC/SpiderCocoon_Sheet.cginc"
@@ -669,7 +669,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragJackDepth
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
 
             fixed4 fragJackDepth(v2f_d i, out float outDepth : SV_Depth) : SV_Target
             {
@@ -717,7 +717,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragJack
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
 
             fixed4 fragJack(v2f_d i, out float outDepth : SV_Depth) : SV_Target
             {
@@ -769,7 +769,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragMain
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
 
             fixed4 fragMain(v2f_d i) : SV_Target
             {
@@ -1020,7 +1020,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragMirror
             #pragma target   3.5
             #pragma multi_compile_instancing
-            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
 
             fixed4 fragMirror(v2f_d i) : SV_Target
             {
@@ -1151,7 +1151,7 @@ Shader "mecaota/SpiderCocoonDepthDecal"
             #pragma fragment fragGroupShell
             #pragma target 3.5
             #pragma multi_compile_instancing
-            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 でねばねばネット。インスペクタが揃える）
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
             fixed4 fragGroupShell(v2f_d i, out float depth : SV_Depth) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);

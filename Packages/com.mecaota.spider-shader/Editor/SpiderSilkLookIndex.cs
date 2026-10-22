@@ -6,7 +6,7 @@ using UnityEngine;
 
 // =============================================================================
 // SpiderSilkLookIndex — プロジェクト内の「蜘蛛糸マテリアル（継承元）」と
-// 「巣・繭・デカール・ねばねばネットのマテリアル（継承先）」の一覧。
+// 「巣・繭・繭デカール・蜘蛛の巣ドレープのマテリアル（継承先）」の一覧。
 //
 //  全マテリアルを読み込むと重いので、.mat ファイルの先頭（m_Shader の行）から
 //  蜘蛛シェーダーの GUID を探して絞り込み、当たったものだけを読み込む。
@@ -14,7 +14,7 @@ using UnityEngine;
 //  読み込み済みで未保存（dirty）のマテリアルはメモリ上のシェーダーで判定して足す。
 //  .mat の取り込み・削除・移動（postprocessor）は、その .mat だけを反映する。
 //  蜘蛛シェーダーの取り込みや、蜘蛛シェーダーとそれ以外の切り替え（ObjectChangeEvents）では全体を作り直す。
-//  蜘蛛シェーダーどうしの切り替え（吐いた糸 ↔ 巣など）は、その .mat だけを反映する。
+//  蜘蛛シェーダーどうしの切り替え（蜘蛛糸 ↔ 巣など）は、その .mat だけを反映する。
 // =============================================================================
 public static class SpiderSilkLookIndex
 {
@@ -52,7 +52,7 @@ public static class SpiderSilkLookIndex
     /// <summary>一覧（継承元・継承先）に入っているか。</summary>
     public static bool Contains(Material m) { Ensure(); return m != null && s_All.Contains(m); }
 
-    /// <summary>GUID の先頭 18 桁から継承元（吐いた糸のマテリアル）を探す。</summary>
+    /// <summary>GUID の先頭 18 桁から継承元（蜘蛛糸のマテリアル）を探す。</summary>
     public static Material FindSourceByPrefix(string prefix)
     {
         if (string.IsNullOrEmpty(prefix)) return null;

@@ -13,7 +13,7 @@ using UnityEngine.Rendering;
 //  同じ行を書き写して管理している。書き写し漏れ（範囲・既定値の違いなど）があると
 //  「継承元の値をそのまま写す」前提が崩れるので、ここで機械的に確かめる。
 //   ・Properties: 型・範囲・既定値（完全一致）・フラグ・属性（[Header] などの装飾は除く）
-//   ・_SilkLookLink が巣・繭・デカール・ねばねばネットにだけある（Vector・既定値 0・HideInInspector）
+//   ・_SilkLookLink が巣・繭・繭デカール・蜘蛛の巣ドレープにだけある（Vector・既定値 0・HideInInspector）
 //   ・HLSL: 質感 21 個の uniform 宣言は CGINC/SpiderSilk_Look.cginc の 1 か所だけ
 //
 //  実行: メニュー Tools/SpiderShader/質感プロパティの一致チェック、
@@ -81,7 +81,7 @@ public static class SpiderSilkLookValidator
                 var s = shaders[k];
                 int si = s.FindPropertyIndex(p.Name);
                 string head = "[蜘蛛糸の質感チェック] " + Short(s) + " の " + p.Name + ": ";
-                string tail = "。" + Short(s) + ".shader の Properties のこの行を SpiderThreadTrail.shader と同じ「型・範囲・既定値」にしてください（一覧: Editor/SpiderSilkLook.cs）";
+                string tail = "。" + Short(s) + ".shader の Properties のこの行を SpiderSilk.shader と同じ「型・範囲・既定値」にしてください（一覧: Editor/SpiderSilkLook.cs）";
                 if (si < 0) { problems.Add(head + "プロパティがありません" + tail); continue; }
                 var sType = s.GetPropertyType(si);
                 if (sType != tType) { problems.Add(head + "型 " + sType + " が蜘蛛糸の " + tType + " と違います" + tail); continue; }
@@ -111,7 +111,7 @@ public static class SpiderSilkLookValidator
 
         // リンク用の隠しプロパティ
         if (t.FindPropertyIndex(SpiderSilkLook.LinkProperty) >= 0)
-            problems.Add(t.name + " に " + SpiderSilkLook.LinkProperty + " があります（継承先の巣・繭・デカール・ねばねばネットだけが持つプロパティです）");
+            problems.Add(t.name + " に " + SpiderSilkLook.LinkProperty + " があります（継承先の巣・繭・繭デカール・蜘蛛の巣ドレープだけが持つプロパティです）");
         for (int k = 1; k < shaders.Length; k++)
         {
             var s = shaders[k];

@@ -4,7 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>既存 ShaderGUI から呼ぶ、ねばねばネット（粘液シート）の焼き込み状態と明示的な再生成ボタン。</summary>
+/// <summary>既存 ShaderGUI から呼ぶ、蜘蛛の巣ドレープ（粘液シート）の焼き込み状態と明示的な再生成ボタン。</summary>
 internal static class SpiderGooSheetBakePanel
 {
     public static void Draw(MaterialEditor editor)
@@ -13,7 +13,7 @@ internal static class SpiderGooSheetBakePanel
         if (!SpiderGooSheetBaker.IsBaked(material)) return;
         if (!SpiderCocoonShaderGUI.DrawSectionFoldout("焼き込みの状態", new Color(0.80f, 0.92f, 0.70f))) return;
         EditorGUILayout.HelpBox("帯の幅・向き・沿った長さ、帯の中の形（束・玉・膜・蛇行）、模様のずれ、膜の外形の半径を変えたら焼き直してください。質感の「粘液感」も形を変えます。色・光沢・全層の厚さ・回転・層数・層ごとの太さは焼き直し不要です。", MessageType.Info);
-        EditorGUILayout.HelpBox("吐いた糸の粘液の帯をすき間なく並べた模様を焼き、層ごとに少し回転・ずらして重ねます。Pull による変形と Drape（体に覆いかぶさる変形）はそのまま使えます。", MessageType.None);
+        EditorGUILayout.HelpBox("蜘蛛糸の粘液の帯をすき間なく並べた模様を焼き、層ごとに少し回転・ずらして重ねます。Pull による変形と Drape（体に覆いかぶさる変形）はそのまま使えます。", MessageType.None);
         EditorGUILayout.HelpBox("圧縮は BC5（距離・半径）＋BC7（補助）。被覆率は両モードとも R8 です。切り替え後に焼き直すと別の配列を生成します。", MessageType.Info);
         bool allCurrent = true;
         foreach (UnityEngine.Object target in editor.targets)
@@ -88,7 +88,7 @@ internal static class SpiderGooSheetBakePanel
                 if (sync.Problems.Count > 0) throw new InvalidOperationException(string.Join("\n", sync.Problems));
                 string hash = SpiderGooSheetBaker.Describe(material).Hash;
                 SpiderGooSheetBaker.Bake(material, generated.Add(hash));
-                Debug.Log("ねばねばネット（粘液シート）を焼き直しました: " + material.name, material);
+                Debug.Log("蜘蛛の巣ドレープ（粘液シート）を焼き直しました: " + material.name, material);
             }
             catch (Exception e) { Debug.LogException(e, material); }
         }

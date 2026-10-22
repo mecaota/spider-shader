@@ -8,8 +8,8 @@ using UnityEngine.Rendering;
 // =============================================================================
 // SpiderSilkLook — 「蜘蛛糸の質感」の継承を扱う中心クラス（エディタ専用・実行時の処理はゼロ）。
 //
-//  吐いた糸（SpiderThreadTrail）のマテリアルを「継承元」にして、巣（SpiderWeb）・
-//  繭（SpiderCocoon）・デカール・ねばねばネット系（四角・絡みつき・水玉）へ、色・陰影・
+//  蜘蛛糸（SpiderSilk）のマテリアルを「継承元」にして、巣（SpiderWeb）・
+//  繭（Cocoon）・デカール・蜘蛛の巣ドレープ系（四角・絡みつき・水玉）へ、色・陰影・
 //  ツヤ・トゥーン・リムなど 21 個の値（Props）を書き写す。
 //  Web でいえば「元データ（継承元）から派生データ（継承先の値）を作り直す」仕組みで、
 //  継承先の質感は常に継承元から計算し直して決まる（継承先では編集しない）。
@@ -26,16 +26,16 @@ using UnityEngine.Rendering;
 // =============================================================================
 public static class SpiderSilkLook
 {
-    public const string SourceShaderName = "mecaota/SpiderThreadTrail";
+    public const string SourceShaderName = "mecaota/SpiderSilk";
     public static readonly string[] InheritorShaderNames =
-        { "mecaota/SpiderWeb", "mecaota/SpiderCocoon", "mecaota/SpiderCocoonDepthDecal",
-          "mecaota/SpiderGooSilkSheet" };
+        { "mecaota/SpiderWeb", "mecaota/Cocoon", "mecaota/CocoonDecal",
+          "mecaota/SpiderWebDrape" };
 
     /// <summary>継承先に「どの蜘蛛糸マテリアルを継承元にするか」を記録する隠しプロパティ（描画には使わない）。</summary>
     public const string LinkProperty = "_SilkLookLink";
     const float LinkedFlag = 2f;   // _SilkLookLink.w: 0=継承元なし（既定値） / 2=リンクあり
 
-    /// <summary>シェーダーの役割。継承元になれるのは吐いた糸シェーダーだけ。</summary>
+    /// <summary>シェーダーの役割。継承元になれるのは蜘蛛糸シェーダーだけ。</summary>
     public enum Role { None, Source, Inheritor }
     /// <summary>None=継承元なし（シェーダー既定値）/ Linked=つながっている / Broken=継承元が見つからない（値は止めて警告）。</summary>
     public enum LinkState { None, Linked, Broken }
@@ -178,14 +178,14 @@ public static class SpiderSilkLook
         return sb.ToString();
     }
 
-    /// <summary>継承元として使えるか（吐いた糸シェーダーの .mat アセット本体か）。null は「継承元なし」として OK。</summary>
+    /// <summary>継承元として使えるか（蜘蛛糸シェーダーの .mat アセット本体か）。null は「継承元なし」として OK。</summary>
     public static bool TryValidateSource(Material candidate, out string reason)
     {
         reason = null;
         if (candidate == null) return true;
         if (GetRole(candidate.shader) != Role.Source)
         {
-            reason = "継承元にできるのは吐いた糸（" + SourceShaderName + "）のマテリアルだけです";
+            reason = "継承元にできるのは蜘蛛糸（" + SourceShaderName + "）のマテリアルだけです";
             return false;
         }
         string path = AssetDatabase.GetAssetPath(candidate);

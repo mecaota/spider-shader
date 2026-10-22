@@ -3,7 +3,7 @@
 
 // ---------------------------------------------------------------------------
 // SpiderCocoon_Group.cginc
-// 近くにある巻き付き繭（SpiderCocoonDepthDecal）どうしを「1 つの繭」として描く仕組み。
+// 近くにある巻き付き繭（CocoonDecal）どうしを「1 つの繭」として描く仕組み。
 //
 // ■ 何をしているか（シェーダー初心者向け）
 //   シェーダーは「自分の箱」のことしか知らないので、近くの繭との関係は
@@ -22,7 +22,7 @@
 //       繭どうしの継ぎ目や二重描きが起きない
 //   グループに入っていない繭（_GroupRole=0）は従来どおり自分の円筒だけを巻く。
 //
-// 前提: _ProjectRange / _GlueThickness が宣言済み（SpiderCocoonDepthDecal.shader の CGINCLUDE）
+// 前提: _ProjectRange / _GlueThickness が宣言済み（CocoonDecal.shader の CGINCLUDE）
 // ---------------------------------------------------------------------------
 
 // ---- CocoonGroupLinker が MaterialPropertyBlock で渡す（Properties には書かない） ----

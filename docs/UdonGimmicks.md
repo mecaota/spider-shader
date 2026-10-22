@@ -6,10 +6,10 @@
 
 | ギミック | 同梱 | 対応シェーダー | 何ができるか |
 |---|---|---|---|
-| [接触追従の変形](#接触追従の変形surfacecontactdeformer) | ○ `SurfaceContactDeformer` | 蜘蛛の巣・繭・ねばねばネット | 手足が触れた所が貼り付き、上げると伸び、押すと凹む |
+| [接触追従の変形](#接触追従の変形surfacecontactdeformer) | ○ `SurfaceContactDeformer` | 蜘蛛の巣・繭・蜘蛛の巣ドレープ | 手足が触れた所が貼り付き、上げると伸び、押すと凹む |
 | [繭のまとめ描き](#繭のまとめ描きcocoongrouplinker) | ○ `CocoonGroupLinker` | 体に張り付く繭 | くっついた複数の繭を、同じ糸でまとめて巻いたように描く |
-| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・ねばねばネット | 投げた網が体の形に沿ってかぶさる |
-| [受け手マスクの駆動](SpiderCocoonProjectorMask.md#駆動スクリプトspidercocoonprojectormaskdriver) | ○ `SpiderCocoonProjectorMaskDriver` | 受け手マスク（体に張り付く繭と組む） | 体に張り付く繭を、捕まった人のアバターにだけ描く |
+| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・蜘蛛の巣ドレープ | 投げた網が体の形に沿ってかぶさる |
+| [繭プロジェクターの駆動](CocoonProjector.md#駆動スクリプトspidercocoonprojectormaskdriver) | ○ `SpiderCocoonProjectorMaskDriver` | 繭プロジェクター（体に張り付く繭と組む） | 体に張り付く繭を、捕まった人のアバターにだけ描く |
 
 **前提**: VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）が入ったプロジェクトが必要です。
 
@@ -39,7 +39,7 @@ MaterialPropertyBlock で渡す値は .mat に保存されず、インスペク�
 ### セットアップ
 
 1. 面のメッシュを用意します。平面の巣は **Tools > SpiderShader > Generate WebPlane Mesh...** で作った WebPlane を使います（Unity 標準の Plane は分割が粗すぎます）。球・円柱は標準メッシュでも動きますが、細かく変形させるには細かく分割したメッシュが必要です。
-2. MeshRenderer に、蜘蛛の巣・繭・ねばねばネットのマテリアルを入れ、「接触追従の変形 有効」を ON にします。
+2. MeshRenderer に、蜘蛛の巣・繭・蜘蛛の巣ドレープのマテリアルを入れ、「接触追従の変形 有効」を ON にします。
 3. マテリアルの **Enable GPU Instancing を OFF**、GameObject の **Static（Batching Static）を OFF** にします。
 4. 同じ GameObject に**トリガーコライダー**（Is Trigger を ON）を付けます。範囲は面とその上の手足が入るくらいにします。
 5. 同じ GameObject に `SurfaceContactDeformer` を追加し、**Target Renderer** にその Renderer、**Bones** に追従させたいボーンを設定します（同期モードは自動で Manual になります）。
@@ -47,12 +47,12 @@ MaterialPropertyBlock で渡す値は .mat に保存されず、インスペク�
 
 ### シェーダー側の設定（接触追従の変形）
 
-蜘蛛の巣・繭・ねばねばネットのインスペクタの「接触追従の変形（固有）」にある項目です。
+蜘蛛の巣・繭・蜘蛛の巣ドレープのインスペクタの「接触追従の変形（固有）」にある項目です。
 
 | 表示名 | 内部名 | 既定値 | 説明 |
 |---|---|---|---|
 | 接触追従の変形 有効 | `_PullEnable` | OFF | ON で変形する。OFF なら頂点はまったく動かない |
-| 引っ張り半径 m | `_PullRadius` | 巣 0.5 / 繭 0.3 / ねばねばネット 0.5 | 捕縛点からこの距離以内の頂点が引かれる。外は動かない |
+| 引っ張り半径 m | `_PullRadius` | 巣 0.5 / 繭 0.3 / 蜘蛛の巣ドレープ 0.5 | 捕縛点からこの距離以内の頂点が引かれる。外は動かない |
 | 減衰の鋭さ | `_PullFalloff` | 1.5 | 大きいほど捕縛点の近くだけが鋭く持ち上がる |
 | 引っ張り強さ | `_PullStrength` | 1 | 1 で捕縛点が手足に完全に追従する |
 | 千切れ開始距離 m 0で無効 | `_PullMaxStretch` | 0 | 伸びがこの距離を超えると糸が千切れて戻り始める |
@@ -80,7 +80,7 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 | Manager | なし | `SurfaceContactDeformerManager`。多数の巣を置くときに設定（下の「Manager」） |
 | Bones | 左右のすね | 追従するボーンの配列（任意の本数）。面に触れたものから順に捕縛される |
 | Bone Surfaces | なし | `Bones` と並行。1 つの Renderer に複数の面をまとめたメッシュで、ボーンごとに別の面を基準にしたいとき指定。空なら自分の Transform |
-| Wrap By Bone | なし | `Bones` と並行。捕縛されたボーンに付ける GameObject（[体に張り付く繭](SpiderCocoonDepthDecal.md)の Cube など）。捕縛中はそのボーンの位置・向きへ毎フレーム追従し、解放で非表示になる。UdonBehaviour の無い普通の GameObject で構わない |
+| Wrap By Bone | なし | `Bones` と並行。捕縛されたボーンに付ける GameObject（[繭デカール](CocoonDecal.md)の Cube など）。捕縛中はそのボーンの位置・向きへ毎フレーム追従し、解放で非表示になる。UdonBehaviour の無い普通の GameObject で構わない |
 | Wrap Scale By Bone | なし | `Bones` と並行。Wrap のスケール（円柱なら 直径×高さ×直径）。0 なら変えない |
 | Decors | なし | 誰か 1 人でも捕縛中のときだけ表示する装飾 |
 
@@ -147,7 +147,7 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 
 LineRenderer の設定:
 
-- マテリアルは [吐いた糸](SpiderThreadTrail.md) の粘液モードのマテリアルを使います。たるみの値はスクリプトが MaterialPropertyBlock で設定します。
+- マテリアルは [蜘蛛糸](SpiderSilk.md) の粘液モードのマテリアルを使います。たるみの値はスクリプトが MaterialPropertyBlock で設定します。
 - **Texture Mode は Stretch**（糸全体で uv.x が 0〜1 になる前提）。Tile だとたるみが先頭 1 m にしかかかりません。
 - **Use World Space は ON**。
 - 初期状態は無効で構いません。使うときにスクリプトが有効にします。
@@ -304,7 +304,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 ## 繭のまとめ描き（CocoonGroupLinker）
 
-両手首を合わせた・手を胸に当てた・両足をそろえた、などのときに、くっついた[体に張り付く繭](SpiderCocoonDepthDecal.md)を「同じ糸でまとめて巻かれた」1 つの繭として描きます。見た目だけで、同期はしません。
+両手首を合わせた・手を胸に当てた・両足をそろえた、などのときに、くっついた[繭デカール](CocoonDecal.md)を「同じ糸でまとめて巻かれた」1 つの繭として描きます。見た目だけで、同期はしません。
 
 ### しくみ
 
@@ -312,7 +312,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 - 円筒は体より太めなので、半径に「Link Radius Scale」（既定 0.5）を掛けたものを「巻かれた手足の太さ」とみなします。その表面どうしが「Link Distance」（既定 0.02 m）以内の繭を 1 グループにまとめます。腕を下ろして手首が太ももの横にあるだけ・両足が並んでいるだけでは、まとまりません。
 - グループの中で一番大きい繭を**代表**にします（一度まとまった後は、離れるまで同じ代表を保ちます）。代表は仲間全員の円筒の範囲を、共通の向きの帯で巻きます。代表以外は描きません。描く箱が 1 つなので、継ぎ目や二重描きが出ません。
 - 巻く軸は「大きい繭ほど強く引き寄せる」重み付きの位置に置き、部位ごとの軸にも沿わせます（強さは繭のマテリアルの「部位の軸に沿う強さ」）。
-- 繭のマテリアルの「まとめ描きの膨らみ」が 0 より大きいと、仲間の円筒から計算した厚い外殻として描き、近い部位の間も外皮でつなぎます（[設定](SpiderCocoonDepthDecal.md#繭まとめ描きのボリューム固有)）。
+- 繭のマテリアルの「まとめ描きの膨らみ」が 0 より大きいと、仲間の円筒から計算した厚い外殻として描き、近い部位の間も外皮でつなぎます（[設定](CocoonDecal.md#繭まとめ描きのボリューム固有)）。
 
 ### セットアップ
 
@@ -368,7 +368,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 ## 体に覆いかぶさる変形（Drape）
 
-投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)と[ねばねばネット](SpiderGooSilkSheet.md)が対応しています。
+投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)と[蜘蛛の巣ドレープ](SpiderWebDrape.md)が対応しています。
 
 体の形（ボーンから作ったカプセル）と網の位置・向きを、Udon が MaterialPropertyBlock で毎フレーム渡します。パッケージには、そのための汎用の駆動スクリプト [SpiderWebDrapeDriver](#駆動スクリプトspiderwebdrapedriver) が入っています。値が渡されない間は、変形は何も起きません。作者のワールドでは、網の飛行や着弾の同期まで含めた独自の `CaptureNetDrape` で駆動しています（[開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯)）。
 
@@ -412,7 +412,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 **セットアップ**:
 
-1. 網の GameObject を作り、MeshFilter に WebPlane（**Tools > SpiderShader > Generate WebPlane Mesh...** で生成）、MeshRenderer に蜘蛛の巣かねばねばネットのマテリアルを入れます。マテリアルの「体に覆いかぶさる変形 有効」を ON にします（蜘蛛の巣ならプリセット「覆いかぶさる捕獲網」）。
+1. 網の GameObject を作り、MeshFilter に WebPlane（**Tools > SpiderShader > Generate WebPlane Mesh...** で生成）、MeshRenderer に蜘蛛の巣か蜘蛛の巣ドレープのマテリアルを入れます。マテリアルの「体に覆いかぶさる変形 有効」を ON にします（蜘蛛の巣ならプリセット「覆いかぶさる捕獲網」）。
 2. 同じ GameObject（または別の GameObject）に `SpiderWebDrapeDriver` を付け、Target Renderer に 1 の MeshRenderer を入れます。
 3. 網の GameObject の Static はすべて OFF、マテリアルの GPU Instancing も OFF にします。
 4. 別の UdonSharp スクリプトから `DrapeThrown` か `DrapeFromAbove` を呼びます。試すだけなら、ボタンなどから `SendCustomEvent("DrapeLocalPlayerFromFront")` で自分にかぶせられます。

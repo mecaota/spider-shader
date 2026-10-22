@@ -3,18 +3,18 @@
 
 // ---------------------------------------------------------------------------
 // SpiderCocoon_Sheet.cginc
-// 全身の繭（SpiderCocoonDepthDecal の体表 glue / 全身の殻）を
-// 「ねばねばネット」（mecaota/SpiderGooSilkSheet）風の見た目で塗る部分。
+// 全身の繭（CocoonDecal の体表 glue / 全身の殻）を
+// 「蜘蛛の巣ドレープ」（mecaota/SpiderWebDrape）風の見た目で塗る部分。
 // _SurfaceStyle = 1（シェーダーキーワード SC_SURFACE_NET が ON）のときだけ使う
 // （0 なら従来の繭の帯。そちらは一切変わらない）。
 //
-// ■ ねばねばネットの見た目とは
-//   吐いた糸（SpiderThreadTrail）の粘液モードと同じ「数本の太い粘液の束＋その間に
+// ■ 蜘蛛の巣ドレープの見た目とは
+//   蜘蛛糸（SpiderSilk）の粘液モードと同じ「数本の太い粘液の束＋その間に
 //   張った穴だらけの膜」の帯を、横にすき間なく並べたもの。帯はすべて同じ向き
 //   （平行）に走り、交差しない。2 枚目の膜だけ少し（_SheetLayerTwist 度）回して重ねる。
 //
 // ■ なぜ焼き込み画像ではなく、その場で計算（解析的に評価）するのか
-//   ねばねばネット本体は Editor で 1 枚の画像に焼いた模様を読む。その画像は
+//   蜘蛛の巣ドレープ本体は Editor で 1 枚の画像に焼いた模様を読む。その画像は
 //   「1 m 四方の 1 枚ぶん」しかなく、体に巻くと繰り返しの継ぎ目が出る。
 //   ここでは同じ距離場 STG_GooField（SpiderThread_Goo.cginc）をピクセルごとに
 //   直接呼ぶので、継ぎ目の無い模様がどこまでも続く（代わりに少し重い）。
@@ -23,7 +23,7 @@
 //   繭の箱のローカル座標（円筒: 半径 0.5、高さ -0.5..0.5）を、
 //     円周方向 a = 角度 × (軸からの距離 × 箱の幅 m)   … 体の周りを回る長さ
 //     軸方向   h = 高さ × 箱の高さ m
-//   のメートル座標に直してから模様を評価する。ねばねばネットは「メッシュ UV 1 = 1 m」
+//   のメートル座標に直してから模様を評価する。蜘蛛の巣ドレープは「メッシュ UV 1 = 1 m」
 //   なので、_SheetBandWidth などはネットの UV の値をそのまま入れれば同じ大きさになる。
 //
 // ■ 継ぎ目
@@ -37,7 +37,7 @@
 //           （.shader 側で SC_COCOON_SHEET_STYLE を define し、キーワード SC_SURFACE_NET が ON のときだけ）
 // ---------------------------------------------------------------------------
 
-// ---- ねばねばネットの帯の並べ方 ----
+// ---- 蜘蛛の巣ドレープの帯の並べ方 ----
 float _SheetBandWidth;     // 帯の幅 m（ネットの _SheetBandWidth。UV 1 = 1 m）
 float _SheetRotation;      // 帯の向き 度（0 = 体の周りを水平に回る / 90 = 縦に走る）
 float _SheetAlongScale;    // 帯に沿った方向の模様の細かさ（ネットの _SheetAlongScale）
@@ -47,11 +47,11 @@ float _SheetLayerTwist;    // 層ごとの回転 度
 float _SheetLayerShift;    // 2 枚目以降の模様のずれ m
 float _SheetLayerOpacity;  // 外側の層ごとの不透明度倍率
 // 玉（くびれ）の強さ・細かさ。デカールには繭の意味の _GooBeads / _GooBeadFreq が
-// 既にあるので、ねばねばネット用は別名にする（下の #define で付け替える）。
+// 既にあるので、蜘蛛の巣ドレープ用は別名にする（下の #define で付け替える）。
 float _SheetBeads;
 float _SheetBeadFreq;
 
-// 吐いた糸の距離場（STG_GooField）を、玉の 2 つだけ別名の uniform で読み込む。
+// 蜘蛛糸の距離場（STG_GooField）を、玉の 2 つだけ別名の uniform で読み込む。
 // SpiderThread_Goo.cginc は _GooBeads / _GooBeadFreq を「使う」だけで宣言はしないので、
 // 読み込む間だけ名前を付け替えれば、繭の _GooBeads（0.15 / 14）と衝突しない。
 // 束・膜の設定（_GooStrands / _GooWidth / … / _GooWebHole）はこの include で宣言される。
@@ -71,7 +71,7 @@ float2 SCS_Rotate(float2 p, float deg)
     return float2(p.x * c - p.y * s, p.x * s + p.y * c);
 }
 
-// ローカル点 localPos（繭の上の点）を、ねばねばネット風に塗る。戻り値は straight alpha。
+// ローカル点 localPos（繭の上の点）を、蜘蛛の巣ドレープ風に塗る。戻り値は straight alpha。
 // 引数は SC_ShadeCocoonAtExUnclipped と同じ。隙間でも discard はしない
 // （呼び出し側の SC_ShadeCocoonAtEx / 殻のパスが α で捨てる）。
 // earlyStop / stopAlpha は深度パス用（SpiderCocoon_Goo.cginc の SC_CompositeGooUnclippedStop と同じ意味）。

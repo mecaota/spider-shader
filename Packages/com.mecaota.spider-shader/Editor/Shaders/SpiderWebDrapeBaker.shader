@@ -1,7 +1,7 @@
-// Editorからだけ使用。ねばねばネット（粘液シート）の形状と塗りの補助値を保存します。
+// SpiderWebDrapeBaker.shader — 蜘蛛の巣ドレープベイカーシェーダー。Editorからだけ使用。蜘蛛の巣ドレープ（粘液シート）の形状と塗りの補助値を保存します。
 // 出力は 3 パス：距離・半径 / 向き・補助・光沢ノイズ / 被覆率。
 // 全面へ書き、ブレンド・深度・時刻・画面AA・discardは使いません。
-Shader "Hidden/mecaota/SpiderGooSheetBake"
+Shader "Hidden/mecaota/SpiderWebDrapeBaker"
 {
     SubShader
     {

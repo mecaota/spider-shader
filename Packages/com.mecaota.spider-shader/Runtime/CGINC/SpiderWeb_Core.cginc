@@ -3,7 +3,7 @@
 //
 //  2026-10-14: SpiderWeb.shader の CGINCLUDE の中身を、そのままここへ移した。
 //    巣のシェーダー（Runtime/SpiderWeb.shader）と、巣の模様を lilToon 用のテクスチャへ焼き込む
-//    Editor 専用シェーダー（Editor/Shaders/SpiderWebBake.shader。SW_BAKE を定義して include する）が
+//    Editor 専用シェーダー（Editor/Shaders/SpiderWebBaker.shader。SW_BAKE を定義して include する）が
 //    同じ式を使うため。移す前と後で、巣の描画が画素一致することを確認済み。
 //
 //  ■ 使い方
@@ -33,7 +33,7 @@
 #include "SpiderCocoon_Common.cginc"
 #include "SpiderCocoon_Thread.cginc"
 #include "SpiderCocoon_Lighting.cginc"
-// 粘液の塗り（吐いた糸・繭と共通）
+// 粘液の塗り（蜘蛛糸・繭と共通）
 #include "SpiderGoo_Shading.cginc"
 #include "SpiderSilk_Motion.cginc"
 
@@ -51,7 +51,7 @@ float  _Seed;
 float _FanEnable, _FanAngle, _FanRotation, _FanMeshRim;
 float _SpokeWidth, _RingWidth, _Organic, _JunctionSize;
 // 粘液の形。_GooThick / _GooBeads / _GooBeadFreq / _GooWebFill / _GooWebScale は
-// 吐いた糸・繭と同名なので SpiderCocoon_Common.cginc で宣言済み（巣では UV 単位）。
+// 蜘蛛糸・繭と同名なので SpiderCocoon_Common.cginc で宣言済み（巣では UV 単位）。
 // 粘液感・色・陰影・光沢の uniform は質感 = SpiderSilk_Look.cginc
 float _SpokeGoo, _RingGoo;
 
@@ -486,7 +486,7 @@ fixed4 fragCore(web_v2f i, fixed facing, bool depthOnly)
     float3 VG  = normalize(_WorldSpaceCameraPos - i.worldPos);
     float3 LG  = STG_GooLightDir();
 #if defined(SW_BAKE)
-    // ★ 焼き込み専用（Editor/Shaders/SpiderWebBake.shader が SW_BAKE を定義して読み込む）。
+    // ★ 焼き込み専用（Editor/Shaders/SpiderWebBaker.shader が SW_BAKE を定義して読み込む）。
     //   lilToon へ焼く色は「見る向きに依らない色」にしたいので、視線を「面を正面から見る」向きに、
     //   光を焼くときのシーンの太陽の向き（SW_BAKE_LIGHT_DIR。C# が渡す）に置き換える。
     //   面の向き・接線は巣と同じくメッシュから取る（焼き込み用の頂点シェーダーがワールドの向きにして渡す）。

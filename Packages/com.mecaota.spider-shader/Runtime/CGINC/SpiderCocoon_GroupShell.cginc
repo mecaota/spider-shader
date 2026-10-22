@@ -341,7 +341,7 @@ void SCG_AxisWrap(float3 p, out float3 local, out float3 colX, out float3 colY)
     colX = baseX;
     colY = direction * length(baseY);
 #if defined(SC_COCOON_SHEET_STYLE) && defined(SC_SURFACE_NET)
-    // ねばねばネット風は h = local.y × |colY| で実際の高さ m に戻すので、local.y を割った
+    // 蜘蛛の巣ドレープ風は h = local.y × |colY| で実際の高さ m に戻すので、local.y を割った
     // heightScale を長さにする（繭の帯は colY の向きしか使わないので影響なし）
     colY = direction * heightScale;
 #endif
@@ -535,7 +535,7 @@ fixed4 SCG_ShadeGroupShell(float2 screenUV, float3 worldDir, float2 svPos, out f
     // Close the axial openings with overlapping silk ribbons. Cylindrical UVs
     // collapse on a cap and the old edge fray erased it altogether. A shared
     // planar weave covers the space between limbs without a camera-facing fill.
-    // ねばねばネット風（キーワード SC_SURFACE_NET）は模様がそのまま端まで続くので、端の蓋の織りは描かない
+    // 蜘蛛の巣ドレープ風（キーワード SC_SURFACE_NET）は模様がそのまま端まで続くので、端の蓋の織りは描かない
 #if !(defined(SC_COCOON_SHEET_STYLE) && defined(SC_SURFACE_NET))
     {
         float capWeight = smoothstep(0.3, 0.8, abs(dot(n, normalize(colY))));

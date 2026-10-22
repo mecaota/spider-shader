@@ -1,5 +1,5 @@
 // =============================================================================
-// SpiderWebBake.shader — 蜘蛛の巣（mecaota/SpiderWeb）の模様をテクスチャへ焼くための Editor 専用シェーダー
+// SpiderWebBaker.shader — 蜘蛛の巣ベイカーシェーダー。蜘蛛の巣（mecaota/SpiderWeb）の模様をテクスチャへ焼くための Editor 専用シェーダー
 //
 //  Editor/SpiderWebLilToonBaker.cs だけが使う（マテリアルに付けて使うものではない。Hidden）。
 //
@@ -18,7 +18,7 @@
 //    シーン光の反映度（_LightInfluence）・揺れ・接触の変形・体への巻き付きは、C# 側でマテリアルの値を
 //    0 にしてから描く（光の色と明るさは焼かず、lilToon 側のライティングに任せる）。
 // =============================================================================
-Shader "Hidden/mecaota/SpiderWebBake"
+Shader "Hidden/mecaota/SpiderWebBaker"
 {
     SubShader
     {

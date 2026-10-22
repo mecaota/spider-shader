@@ -5,9 +5,9 @@ using UnityEngine;
 
 // =============================================================================
 // インスペクタの「蜘蛛糸の質感（継承）」欄（紫系）。
-//  ・巣・繭・デカール（継承先）: 継承元の蜘蛛糸マテリアルを選ぶ欄と状態の説明。
+//  ・巣・繭・繭デカール（継承先）: 継承元の蜘蛛糸マテリアルを選ぶ欄と状態の説明。
 //    継承している値は読み取り専用で表示する（変えるときは継承元を編集する）。
-//  ・吐いた糸（継承元）: この質感を継承しているマテリアルの一覧。
+//  ・蜘蛛糸（継承元）: この質感を継承しているマテリアルの一覧。
 // =============================================================================
 internal static class SpiderSilkLookPanel
 {
@@ -15,7 +15,7 @@ internal static class SpiderSilkLookPanel
     const string PrefShowValues = "SpiderSilkLook_ShowInheritedValues";
     const string PrefShowDeps   = "SpiderSilkLook_ShowDependents";
 
-    // ---- 継承先（巣・繭・デカール） ----
+    // ---- 継承先（蜘蛛の巣・繭・繭デカール） ----
     public static void DrawInheritor(MaterialEditor editor, Dictionary<string, MaterialProperty> map)
     {
         var mats = Targets(editor, SpiderSilkLook.Role.Inheritor);
@@ -36,7 +36,7 @@ internal static class SpiderSilkLookPanel
             EditorGUI.showMixedValue = mixed;
             EditorGUI.BeginChangeCheck();
             var picked = (Material)EditorGUILayout.ObjectField(
-                new GUIContent("継承元の蜘蛛糸", "質感（色・陰影・ツヤ・トゥーン・リム）をもらう吐いた糸のマテリアル。なし＝蜘蛛糸シェーダーの既定値"),
+                new GUIContent("継承元の蜘蛛糸", "質感（色・陰影・ツヤ・トゥーン・リム）をもらう蜘蛛糸のマテリアル。なし＝蜘蛛糸シェーダーの既定値"),
                 link.Source, typeof(Material), false);
             bool changed = EditorGUI.EndChangeCheck();
             EditorGUI.showMixedValue = false;
@@ -67,7 +67,7 @@ internal static class SpiderSilkLookPanel
             string msg = "「" + link.Source.name + "」の質感を継承しています。紫の項目はこのマテリアルでは変えられません（継承元を編集すると自動で反映）。";
             if (link.FromParent && first.parent != null) msg += "\n継承元は親マテリアル「" + first.parent.name + "」から受け継いでいます。";
             if (link.Source.HasProperty("_GooEnable") && link.Source.GetFloat("_GooEnable") < 0.5f)
-                msg += "\n※ 継承元は粘液モード OFF ですが、巣・繭・デカールは粘液の塗りで描かれるので、粘液の色・ツヤの値がそのまま使われます。";
+                msg += "\n※ 継承元は粘液モード OFF ですが、巣・繭・繭デカールは粘液の塗りで描かれるので、粘液の色・ツヤの値がそのまま使われます。";
             EditorGUILayout.HelpBox(msg, MessageType.None);
         }
         else
@@ -199,7 +199,7 @@ internal static class SpiderSilkLookPanel
         EditorGUIUtility.PingObject(src);
     }
 
-    // ---- 継承元（吐いた糸） ----
+    // ---- 継承元（蜘蛛糸） ----
     public static void DrawSourceSummary(MaterialEditor editor)
     {
         var mats = Targets(editor, SpiderSilkLook.Role.Source);
@@ -214,11 +214,11 @@ internal static class SpiderSilkLookPanel
         if (deps.Count == 0 && variants.Count == 0) return;
 
         if (!SpiderCocoonShaderGUI.DrawSectionFoldout("この質感を継承しているマテリアル（" + deps.Count + " 個）", LookColor, "SilkLookDependents")) { EditorGUILayout.Space(2); return; }
-        EditorGUILayout.HelpBox("紫の「質感」の項目を変えると、継承している " + deps.Count + " 個の巣・繭・デカールにすぐ反映されます（Ctrl+Z も連動）。" +
+        EditorGUILayout.HelpBox("紫の「質感」の項目を変えると、継承している " + deps.Count + " 個の巣・繭・繭デカールにすぐ反映されます（Ctrl+Z も連動）。" +
                                 (variants.Count > 0 ? "\nこのマテリアルを親にする継承元（Material Variant）が " + variants.Count + " 個あり、その先にも伝わります。" : ""),
                                 MessageType.None);
         if (mats[0].HasProperty("_GooEnable") && mats[0].GetFloat("_GooEnable") < 0.5f && deps.Count > 0)
-            EditorGUILayout.HelpBox("粘液モードが OFF ですが、巣・繭・デカールは粘液の塗りで描かれるので、粘液の色・ツヤの値も反映されます。", MessageType.None);
+            EditorGUILayout.HelpBox("粘液モードが OFF ですが、巣・繭・繭デカールは粘液の塗りで描かれるので、粘液の色・ツヤの値も反映されます。", MessageType.None);
 
         bool show = EditorPrefs.GetBool(PrefShowDeps, false);
         bool next = EditorGUILayout.Foldout(show, "一覧", true);
