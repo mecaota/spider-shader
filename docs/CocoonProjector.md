@@ -18,6 +18,38 @@
 - Unity の **Projector** は「投影範囲に入ったレンダラーを、Projector のマテリアルでもう一度描く」部品です。Projector の Ignore Layers で `Player`・`PlayerLocal`・`MirrorReflection` 以外をすべて無視すると、アバターのメッシュだけがこのシェーダーで描き直されます。
 - このシェーダーは、描き直された相手が捕まった本人かどうかを、相手のメッシュの原点（足元か腰）と、スクリプトが渡す本人の骨の位置で判定します。本人でなければ何も描きません。本人なら、見えている画素（手前の柱・壁・他人には負ける）に目印のビットを立てます。
 - 体に張り付く繭は輪郭の少し外（糸の厚みの分）にも糸を盛るので、このシェーダーも頂点を同じ幅だけ外へ膨らませます。
+- [繭を付ける部位](#繭を付ける部位を選ぶ)を選ぶと、選んでいない部位の画素には目印を立てません。その部位には繭が出ません。
+
+## 繭を付ける部位を選ぶ
+
+体全体ではなく、腰だけ・腰と腕・腕と脚だけ、のように**繭を付ける部位**を選べます。部位は Humanoid のボーンと同じ名前の 17 個で、左右は別々に選べます。それぞれ「そのボーンから次のボーンまで」の範囲です。
+
+| 部位（ボーン） | 範囲 |
+|---|---|
+| Hips | 股関節の高さあたりから背骨の骨（Spine）まで（骨盤・お尻を含む） |
+| Spine | 背骨の骨から胸の骨（Chest）まで（おなか） |
+| Chest | 胸の骨から首まで（肩の上を含む） |
+| Neck | 首から頭の骨まで |
+| Head | 頭の骨から頭のてっぺんまで |
+| Left / Right UpperArm | 肩から肘まで（上腕） |
+| Left / Right LowerArm | 肘から手首まで（前腕） |
+| Left / Right Hand | 手首から指先まで |
+| Left / Right UpperLeg | 股関節から膝まで（もも） |
+| Left / Right LowerLeg | 膝から足首まで（すね） |
+| Left / Right Foot | 足首から先（かかとからつま先まで） |
+
+左右は**アバター本人から見た左右**です。正面から見ると、本人の左腕は見ている人の右側にあります。
+
+駆動スクリプトでは、[SurfaceContactDeformer](UdonGimmicks.md#接触追従の変形surfacecontactdeformer) の Bones と同じ [`TrackBone`](UdonGimmicks.md#trackboneボーンの指定) の配列で選びます（`Bones` が空なら全身）。たとえば「腰だけ」は `Hips`・`Spine` の 2 つ、「腰と腕」はそれに左右の `UpperArm`・`LowerArm`・`Hand` を足した 8 つです。部位を持たないボーンは、そのボーンを含む部位として扱います（`UpperChest`・`LeftShoulder`・`RightShoulder` は `Chest`、`LeftToes`・`RightToes` は `Foot`）。
+
+**しくみ**: 骨と骨を結ぶ線のまわりに、部位ごとの円柱を考えます（Hips なら股関節の高さから背骨の骨まで、LeftUpperArm なら左肩から左肘まで）。アバターの画素ごとに、その画素の体の位置が「どの部位の円柱に一番深く入っているか」を比べ、選んでいない部位に一番近ければ目印を立てません。円柱の太さは大人の体の目安を、その人の腰から首までの長さに合わせて伸び縮みさせます。骨の位置は、駆動スクリプトが毎フレーム渡します。
+
+- 全部の部位を選んでいる（既定）ときは、部位の計算をまるごと飛ばします。今までと同じ見た目・同じ負荷で、スカートやしっぽなど衣装の付属品にも丸ごと付きます。
+- 部位を絞ったときは、付属品も一番近い部位として扱います（スカートは Hips やもも、髪は Head など）。
+- 部位の境目は、「部位の境目のほつれ幅」の幅でほつれさせます（まっすぐな切り口にならないように）。ほつれは選んだ部位の外側へだけ広がるので、隣り合う部位を別々の Projector（別々のマテリアル）で出しても、境目に隙間はできません。0 にするとまっすぐ切れます。
+- 境目がずれる体格（頭の大きいアバターなど）では、「部位の太さの倍率」で円柱の太さを変えてください。
+- 部位を選ぶには、骨の位置が要ります。駆動スクリプトを使わずにマテリアルの値を自分で書くとき（動かない展示のマネキンなど）は、[インスペクタの項目](#インスペクタの項目)の「所有者の腰・頭・胸・両手・両足」と「骨」に、その人の骨の位置（ワールド座標）を入れてください。骨の位置が 1 つも入っていないときは、部位で切らずに体全体に目印を立てます。つま先の骨が無いときは、足首から真下へ足の円柱をのばします。
+- 部位の選択は「対象 ＝ 所有者のみ」で使ってください。「投影範囲の全員」のときは、全員を所有者の骨の位置で切ってしまいます。
 
 ## セットアップ
 
@@ -33,7 +65,7 @@
 
 ## 駆動スクリプト（SpiderCocoonProjectorMaskDriver）
 
-`Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs`。毎フレーム、マスクのマテリアルに `_OwnerRoot`（足元）・`_OwnerHips`（腰）・`_OwnerPt0`〜`_OwnerPt5`（頭・胸・左手・右手・左足・右足）を `Material.SetVector` で渡し（xyz ＝ 位置、w ＝ 許容半径 m）、Projector を捕まった人の頭の上へ動かして真下へ向けます。誰も捕まっていない間は、Projector の GameObject を無効にして、描き直しの負荷をなくします。
+`Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs`。毎フレーム、マスクのマテリアルに `_OwnerRoot`（足元）・`_OwnerHips`（腰）・`_OwnerPt0`〜`_OwnerPt5`（頭・胸・左手・右手・左足・右足）を `Material.SetVector` で渡し（xyz ＝ 位置、w ＝ 許容半径 m）、Projector を捕まった人の頭の上へ動かして真下へ向けます。部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先の位置（`_JointSpine` など）と、繭を付ける部位の ON / OFF も渡します。誰も捕まっていない間は、Projector の GameObject を無効にして、描き直しの負荷をなくします。
 
 | 設定項目 | 既定値 | 説明 |
 |---|---|---|
@@ -43,13 +75,25 @@
 | Height Above Head | 0.5 | 頭からどれだけ上に Projector を置くか m |
 | Root Radius | 0.35 | アバターのメッシュの原点が足元からこの距離以内なら本人とみなす |
 | Hips Radius | 0.35 | 原点が腰の骨からこの距離以内なら本人とみなす |
-| Attachment Radius | 0.25 | 手に持つ物・帽子・靴など骨の下の物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない |
+| Attachment Radius | 0.5 | 手に持つ物・帽子・靴・衣装の付属品（しっぽ・羽など）など骨の下の物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない。広げすぎると、すぐ隣に立つ人の物まで本人の物とみなす（0.12.0 までの既定は 0.25。置き済みのスクリプトは値が残るので、インスペクタで変える） |
+| Bones | 空（全身） | 繭を付ける骨（`TrackBone` の配列）。空なら全身。選んでいない部位には繭が出ない |
 
 | メソッド | 内容 |
 |---|---|
 | `SetOwner(int playerId)` | この人のアバターにだけ繭を描かせる |
 | `ClearOwner()` | やめる（Projector を無効にする） |
 | `GetOwnerId()` | 今の対象の playerId（いなければ 0） |
+| `SetBones(TrackBone[] bones)` | 繭を付ける骨をまとめて選ぶ（空の配列 ＝ 全身） |
+| `SetBone(TrackBone bone, bool on)` | 骨を 1 つだけ ON / OFF する。全身の状態から OFF にすると「その部位以外の全部」になる。全部 OFF にすると何も付かない（`SetBones` か `SetWholeBody` で戻る） |
+| `SetWholeBody()` | 全身に戻す |
+| `HasBone(TrackBone bone)` | その骨（を含む部位）に繭を付けるか |
+| `GetBones()` | 今の骨の配列（空 ＝ 全身） |
+
+例（別の UdonSharp スクリプトから、腰だけにする）:
+
+```csharp
+maskDriver.SetBones(new TrackBone[] { TrackBone.Hips, TrackBone.Spine });
+```
 
 - 対象の人が退室すると自動で `ClearOwner` します。
 - このスクリプトは同期しません。全員に同じ見え方をさせたいときは、捕獲を同期しているスクリプトから、全員のクライアントで `SetOwner` を呼びます。
@@ -65,7 +109,11 @@ Unity 標準のインスペクタで表示されます（このパッケージ�
 | 輪郭の外への膨張 m | `_Inflate` | 0.06 | 繭のマテリアルの「糸の厚み」と同じ値にする |
 | 対象 | `_OwnerMode` | 所有者のみ | 0 ＝ 投影範囲の全員、1 ＝ 所有者（捕まった人）だけ |
 | 所有者のルート / 腰 | `_OwnerRoot` / `_OwnerHips` | (0,-9999,0,0) | xyz ＝ 位置、w ＝ 許容半径 m。スクリプトが毎フレーム設定 |
-| 所有者の頭・胸・両手・両足 | `_OwnerPt0`〜`_OwnerPt5` | (0,-9999,0,0) | 手に持つ物・帽子・靴など骨の下の物の原点がここに近ければ、本人の物として受け入れる。w ≤ 0 で無効 |
+| 所有者の頭・胸・両手・両足 | `_OwnerPt0`〜`_OwnerPt5` | (0,-9999,0,0) | 手に持つ物・帽子・靴など骨の下の物の原点がここに近ければ、本人の物として受け入れる。w ≤ 0 で無効（xyz は部位の判定に使う） |
+| 部位 骨盤 〜 右足 | `_PartHips` / `_PartSpine` / `_PartChest` / `_PartNeck` / `_PartHead` / `_PartLeftUpperArm` / `_PartLeftLowerArm` / `_PartLeftHand` / `_PartRightUpperArm` / `_PartRightLowerArm` / `_PartRightHand` / `_PartLeftUpperLeg` / `_PartLeftLowerLeg` / `_PartLeftFoot` / `_PartRightUpperLeg` / `_PartRightLowerLeg` / `_PartRightFoot` | すべて ON | 繭を付ける部位（範囲は[部位の表](#繭を付ける部位を選ぶ)）。OFF の部位には目印を立てない。駆動スクリプトを使うときは、スクリプトの Bones で上書きされる |
+| 部位の太さの倍率 | `_PartRadiusScale` | 1 | 部位ごとの円柱の太さに掛ける倍率。部位の境目がずれるときに調整する |
+| 部位の境目のほつれ幅 m | `_PartEdgeFray` | 0.02 | 部位の境目をほつれさせる幅（選んだ部位の外側へこの幅まで）。0 でまっすぐ切れる |
+| 骨 背骨・首・左右の肩・肘・股関節・膝・つま先 | `_JointSpine` / `_JointNeck` / `_JointLeftUpperArm` / `_JointLeftLowerArm` / `_JointRightUpperArm` / `_JointRightLowerArm` / `_JointLeftUpperLeg` / `_JointLeftLowerLeg` / `_JointRightUpperLeg` / `_JointRightLowerLeg` / `_JointLeftToes` / `_JointRightToes` | (0,-9999,0,0) | 部位の判定に使う骨の位置（ワールド座標。w は使わない）。スクリプトが毎フレーム設定 |
 | 視錐台の外を切る | `_FrustumClip` | OFF | 全員モードで範囲を絞るときだけ ON |
 | デバッグ表示 | `_DebugView` | Off | On で目印が立つ範囲を緑で塗る（確認用） |
 
@@ -81,6 +129,7 @@ Unity 標準のインスペクタで表示されます（このパッケージ�
 - Default レイヤーを映さないミラー（低画質のミラーなど）の中では繭が出ません。
 - VR のシングルパスインスタンシングでは、Projector が片目にしか描かれない Unity の既知の問題があります。
 - 実機の VRChat（VR の両目・ミラー・多人数）での確認は済んでいません。
+- 部位の境目は骨の位置から決める近似です。腕を胴に付けているときの脇の下など、部位どうしが触れている所では、境目が見た目の部位の境目から少しずれることがあります。
 
 ## 関連ファイル
 
