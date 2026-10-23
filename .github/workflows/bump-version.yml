@@ -28,8 +28,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Validate the version entered in "Run workflow" (a leading "v" is dropped).
-      # The input is passed through env so it is never expanded into the script itself.
+      # Validate the version entered in "Run workflow" (surrounding spaces and a leading "v"
+      # are dropped). The inputs are passed through env so they are never expanded into the
+      # scripts themselves.
       - name: Validate Version
         env:
           PACKAGE_NAME: ${{ vars.PACKAGE_NAME }}
@@ -39,7 +40,7 @@ jobs:
             echo "::error::リポジトリ変数 PACKAGE_NAME を設定してください"
             exit 1
           fi
-          version="$(printf '%s' "$VERSION_INPUT" | tr -d '[:space:]')"
+          version="$(printf '%s' "$VERSION_INPUT" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
           version="${version#v}"
           # Semantic Versioning 2.0.0 without build metadata: no leading zeros in numbers,
           # prerelease identifiers separated by single dots
@@ -54,45 +55,95 @@ jobs:
             echo "::error::Bump Version はブランチ（ふつうは main）を選んで実行してください"
             exit 1
           fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null; then
+          # Exit code 2 means the tag does not exist; anything else but 0 is a failed lookup
+          status=0
+          git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
             echo "::error::タグ $version はもうあります。まだ出していないバージョンを入力してください"
+            exit 1
+          elif [ "$status" -ne 2 ]; then
+            echo "::error::タグがあるかを確かめられませんでした（git ls-remote の終了コード $status）"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_ENV"
 
-      # Rewrite only the version in the package.json so the rest of the file stays as written
+      # Rewrite only the version in the package.json so the rest of the file stays as written.
+      # A version lower than the current one is rejected.
       - name: Set Version
         run: |
-          node - "${{ env.packagePath }}/package.json" "${{ env.version }}" <<'EOF'
+          node - "$packagePath/package.json" "$version" <<'EOF'
           const fs = require('fs');
           const [file, version] = process.argv.slice(2);
           const text = fs.readFileSync(file, 'utf8');
+          const parse = (json) => JSON.parse(json.replace(/^\uFEFF/, ''));
+          const current = parse(text);
           const updated = text.replace(/("version"\s*:\s*")[^"]*(")/, (_, head, tail) => head + version + tail);
-          if (JSON.parse(updated.replace(/^\uFEFF/, '')).version !== version) {
+          // Nothing but the top-level version may change
+          if (JSON.stringify(parse(updated)) !== JSON.stringify({ ...current, version })) {
             throw new Error(`Could not set the version in ${file}`);
           }
+          if (compareVersions(version, current.version) < 0) {
+            console.log(`::error::${version} は今の package.json の ${current.version} より前のバージョンです`);
+            process.exit(1);
+          }
           fs.writeFileSync(file, updated);
+
+          // Semantic Versioning 2.0.0 precedence
+          function compareVersions(a, b) {
+            const split = (v) => {
+              const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(v ?? '') ?? [];
+              return { core: [m[1], m[2], m[3]].map(Number), pre: m[4] ? m[4].split('.') : [] };
+            };
+            const x = split(a), y = split(b);
+            for (let i = 0; i < 3; i++) {
+              if (x.core[i] !== y.core[i]) return x.core[i] - y.core[i];
+            }
+            if (x.pre.length === 0 || y.pre.length === 0) return y.pre.length - x.pre.length;
+            for (let i = 0; i < Math.min(x.pre.length, y.pre.length); i++) {
+              const p = x.pre[i], q = y.pre[i];
+              if (p === q) continue;
+              const pNum = /^\d+$/.test(p), qNum = /^\d+$/.test(q);
+              if (pNum && qNum) return Number(p) - Number(q);
+              if (pNum !== qNum) return pNum ? -1 : 1;
+              return p < q ? -1 : 1;
+            }
+            return x.pre.length - y.pre.length;
+          }
           EOF
 
       # Commit the rewritten package.json to release/<version> and open a pull request
-      # into the branch the workflow ran on
+      # into the branch the workflow ran on. When a previous run already pushed that branch
+      # with the same package.json, it is reused (never force-pushed).
       - name: Open Pull Request
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet; then
-            echo "::notice::package.json はすでに ${{ env.version }} です。そのまま Build Release を実行してください"
+            echo "::notice::package.json はすでに $version です。そのまま Build Release を実行してください"
             exit 0
           fi
-          branch="release/${{ env.version }}"
-          title="chore: バージョンを ${{ env.version }} にする"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "$title" -- "${{ env.packagePath }}/package.json"
-          git push origin "HEAD:refs/heads/$branch"
+          branch="release/$version"
+          title="chore: バージョンを $version にする"
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            git fetch --depth 1 origin "$branch"
+            if ! git diff --quiet FETCH_HEAD -- "$packagePath/package.json"; then
+              echo "::error::$branch はもうあり、package.json が今回の書き換えと違います。ブランチを消してから実行し直してください"
+              exit 1
+            fi
+            pr="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty' || true)"
+            if [ -n "$pr" ]; then
+              echo "::notice::$branch の pull request はもうあります: $pr"
+              exit 0
+            fi
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "$title" -- "$packagePath/package.json"
+            git push origin "HEAD:refs/heads/$branch"
+          fi
           if ! gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" \
-              --body "package.json の version を ${{ env.version }} にします。マージしたら Build Release を実行してください。"; then
+              --body "package.json の version を $version にします。マージしたら Build Release を実行してください。"; then
             url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...$branch?expand=1"
-            echo "::warning::pull request を作れませんでした。$url から作ってください"
-            echo "package.json を ${{ env.version }} にする pull request: $url" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::pull request を作れませんでした（Allow GitHub Actions to create and approve pull requests がオフかもしれません）。$url から作ってください"
+            echo "package.json を $version にする pull request: $url" >> "$GITHUB_STEP_SUMMARY"
           fi
