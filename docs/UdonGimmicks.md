@@ -165,9 +165,9 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 | Thread Rest Length | 0.15 | この長さ（m）までは太さそのまま。これより伸びると細くなる |
 | Thread Min Width | 0.3 | 伸びたときの太さの下限（割合） |
 | Thread Sag | 0.06 | 糸のたるみ（長さ 1 m あたりの m） |
-| Thread From Deformed Web | OFF | ON で、糸の始点を変形した後の面にする（凹み・伸びと糸を一緒に使う巣用） |
-| Web Max Bulge | 0 | 面が膨らむ上限（m）。手足がこれより離れた分は面を引っ張らず、糸が受け持つ。0 で上限なし（従来どおり面だけが伸びる）。下の「膨らみの上限と糸」 |
-| Thread Fade Length | 0.03 | Web Max Bulge を使うとき、糸が受け持つ長さがこの値（m）に届くまで糸を細くしておく。0 で細くしない |
+| Thread From Deformed Web | OFF | ON で、糸の始点を変形した後の面にする（凹み・伸びと糸を一緒に使う巣用）。Web Max Bulge が 0 より大きいときは OFF でも ON と同じ |
+| Web Max Bulge | 0 | 面が膨らむ上限（m）。手足がこれより離れた分は面を引っ張らず、糸が受け持つ。0 で上限なし（従来どおり）。Auto Release Distance より十分小さくする。下の「膨らみの上限と糸」 |
+| Thread Fade Length | 0.03 | Web Max Bulge を使うとき、面の先が手足に届かない長さがこの値（m）になるまで糸を細くしておく。0 で細くしない |
 
 ##### 膨らみの上限と糸（Web Max Bulge）
 
@@ -175,9 +175,11 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 
 - 上限が効くのは、くっついた側（手足がいた側）へ引っ張る向きの量だけです。面に沿った向きのずれは、今までどおり面が追従します。
 - 手足を面へ押し込む向きでは、上限は効かず、面だけが凹みます。このとき糸は出ません（`pullOnly` が ON なら凹みもしません）。
-- 糸は、上限を超えた長さが「Thread Fade Length」に届くまで細く描き、上限の前後でぱっと現れたり消えたりしないようにします。
+- 糸は、変形した面の先が手足に届かなかった分だけ出ます。上限で止めた分のほか、引っ張りの弱い巣（`_PullStrength` が 1 未満）、`_PullMaxStretch` で千切れて戻った巣、`_PullEnable` が OFF の巣、近くの別の接点と平均されて届かない分も、糸がつなぎます。
+- 糸は、届かない長さが「Thread Fade Length」になるまで細く描き、上限の前後でぱっと現れたり消えたりしないようにします。
+- 手足が面のほぼ上（1 cm 未満）でくっつき、どちら側か決められないときは、引いた向きに上限をかけます（このときは押し込んでも糸が出ることがあります）。Capture Only Below Surface の巣は、いつも裏側として扱います。
 - 糸の始点は、膨らんだ巣の先（変形した後の面）になります。Thread From Deformed Web が OFF でも同じです。
-- 千切れ（Auto Release Distance）は、今までどおり捕縛点から手足までの距離で決まります。糸が伸びられる長さは、おおよそ「Auto Release Distance − Web Max Bulge」です。
+- 千切れ（Auto Release Distance）は、今までどおり捕縛点から手足までの距離で決まります（面に沿ったずれも含む）。まっすぐ引いたとき、上限を超えてから千切れるまでに手足が離れられるのは、おおよそ「Auto Release Distance − Web Max Bulge」です。描かれる糸は、捕まえたときのボーンと面の距離（最大で Contact Distance）のぶんだけこれより長くなります。Web Max Bulge が Auto Release Distance に近いと、糸が出る前に千切れます。
 - 糸を描くには Thread By Slot が要ります。空のときは、巣が上限で止まるだけになります。
 
 LineRenderer の設定:
