@@ -33,7 +33,7 @@
 | Head | 頭の骨から頭のてっぺんまで |
 | Left / Right UpperArm | 肩から肘まで（上腕） |
 | Left / Right LowerArm | 肘から手首まで（前腕） |
-| Left / Right Hand | 手首から指先まで |
+| Left / Right Hand | 手首から指先まで（中指の付け根の骨があれば指の向きへ。手首を曲げても指を追う） |
 | Left / Right UpperLeg | 股関節から膝まで（もも） |
 | Left / Right LowerLeg | 膝から足首まで（すね） |
 | Left / Right Foot | 足首から先（かかとからつま先まで） |
@@ -47,8 +47,9 @@
 - 全部の部位を選んでいる（既定）ときは、部位の計算をまるごと飛ばします。今までと同じ見た目・同じ負荷で、スカートやしっぽなど衣装の付属品にも丸ごと付きます。
 - 部位を絞ったときは、付属品も一番近い部位として扱います（スカートは Hips やもも、髪は Head など）。
 - 部位の境目は、「部位の境目のほつれ幅」の幅でほつれさせます（まっすぐな切り口にならないように）。ほつれは選んだ部位の外側へだけ広がるので、隣り合う部位を別々の Projector（別々のマテリアル）で出しても、境目に隙間はできません。0 にするとまっすぐ切れます。
+- ほつれの模様は、アバターのメッシュの UV から作ります。肌に貼り付いているので、腕を振ったり体の向きを変えたりしても模様は流れません。UV の継ぎ目では模様が途切れ、UV の大きさによって模様の細かさが変わります。
 - 境目がずれる体格（頭の大きいアバターなど）では、「部位の太さの倍率」で円柱の太さを変えてください。
-- 部位を選ぶには、骨の位置が要ります。駆動スクリプトを使わずにマテリアルの値を自分で書くとき（動かない展示のマネキンなど）は、[インスペクタの項目](#インスペクタの項目)の「所有者の腰・頭・胸・両手・両足」と「骨」に、その人の骨の位置（ワールド座標）を入れてください。骨の位置が 1 つも入っていないときは、部位で切らずに体全体に目印を立てます。つま先の骨が無いときは、足首から真下へ足の円柱をのばします。
+- 部位を選ぶには、骨の位置が要ります。駆動スクリプトを使わずにマテリアルの値を自分で書くとき（動かない展示のマネキンなど）は、[インスペクタの項目](#インスペクタの項目)の「所有者の腰・頭・胸・両手・両足」と「骨」に、その人の骨の位置（ワールド座標）を入れてください。選んだ部位の円柱が骨の不足で 1 つも作れないとき（骨の位置を入れ忘れたときなど）は、部位で切らずに体全体に目印を立てます。骨が無い所の円柱は使いません。つま先の骨が無いときは足首から真下へ、首の骨が無いときは頭から真上へ、中指の付け根の骨が無いときは前腕の向きへ円柱をのばします。
 - 部位の選択は「対象 ＝ 所有者のみ」で使ってください。「投影範囲の全員」のときは、全員を所有者の骨の位置で切ってしまいます。
 
 ## セットアップ
@@ -65,7 +66,7 @@
 
 ## 駆動スクリプト（SpiderCocoonProjectorMaskDriver）
 
-`Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs`。毎フレーム、マスクのマテリアルに `_OwnerRoot`（足元）・`_OwnerHips`（腰）・`_OwnerPt0`〜`_OwnerPt5`（頭・胸・左手・右手・左足・右足）を `Material.SetVector` で渡し（xyz ＝ 位置、w ＝ 許容半径 m）、Projector を捕まった人の頭の上へ動かして真下へ向けます。部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先の位置（`_JointSpine` など）と、繭を付ける部位の ON / OFF も渡します。誰も捕まっていない間は、Projector の GameObject を無効にして、描き直しの負荷をなくします。
+`Runtime/CocoonProjectorMask/SpiderCocoonProjectorMaskDriver.cs`。毎フレーム、マスクのマテリアルに `_OwnerRoot`（足元）・`_OwnerHips`（腰）・`_OwnerPt0`〜`_OwnerPt5`（頭・胸・左手・右手・左足・右足）を `Material.SetVector` で渡し（xyz ＝ 位置、w ＝ 許容半径 m）、Projector を捕まった人の頭の上へ動かして真下へ向けます。繭を付ける部位の ON / OFF と、部位を絞っている間は部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先・中指の付け根の位置（`_JointSpine` など）も渡します。誰も捕まっていない間は、Projector の GameObject を無効にして、描き直しの負荷をなくします。
 
 | 設定項目 | 既定値 | 説明 |
 |---|---|---|
@@ -84,10 +85,11 @@
 | `ClearOwner()` | やめる（Projector を無効にする） |
 | `GetOwnerId()` | 今の対象の playerId（いなければ 0） |
 | `SetBones(TrackBone[] bones)` | 繭を付ける骨をまとめて選ぶ（空の配列 ＝ 全身） |
-| `SetBone(TrackBone bone, bool on)` | 骨を 1 つだけ ON / OFF する。全身の状態から OFF にすると「その部位以外の全部」になる。全部 OFF にすると何も付かない（`SetBones` か `SetWholeBody` で戻る） |
+| `SetBone(TrackBone bone, bool on)` | 骨を 1 つだけ ON / OFF する。全身の状態から OFF にすると「その部位以外の全部」になる。全部 OFF にすると何も付かない |
 | `SetWholeBody()` | 全身に戻す |
+| `SetNoBones()` | どこにも付けない（所有者と Projector はそのまま） |
 | `HasBone(TrackBone bone)` | その骨（を含む部位）に繭を付けるか |
-| `GetBones()` | 今の骨の配列（空 ＝ 全身） |
+| `GetBones()` | 今の骨の配列（空 ＝ 全身）。どこにも付けないときは、どの骨でもない値（-1）1 つだけの配列。`SetBones` にそのまま渡すと同じ状態に戻る |
 
 例（別の UdonSharp スクリプトから、腰だけにする）:
 
@@ -95,6 +97,8 @@
 maskDriver.SetBones(new TrackBone[] { TrackBone.Hips, TrackBone.Spine });
 ```
 
+- 空の配列は「全身」です。くっついている骨を集めて `SetBones` に渡す使い方では、0 本になったときに `SetNoBones` を呼んでください（空の配列を渡すと全身に繭が出ます）。
+- 部位の選択は `SetOwner` / `ClearOwner` では変わりません。人が替わっても前の選択のままなので、人ごとに変えるときは `SetOwner` の後に `SetBones` を呼びます。
 - 対象の人が退室すると自動で `ClearOwner` します。
 - このスクリプトは同期しません。全員に同じ見え方をさせたいときは、捕獲を同期しているスクリプトから、全員のクライアントで `SetOwner` を呼びます。
 - 同時に何人もの繭を描き分けるときは、人数分の「Projector ＋ マスクのマテリアル ＋ 駆動スクリプト」を用意します。
@@ -113,7 +117,7 @@ Unity 標準のインスペクタで表示されます（このパッケージ�
 | 部位 骨盤 〜 右足 | `_PartHips` / `_PartSpine` / `_PartChest` / `_PartNeck` / `_PartHead` / `_PartLeftUpperArm` / `_PartLeftLowerArm` / `_PartLeftHand` / `_PartRightUpperArm` / `_PartRightLowerArm` / `_PartRightHand` / `_PartLeftUpperLeg` / `_PartLeftLowerLeg` / `_PartLeftFoot` / `_PartRightUpperLeg` / `_PartRightLowerLeg` / `_PartRightFoot` | すべて ON | 繭を付ける部位（範囲は[部位の表](#繭を付ける部位を選ぶ)）。OFF の部位には目印を立てない。駆動スクリプトを使うときは、スクリプトの Bones で上書きされる |
 | 部位の太さの倍率 | `_PartRadiusScale` | 1 | 部位ごとの円柱の太さに掛ける倍率。部位の境目がずれるときに調整する |
 | 部位の境目のほつれ幅 m | `_PartEdgeFray` | 0.02 | 部位の境目をほつれさせる幅（選んだ部位の外側へこの幅まで）。0 でまっすぐ切れる |
-| 骨 背骨・首・左右の肩・肘・股関節・膝・つま先 | `_JointSpine` / `_JointNeck` / `_JointLeftUpperArm` / `_JointLeftLowerArm` / `_JointRightUpperArm` / `_JointRightLowerArm` / `_JointLeftUpperLeg` / `_JointLeftLowerLeg` / `_JointRightUpperLeg` / `_JointRightLowerLeg` / `_JointLeftToes` / `_JointRightToes` | (0,-9999,0,0) | 部位の判定に使う骨の位置（ワールド座標。w は使わない）。スクリプトが毎フレーム設定 |
+| 骨 背骨・首・左右の肩・肘・股関節・膝・つま先・中指の付け根 | `_JointSpine` / `_JointNeck` / `_JointLeftUpperArm` / `_JointLeftLowerArm` / `_JointRightUpperArm` / `_JointRightLowerArm` / `_JointLeftUpperLeg` / `_JointLeftLowerLeg` / `_JointRightUpperLeg` / `_JointRightLowerLeg` / `_JointLeftToes` / `_JointRightToes` / `_JointLeftFingers` / `_JointRightFingers` | (0,-9999,0,0) | 部位の判定に使う骨の位置（ワールド座標。w は使わない）。スクリプトが部位を絞っている間、毎フレーム設定 |
 | 視錐台の外を切る | `_FrustumClip` | OFF | 全員モードで範囲を絞るときだけ ON |
 | デバッグ表示 | `_DebugView` | Off | On で目印が立つ範囲を緑で塗る（確認用） |
 
