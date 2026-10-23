@@ -13,6 +13,11 @@ on:
         required: true
         type: string
 
+# Runs one at a time so two runs never push the same branch or open conflicting pull requests
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
 jobs:
 
   bump:
@@ -47,33 +52,38 @@ jobs:
           num='(0|[1-9][0-9]*)'
           pre='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
           semver="^$num\.$num\.$num(-$pre(\.$pre)*)?$"
-          if [[ ! "$version" =~ $semver ]] || ! git check-ref-format "refs/tags/$version"; then
+          if [[ ! "$version" =~ $semver ]]; then
             echo "::error::バージョンは 1.2.3 や 1.2.3-beta.1 の形で入力してください（先頭の 0 や続けた . は使えません）"
+            exit 1
+          fi
+          if ! git check-ref-format "refs/tags/$version"; then
+            echo "::error::$version はタグの名前に使えません（末尾の .lock など）"
             exit 1
           fi
           if [ "$GITHUB_REF_TYPE" != "branch" ]; then
             echo "::error::Bump Version はブランチ（ふつうは main）を選んで実行してください"
             exit 1
           fi
-          # Exit code 2 means the tag does not exist; anything else but 0 is a failed lookup
-          status=0
-          git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null || status=$?
-          if [ "$status" -eq 0 ]; then
-            echo "::error::タグ $version はもうあります。まだ出していないバージョンを入力してください"
+          # The published versions, also used by the next step
+          if ! refs="$(git ls-remote --tags --refs origin)"; then
+            echo "::error::タグの一覧を取得できませんでした"
             exit 1
-          elif [ "$status" -ne 2 ]; then
-            echo "::error::タグがあるかを確かめられませんでした（git ls-remote の終了コード $status）"
+          fi
+          printf '%s\n' "$refs" | sed -n 's|^.*refs/tags/||p' > "$RUNNER_TEMP/tags"
+          if grep -qxF -- "$version" "$RUNNER_TEMP/tags"; then
+            echo "::error::タグ $version はもうあります。まだ出していないバージョンを入力してください"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_ENV"
 
       # Rewrite only the version in the package.json so the rest of the file stays as written.
-      # A version lower than the current one is rejected.
+      # The version must come after the latest published one (tags that are not versions are
+      # ignored); an unpublished version already in the package.json may be lowered.
       - name: Set Version
         run: |
-          node - "$packagePath/package.json" "$version" <<'EOF'
+          node - "$packagePath/package.json" "$version" "$RUNNER_TEMP/tags" <<'EOF'
           const fs = require('fs');
-          const [file, version] = process.argv.slice(2);
+          const [file, version, tagsFile] = process.argv.slice(2);
           const text = fs.readFileSync(file, 'utf8');
           const parse = (json) => JSON.parse(json.replace(/^\uFEFF/, ''));
           const current = parse(text);
@@ -82,17 +92,21 @@ jobs:
           if (JSON.stringify(parse(updated)) !== JSON.stringify({ ...current, version })) {
             throw new Error(`Could not set the version in ${file}`);
           }
-          if (compareVersions(version, current.version) < 0) {
-            console.log(`::error::${version} は今の package.json の ${current.version} より前のバージョンです`);
+          const published = fs.readFileSync(tagsFile, 'utf8').split('\n')
+            .map((tag) => tag.replace(/^v/, ''))
+            .filter((tag) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag));
+          const latest = published.sort(compareVersions).pop();
+          if (latest && compareVersions(version, latest) <= 0) {
+            console.log(`::error::${version} は公開済みの最新 ${latest} より後のバージョンではありません`);
             process.exit(1);
           }
           fs.writeFileSync(file, updated);
 
-          // Semantic Versioning 2.0.0 precedence
+          // Semantic Versioning 2.0.0 precedence of two valid versions
           function compareVersions(a, b) {
             const split = (v) => {
-              const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(v ?? '') ?? [];
-              return { core: [m[1], m[2], m[3]].map(Number), pre: m[4] ? m[4].split('.') : [] };
+              const [core, ...pre] = v.split('-');
+              return { core: core.split('.').map(Number), pre: pre.length ? pre.join('-').split('.') : [] };
             };
             const x = split(a), y = split(b);
             for (let i = 0; i < 3; i++) {
@@ -112,8 +126,9 @@ jobs:
           EOF
 
       # Commit the rewritten package.json to release/<version> and open a pull request
-      # into the branch the workflow ran on. A branch a previous run already pushed is reused
-      # only when its files are exactly the ones this run would commit (never force-pushed).
+      # into the branch the workflow ran on. An open pull request from a previous run is left
+      # as it is, and a branch a previous run pushed without opening one is reused only when
+      # its files are exactly the ones this run would commit (never force-pushed).
       - name: Open Pull Request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,26 +139,38 @@ jobs:
           fi
           branch="release/$version"
           title="chore: バージョンを $version にする"
-          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
-            git fetch --depth 1 origin "$branch"
+          pr="$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$pr" ]; then
+            echo "::notice::$branch の pull request はもうあります: $pr（$GITHUB_REF_NAME が進んでいたら、PR の Update branch で取り込んでください）"
+            exit 0
+          fi
+          status=0
+          git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null || status=$?
+          if [ "$status" -eq 0 ]; then
+            git fetch --depth 1 origin "refs/heads/$branch"
             if ! git diff --quiet FETCH_HEAD; then
-              echo "::error::$branch はもうあり、中身が今回の書き換えと違います（ほかのブランチで実行したときのものなど）。ブランチを消してから実行し直してください"
+              echo "::error::$branch はもうあり、中身が今回の書き換えと違います（ほかのブランチで実行したときのものなど）。開いている pull request が無いのを確かめてからブランチを消し、実行し直してください"
               exit 1
             fi
-            pr="$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json url --jq '.[0].url // empty' || true)"
-            if [ -n "$pr" ]; then
-              echo "::notice::$branch の pull request はもうあります: $pr"
-              exit 0
-            fi
-          else
+          elif [ "$status" -eq 2 ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "$title" -- "$packagePath/package.json"
             git push origin "HEAD:refs/heads/$branch"
+          else
+            echo "::error::$branch があるかを確かめられませんでした（git ls-remote の終了コード $status）"
+            exit 1
           fi
-          if ! gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" \
-              --body "package.json の version を $version にします。マージしたら Build Release を実行してください。"; then
-            url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...$branch?expand=1"
-            echo "::warning::pull request を作れませんでした（Allow GitHub Actions to create and approve pull requests がオフかもしれません）。$url から作ってください"
-            echo "package.json を $version にする pull request: $url" >> "$GITHUB_STEP_SUMMARY"
+          body="package.json の version を $version にします。マージしたら Build Release を実行してください。"
+          if out="$(gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" --body "$body" 2>&1)"; then
+            echo "$out"
+            exit 0
           fi
+          echo "$out"
+          # Only the missing repository setting falls back to a link; any other failure fails the run
+          if ! grep -q "not permitted to create or approve pull requests" <<< "$out"; then
+            exit 1
+          fi
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...$branch?expand=1"
+          echo "::warning::GitHub Actions に pull request を作る許可がありません（Allow GitHub Actions to create and approve pull requests）。$url から作ってください"
+          echo "package.json を $version にする pull request: $url" >> "$GITHUB_STEP_SUMMARY"
