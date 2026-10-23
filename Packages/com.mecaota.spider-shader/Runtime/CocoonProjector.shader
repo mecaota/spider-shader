@@ -260,9 +260,11 @@ Shader "mecaota/CocoonProjector"
                 SCPM_Part(SCPM_Cylinder(p, chest,  neck,    0.15 * s), _PartChest, dOn, dOff);
                 SCPM_Part(SCPM_Cylinder(p, pelvis, chest,   0.15 * s), _PartWaist, dOn, dOff);
                 SCPM_Part(SCPM_Cylinder(p, _JointUpperArmL.xyz, elbowL, 0.050 * s), _PartUpperArmL, dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, elbowL, handTipL,            0.045 * s), _PartForearmL,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, elbowL, handL,               0.045 * s), _PartForearmL,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, handL, handTipL,             0.060 * s), _PartForearmL,  dOn, dOff);   // 手（親指の分だけ太く）
                 SCPM_Part(SCPM_Cylinder(p, _JointUpperArmR.xyz, elbowR, 0.050 * s), _PartUpperArmR, dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, elbowR, handTipR,            0.045 * s), _PartForearmR,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, elbowR, handR,               0.045 * s), _PartForearmR,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, handR, handTipR,             0.060 * s), _PartForearmR,  dOn, dOff);
                 SCPM_Part(SCPM_Cylinder(p, _JointUpperLegL.xyz, kneeL,  0.080 * s), _PartThighL,    dOn, dOff);
                 SCPM_Part(SCPM_Cylinder(p, kneeL, soleL,                0.055 * s), _PartShinL,     dOn, dOff);
                 SCPM_Part(SCPM_Cylinder(p, _JointUpperLegR.xyz, kneeR,  0.080 * s), _PartThighR,    dOn, dOff);
