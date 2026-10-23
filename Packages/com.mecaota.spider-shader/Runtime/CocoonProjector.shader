@@ -39,7 +39,10 @@
 //     一番近い円柱（中に入っている深さが一番深い円柱）の部位が OFF なら印を立てない（discard）。
 //     境目は _PartEdgeFray の幅までノイズでほつれさせる。ほつれは ON の部位の外側へだけ広がるので、
 //     隣り合う部位を別々の Projector（別々のマテリアル）で出しても、境目に穴が開かない。
-//     骨の位置は Owner の xyz（腰・頭・胸・両手・両足）と Part Joints（背骨・首・肩・肘・股関節・膝・つま先）を使う。
+//     ノイズは受け手のメッシュの UV で引く（肌に貼り付くので、腕を振っても体の向きを変えても模様が流れない）。
+//     骨の位置は Owner の xyz（腰・頭・胸・両手・両足）と Part Joints（背骨・首・肩・肘・股関節・膝・つま先・中指の付け根）を使う。
+//     来ていない骨（y = -9999）から作る点（頭のてっぺん・指先など）も「どこでもない」にし、その円柱は使わない。
+//     ON の部位の円柱が 1 つも作れない（骨が足りない）ときは、部位で切らずに体全体に印を立てる。
 //     全部 ON なら判定そのものを飛ばす（従来と同じ見た目・同じ負荷）。全部 OFF なら何も描かない。
 //     Udon（SpiderCocoonProjectorMaskDriver）では TrackBone の配列で選ぶ（空 = 全身）。
 //
@@ -123,6 +126,9 @@ Shader "mecaota/CocoonProjector"
         // つま先の骨。無ければ足首から真下へ足の円柱をのばす
         _JointLeftToes ("骨 左のつま先 (Left Toes)", Vector) = (0, -9999, 0, 0)
         _JointRightToes ("骨 右のつま先 (Right Toes)", Vector) = (0, -9999, 0, 0)
+        // 中指の付け根の骨（MiddleProximal）。手の円柱を手首から指の向きへのばす。無ければ前腕の向きへのばす
+        _JointLeftFingers ("骨 左の中指の付け根 (Left Middle Proximal)", Vector) = (0, -9999, 0, 0)
+        _JointRightFingers ("骨 右の中指の付け根 (Right Middle Proximal)", Vector) = (0, -9999, 0, 0)
 
         [Header(Clip And Debug)]
         // 所有者モードでは体を丸ごと塗る（指先が切れない）ので既定 OFF。全員モードで範囲を絞るときだけ ON
@@ -188,6 +194,7 @@ Shader "mecaota/CocoonProjector"
             float4 _JointLeftUpperArm, _JointLeftLowerArm, _JointRightUpperArm, _JointRightLowerArm;
             float4 _JointLeftUpperLeg, _JointLeftLowerLeg, _JointRightUpperLeg, _JointRightLowerLeg;
             float4 _JointLeftToes, _JointRightToes;
+            float4 _JointLeftFingers, _JointRightFingers;
 
             // 原点が点 pt（xyz = 位置、w = 半径）の半径内か。w <= 0 の点は無効（distance >= 0 なので常に false）
             bool SCPM_Near(float3 origin, float4 pt)
@@ -252,19 +259,44 @@ Shader "mecaota/CocoonProjector"
                 return n * 2.0 - 1.0;
             }
 
+            // 骨の位置が来ているか（来ていない骨は y = -9999）
+            bool SCPM_Valid(float3 v)
+            {
+                return v.y > -9000.0;
+            }
+
+            // 点 a から「b → a の向き」に、a と b の距離の k 倍だけ先へのばした点。
+            // どちらかの骨が来ていなければ「どこでもない」を返す（その点を使う円柱は使われない）
+            float3 SCPM_Extend(float3 a, float3 b, float k)
+            {
+                return (SCPM_Valid(a) && SCPM_Valid(b)) ? a + (a - b) * k : float3(0.0, -9999.0, 0.0);
+            }
+
             // 足（足首から先）の円柱までの距離。つま先の骨があれば、かかとからつま先の先まで。
-            // 無ければ足首から真下（すねの向き）へ少しのばす
+            // 無ければ足首から真下（すねの向き。膝も無ければワールドの下）へ少しのばす
             float SCPM_Foot(float3 p, float3 foot, float3 knee, float4 toes, float s)
             {
-                if (toes.y < -9000.0) return SCPM_Cylinder(p, foot, foot + (foot - knee) * 0.15, 0.055 * s);
-                float3 heel   = foot - (toes.xyz - foot) * 0.35;
-                float3 toeTip = toes.xyz + (toes.xyz - foot) * 0.3;
+                if (!SCPM_Valid(toes.xyz))
+                {
+                    float3 sole = SCPM_Valid(knee) ? SCPM_Extend(foot, knee, 0.15) : foot - float3(0.0, 0.08 * s, 0.0);
+                    return SCPM_Cylinder(p, foot, sole, 0.055 * s);
+                }
+                float3 heel   = SCPM_Extend(foot, toes.xyz, 0.35);
+                float3 toeTip = SCPM_Extend(toes.xyz, foot, 0.3);
                 return SCPM_Cylinder(p, heel, toeTip, 0.050 * s);
+            }
+
+            // 手（手首から指先）の円柱の先。中指の付け根があれば指の向きへ（手首を曲げても指を追う）、
+            // 無ければ前腕の向きへのばす
+            float3 SCPM_HandTip(float3 hand, float3 elbow, float4 fingers)
+            {
+                return SCPM_Valid(fingers.xyz) ? SCPM_Extend(fingers.xyz, hand, 1.0) : SCPM_Extend(hand, elbow, 0.7);
             }
 
             // 体の位置 p が ON の部位に入るか。部位ごとの円柱のうち、p が一番深く入っている（距離が最小の）ものの部位で決める。
             // 円柱の太さは大人の体（腰〜首 0.45 m）の目安を、所有者の腰〜首の長さで伸び縮みさせる。
-            bool SCPM_InSelectedParts(float3 p)
+            // uv は境目のほつれのノイズ用（受け手のメッシュの UV）
+            bool SCPM_InSelectedParts(float3 p, float2 uv)
             {
                 float3 hips  = _OwnerHips.xyz;
                 float3 head  = _OwnerPt0.xyz;
@@ -276,13 +308,18 @@ Shader "mecaota/CocoonProjector"
                 float3 elbowL = _JointLeftLowerArm.xyz, elbowR = _JointRightLowerArm.xyz;
                 float3 kneeL  = _JointLeftLowerLeg.xyz, kneeR  = _JointRightLowerLeg.xyz;
 
-                float s = clamp(distance(hips, neck) / 0.45, 0.2, 5.0) * _PartRadiusScale;
-                // 頭のてっぺん・指先には骨が無いので、一つ手前の骨からのばす
-                float3 headTop  = head + (head - neck) * 2.0;
-                float3 handTipL = handL + (handL - elbowL) * 0.7;
-                float3 handTipR = handR + (handR - elbowR) * 0.7;
-                // 骨盤は腰の骨より少し下（股関節の高さあたり）から。お尻を Hips に入れる
-                float3 pelvis   = hips + (hips - chest) * 0.4;
+                // 体の大きさ。腰〜首（無ければ腰〜頭）の長さを大人の目安と比べる。どちらも無ければ等倍
+                float size = 1.0;
+                if (SCPM_Valid(hips) && SCPM_Valid(neck))      size = distance(hips, neck) / 0.45;
+                else if (SCPM_Valid(hips) && SCPM_Valid(head)) size = distance(hips, head) / 0.55;
+                float s = clamp(size, 0.2, 5.0) * _PartRadiusScale;
+                // 頭のてっぺん・指先には骨が無いので、一つ手前の骨からのばす（首が無ければワールドの上へ）
+                float3 headTop  = SCPM_Valid(neck) ? SCPM_Extend(head, neck, 2.0) : head + float3(0.0, 0.15 * s, 0.0);
+                float3 handTipL = SCPM_HandTip(handL, elbowL, _JointLeftFingers);
+                float3 handTipR = SCPM_HandTip(handR, elbowR, _JointRightFingers);
+                // 骨盤は腰の骨より少し下（股関節の高さあたり）から。お尻を Hips に入れる（胸が無ければ背骨から、どちらも無ければ腰の骨から）
+                float3 pelvis   = SCPM_Valid(chest) ? SCPM_Extend(hips, chest, 0.4)
+                                : (SCPM_Valid(spine) ? SCPM_Extend(hips, spine, 0.8) : hips);
 
                 float dOn = 1e5, dOff = 1e5;
                 SCPM_Part(SCPM_Cylinder(p, pelvis, spine,   0.15 * s), _PartHips,  dOn, dOff);
@@ -303,12 +340,12 @@ Shader "mecaota/CocoonProjector"
                 SCPM_Part(SCPM_Cylinder(p, kneeR, footR,                   0.055 * s), _PartRightLowerLeg, dOn, dOff);
                 SCPM_Part(SCPM_Foot(p, footR, kneeR, _JointRightToes, s),               _PartRightFoot,     dOn, dOff);
 
-                // 骨の位置が 1 つも来ていない（設定忘れ）ときは、部位で切らずに従来どおり体全体に印を立てる
-                if (dOn > 1e4 && dOff > 1e4) return true;
+                // ON の部位の円柱が 1 つも作れない（骨の位置が来ていない・足りない）ときは、部位で切らずに体全体に印を立てる
+                if (dOn > 1e4) return true;
                 // ON の部位のほうが近ければ入る。さらに OFF の部位へ 0〜_PartEdgeFray m だけノイズではみ出させて境目をほつれさせる
                 // （外側へだけはみ出すので、隣の部位を別のマテリアルで出しても境目に隙間ができない）。
-                // ノイズは腰からの相対位置で引く（歩いても模様が体の上を流れない）
-                float fray = _PartEdgeFray > 0.0 ? (SCPM_Noise((p - hips) * (1.0 / 0.025)) * 0.5 + 0.5) * _PartEdgeFray : 0.0;
+                // ノイズはメッシュの UV で引く（肌に貼り付くので、腕を振っても体の向きを変えても模様が流れない）
+                float fray = _PartEdgeFray > 0.0 ? (SCPM_Noise(float3(uv * 64.0, 0.0)) * 0.5 + 0.5) * _PartEdgeFray : 0.0;
                 return dOn - dOff < fray;
             }
 
@@ -316,6 +353,7 @@ Shader "mecaota/CocoonProjector"
             {
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
+                float2 uv     : TEXCOORD0;   // 部位の境目のほつれのノイズ用
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -325,6 +363,7 @@ Shader "mecaota/CocoonProjector"
                 float4 uvProj  : TEXCOORD0;   // Projector の 0..1 座標（視錐台クリップ用）
                 float4 uvDepth : TEXCOORD1;   // Projector の near..far
                 float3 bodyPos : TEXCOORD2;   // 膨張前の体の位置（部位の判定用、ワールド座標）
+                float2 uv      : TEXCOORD3;   // 受け手のメッシュの UV（部位の境目のほつれ用）
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -354,6 +393,7 @@ Shader "mecaota/CocoonProjector"
 
                 float3 wp = mul(unity_ObjectToWorld, v.vertex).xyz;
                 o.bodyPos = wp;
+                o.uv      = v.uv;
                 float3 nw = UnityObjectToWorldNormal(v.normal);   // SkinnedMeshRenderer はスキニング済みの法線
                 float  ln = length(nw);
                 float3 n  = ln > 1e-6 ? nw / ln : float3(0.0, 0.0, 0.0);   // 法線の無いメッシュは膨らませない
@@ -380,7 +420,7 @@ Shader "mecaota/CocoonProjector"
                 // 部位の選択。全部 ON（17）なら判定しない
                 if (SCPM_PartsOn() < 16.5)
                 {
-                    if (!SCPM_InSelectedParts(i.bodyPos)) discard;
+                    if (!SCPM_InSelectedParts(i.bodyPos, i.uv)) discard;
                 }
                 // ColorMask 0 なら捨てられる。デバッグ表示（15）では緑で塗る
                 return fixed4(0.1, 1.0, 0.3, 0.35);

@@ -13,15 +13,18 @@ using VRC.SDKBase;
 ///   （_OwnerRoot / _OwnerHips / _OwnerPt0〜5）、Projector を本人の頭の上へ動かして真下へ向ける。
 /// ・誰も捕まっていない間は Projector の GameObject を無効にする（描き直しの負荷をなくす）。
 /// ・繭を付ける部位を、SurfaceContactDeformer と同じ TrackBone の配列（bones）で選べる（空なら全身）。
-///   部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先の位置も毎フレーム渡す（_JointSpine など）。
+///   部位を絞っている間は、部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先・中指の付け根の位置も
+///   毎フレーム渡す（_JointSpine など。全身のときはシェーダーが部位の判定をしないので渡さない）。
 ///
 /// 使い方（別の UdonSharp スクリプトから。どれも呼んだクライアントの見た目だけを変える）:
 /// ・SetOwner(playerId)   この人のアバターにだけ繭を描かせる
 /// ・ClearOwner()         やめる（Projector を無効にする）
-/// ・SetBones(bones)      繭を付ける骨をまとめて選ぶ（空の配列 = 全身）
-/// ・SetBone(bone, on)    骨を 1 つだけ ON / OFF する（全部 OFF にすると何も付かない。SetBones / SetWholeBody で戻る）
+/// ・SetBones(bones)      繭を付ける骨をまとめて選ぶ（空の配列 = 全身。何も付けないときは SetNoBones）
+/// ・SetBone(bone, on)    骨を 1 つだけ ON / OFF する（全部 OFF にすると何も付かない）
 /// ・SetWholeBody()       全身に戻す
+/// ・SetNoBones()         どこにも付けない（Projector は動かしたまま）
 /// 全員に同じ見え方をさせたいときは、捕獲を同期しているスクリプトから全員のクライアントで呼ぶ。
+/// 部位の選択は SetOwner / ClearOwner では変わらない（人が替わっても、前の選択のまま）。
 ///
 /// 注意:
 /// ・Projector コンポーネントの設定（Orthographic・大きさ・Ignore Layers）は Udon から変えられないので、
@@ -61,19 +64,22 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
 
     private const int PartCount = 17;
     private const int PartAll = (1 << PartCount) - 1;
+    // 「どこにも付けない」を bones で表すための値（どの部位にも当たらない。空の bones は全身なので、これ 1 つだけの配列にする）
+    private const int NoBone = -1;
 
     // マスクのシェーダーの _OwnerPt0〜5 の順（頭・胸・左手・右手・左足・右足）
     private int[] _pointBones;
     private string[] _pointNames;
-    // 部位の判定に使う骨（背骨・首・左肩・左肘・右肩・右肘・左股関節・左膝・右股関節・右膝・左つま先・右つま先）
+    private Vector3[] _pointPos;      // そのフレームに読んだ位置（読み直さない）
+    // 部位の判定に使う骨（背骨・首・左肩・左肘・右肩・右肘・左股関節・左膝・右股関節・右膝・左右のつま先・左右の中指の付け根）
     private int[] _jointBones;
     private string[] _jointNames;
+    private Vector3[] _jointPos;
     // シェーダーの部位（_PartHips 〜 _PartRightFoot）と、その部位を代表する骨（ビットの順）
     private string[] _partNames;
     private TrackBone[] _partBones;
     private int[] _partOfBone;        // HumanBodyBones の値 → 部位の番号（-1 = 部位なし）
     private int _partsWritten = -1;   // マテリアルに書いた部位のビット（-1 = まだ書いていない）
-    private bool _noParts = false;    // SetBone で全部 OFF にした（空の bones は全身なので、別に覚える）
     private bool _inited = false;
     private int _ownerId = 0;
     private bool _projectorOn = true;
@@ -91,11 +97,14 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
                                   (int)HumanBodyBones.RightUpperArm, (int)HumanBodyBones.RightLowerArm,
                                   (int)HumanBodyBones.LeftUpperLeg, (int)HumanBodyBones.LeftLowerLeg,
                                   (int)HumanBodyBones.RightUpperLeg, (int)HumanBodyBones.RightLowerLeg,
-                                  (int)HumanBodyBones.LeftToes, (int)HumanBodyBones.RightToes };
+                                  (int)HumanBodyBones.LeftToes, (int)HumanBodyBones.RightToes,
+                                  (int)HumanBodyBones.LeftMiddleProximal, (int)HumanBodyBones.RightMiddleProximal };
         _jointNames = new string[] { "_JointSpine", "_JointNeck",
                                      "_JointLeftUpperArm", "_JointLeftLowerArm", "_JointRightUpperArm", "_JointRightLowerArm",
                                      "_JointLeftUpperLeg", "_JointLeftLowerLeg", "_JointRightUpperLeg", "_JointRightLowerLeg",
-                                     "_JointLeftToes", "_JointRightToes" };
+                                     "_JointLeftToes", "_JointRightToes", "_JointLeftFingers", "_JointRightFingers" };
+        _pointPos = new Vector3[_pointBones.Length];
+        _jointPos = new Vector3[_jointBones.Length];
         _partBones = new TrackBone[] { TrackBone.Hips, TrackBone.Spine, TrackBone.Chest, TrackBone.Neck, TrackBone.Head,
                                        TrackBone.LeftUpperArm, TrackBone.LeftLowerArm, TrackBone.LeftHand,
                                        TrackBone.RightUpperArm, TrackBone.RightLowerArm, TrackBone.RightHand,
@@ -156,11 +165,11 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return _ownerId;
     }
 
-    // 繭を付ける骨をまとめて選ぶ。空の配列（または null）なら全身
+    // 繭を付ける骨をまとめて選ぶ。空の配列（または null）なら全身。
+    // くっついている骨を集めて渡すときは、0 本になったら SetNoBones を呼ぶ（空の配列を渡すと全身になる）
     public void SetBones(TrackBone[] newBones)
     {
         bones = newBones != null ? newBones : new TrackBone[0];
-        _noParts = false;
         WriteParts();
     }
 
@@ -173,7 +182,6 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         int mask = GetPartMask();
         if (on) { mask |= 1 << part; } else { mask &= ~(1 << part); }
         bones = BonesFromMask(mask);
-        _noParts = mask == 0;
         WriteParts();
     }
 
@@ -181,6 +189,12 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     public void SetWholeBody()
     {
         SetBones(new TrackBone[0]);
+    }
+
+    // どこにも付けない（Projector と所有者はそのまま。SetBones / SetBone / SetWholeBody で戻る）
+    public void SetNoBones()
+    {
+        SetBones(BonesFromMask(0));
     }
 
     // 骨（を含む部位）に繭を付けるか
@@ -191,7 +205,8 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return part >= 0 && (GetPartMask() & (1 << part)) != 0;
     }
 
-    // 今の骨の配列（空 = 全身）
+    // 今の骨の配列（空 = 全身。どこにも付けないときは、どの骨でもない値（-1）1 つだけの配列）。
+    // SetBones にそのまま渡せば、同じ状態に戻る
     public TrackBone[] GetBones()
     {
         return bones;
@@ -212,38 +227,22 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         if (!Utilities.IsValid(p)) { ClearOwner(); return; }
         if (maskMaterial == null) { return; }
 
-        WriteParts();
+        int mask = WriteParts();
         Vector3 root = p.GetPosition();
         maskMaterial.SetVector("_OwnerRoot", new Vector4(root.x, root.y, root.z, rootRadius));
-        maskMaterial.SetVector("_OwnerHips", BonePoint(p, (int)HumanBodyBones.Hips, hipsRadius));
+        maskMaterial.SetVector("_OwnerHips", Point(p.GetBonePosition(HumanBodyBones.Hips), hipsRadius));
         for (int i = 0; i < _pointBones.Length; i++)
         {
-            maskMaterial.SetVector(_pointNames[i], BonePoint(p, _pointBones[i], attachmentRadius));
+            _pointPos[i] = p.GetBonePosition((HumanBodyBones)_pointBones[i]);
+            maskMaterial.SetVector(_pointNames[i], Point(_pointPos[i], attachmentRadius));
         }
-        for (int i = 0; i < _jointBones.Length; i++)
-        {
-            maskMaterial.SetVector(_jointNames[i], BonePoint(p, _jointBones[i], 0f));
-        }
-        // 胸・首の骨が無いアバターは、背骨と頭の間で代わりにする（部位の判定で背骨・胸・首の境目に使う）
-        Vector3 spinePos = p.GetBonePosition(HumanBodyBones.Spine);
-        Vector3 chestPos = p.GetBonePosition(HumanBodyBones.Chest);
-        Vector3 headBone = p.GetBonePosition(HumanBodyBones.Head);
-        bool canGuess = spinePos.sqrMagnitude > 1e-8f && headBone.sqrMagnitude > 1e-8f;
-        if (chestPos.sqrMagnitude < 1e-8f && canGuess)
-        {
-            chestPos = Vector3.Lerp(spinePos, headBone, 0.3f);
-            maskMaterial.SetVector(_pointNames[1], new Vector4(chestPos.x, chestPos.y, chestPos.z, attachmentRadius > 0f ? attachmentRadius : 0f));
-        }
-        if (p.GetBonePosition(HumanBodyBones.Neck).sqrMagnitude < 1e-8f && canGuess)
-        {
-            Vector3 n = Vector3.Lerp(chestPos, headBone, 0.6f);
-            maskMaterial.SetVector(_jointNames[1], new Vector4(n.x, n.y, n.z, 0f));
-        }
+        // 部位の判定用の骨は、部位を絞っているときだけ渡す（全身・どこにも付けないときは、シェーダーは部位の判定をしない）
+        if (mask != PartAll && mask != 0) { WriteJoints(p); }
 
         if (projectorTransform != null)
         {
             // 頭の上から真下へ向ける。Projector の上方向（画面の縦）は本人の正面にそろえる
-            Vector3 headPos = p.GetBonePosition(HumanBodyBones.Head);
+            Vector3 headPos = _pointPos[0];
             if (headPos.sqrMagnitude < 1e-8f) { headPos = root + Vector3.up * p.GetAvatarEyeHeightAsMeters(); }
             Vector3 fwd = p.GetRotation() * Vector3.forward;
             fwd.y = 0f;
@@ -260,13 +259,36 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
 
     // ================= 内部 =================
 
-    // 骨の位置と許容半径。骨が無ければ無効（y = -9999、w = 0）。
+    // 骨の位置と許容半径。骨が無い（GetBonePosition がゼロ）なら無効（y = -9999、w = 0）。
     // radius <= 0 でも位置は渡す（w = 0 なら所有者の判定には使われず、部位の判定にだけ使われる）
-    private Vector4 BonePoint(VRCPlayerApi p, int bone, float radius)
+    private Vector4 Point(Vector3 v, float radius)
     {
-        Vector3 v = p.GetBonePosition((HumanBodyBones)bone);
         if (v.sqrMagnitude < 1e-8f) { return new Vector4(0f, -9999f, 0f, 0f); }
         return new Vector4(v.x, v.y, v.z, radius > 0f ? radius : 0f);
+    }
+
+    // 部位の判定に使う骨の位置を渡す。胸・首の骨が無いアバターは、背骨と頭の間で代わりにする。
+    // 胸の代わりの点は部位の判定にだけ使う（w = 0。所有者として受け入れる範囲は広げない）
+    private void WriteJoints(VRCPlayerApi p)
+    {
+        for (int i = 0; i < _jointBones.Length; i++)
+        {
+            _jointPos[i] = p.GetBonePosition((HumanBodyBones)_jointBones[i]);
+            maskMaterial.SetVector(_jointNames[i], Point(_jointPos[i], 0f));
+        }
+        Vector3 spinePos = _jointPos[0];
+        Vector3 headPos = _pointPos[0];
+        Vector3 chestPos = _pointPos[1];
+        if (spinePos.sqrMagnitude < 1e-8f || headPos.sqrMagnitude < 1e-8f) { return; }
+        if (chestPos.sqrMagnitude < 1e-8f)
+        {
+            chestPos = Vector3.Lerp(spinePos, headPos, 0.3f);
+            maskMaterial.SetVector(_pointNames[1], Point(chestPos, 0f));
+        }
+        if (_jointPos[1].sqrMagnitude < 1e-8f)
+        {
+            maskMaterial.SetVector(_jointNames[1], Point(Vector3.Lerp(chestPos, headPos, 0.6f), 0f));
+        }
     }
 
     // HumanBodyBones の値 → シェーダーの部位の番号（-1 = 部位なし）
@@ -276,10 +298,9 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return _partOfBone[bone];
     }
 
-    // bones から、ON の部位のビット（空 = 全部）
+    // bones から、ON の部位のビット（空 = 全部。どの部位にも当たらない値だけなら 0）
     private int GetPartMask()
     {
-        if (_noParts) { return 0; }
         if (bones == null || bones.Length == 0) { return PartAll; }
         int m = 0;
         for (int i = 0; i < bones.Length; i++)
@@ -290,10 +311,16 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return m;
     }
 
-    // 部位のビットから骨の配列を作る（全部 ON・全部 OFF なら空）
+    // 部位のビットから骨の配列を作る（全部 ON なら空 = 全身、全部 OFF なら NoBone 1 つだけ）
     private TrackBone[] BonesFromMask(int mask)
     {
-        if ((mask & PartAll) == PartAll || mask == 0) { return new TrackBone[0]; }
+        if ((mask & PartAll) == PartAll) { return new TrackBone[0]; }
+        if (mask == 0)
+        {
+            TrackBone[] none = new TrackBone[1];
+            none[0] = (TrackBone)NoBone;
+            return none;
+        }
         int n = 0;
         for (int i = 0; i < PartCount; i++) { if ((mask & (1 << i)) != 0) { n++; } }
         TrackBone[] result = new TrackBone[n];
@@ -305,18 +332,18 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return result;
     }
 
-    // 部位の ON / OFF をマスクのマテリアルに書く（変わったときだけ）
-    private void WriteParts()
+    // 部位の ON / OFF をマスクのマテリアルに書く（変わったときだけ）。戻り値 = 今の部位のビット
+    private int WriteParts()
     {
         EnsureInit();
-        if (maskMaterial == null) { return; }
         int mask = GetPartMask();
-        if (mask == _partsWritten) { return; }
+        if (maskMaterial == null || mask == _partsWritten) { return mask; }
         _partsWritten = mask;
         for (int i = 0; i < _partNames.Length; i++)
         {
             maskMaterial.SetFloat(_partNames[i], (mask & (1 << i)) != 0 ? 1f : 0f);
         }
+        return mask;
     }
 
     private void SetProjector(bool on)
