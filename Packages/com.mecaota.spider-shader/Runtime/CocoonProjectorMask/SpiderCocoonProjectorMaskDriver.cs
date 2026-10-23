@@ -51,8 +51,8 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     [Tooltip("原点が腰の骨からこの距離以内なら本人とみなす（SkinnedMeshRenderer の rootBone が腰のアバター向け）")]
     public float hipsRadius = 0.35f;
 
-    [Tooltip("手に持つ物・帽子・靴など骨の下に付いた物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない")]
-    public float attachmentRadius = 0.25f;
+    [Tooltip("手に持つ物・帽子・靴・衣装の付属品など骨の下に付いた物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない。広げすぎると、すぐ隣に立つ人の物まで本人の物とみなす")]
+    public float attachmentRadius = 0.5f;
 
     [Header("繭を付ける部位（OFF の部位には繭が出ない）")]
     public bool head = true;
