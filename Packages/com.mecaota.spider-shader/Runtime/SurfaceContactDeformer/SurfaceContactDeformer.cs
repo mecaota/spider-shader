@@ -218,7 +218,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private Vector3 _tmpAnchor;
     private float _tmpParam;
     private const int SegmentSamples = 9; // 区間を調べる点の数（区間 40cm なら 5cm 刻み）
-    private const float SideEpsilon = 0.01f; // 捕縛点が面からこれ（m）より近いと、どちら側でくっついたか決めない（webMaxBulge）
+    private const float SideEpsilon = 0.01f; // 捕縛点が面からこれ（m）より近いと、どちら側でくっついたか決めない（pullOnly・webMaxBulge）
     private bool _decorsShown = false;
     private bool _registered = false;
     private int _lastActiveCount = -1;
@@ -1072,7 +1072,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     // 追従先 t の「面の法線方向の成分」を収める。法線は 1 回だけ求める。
     // ・pullOnly: くっついた側の反対（面の奥へ押し込む向き）へは動かさない（近づけても凹まない）
     // ・webMaxBulge: くっついた側へは webMaxBulge まで（超えた分は粘液の糸が受け持つ）。押し込む向き・面に沿った向きはそのまま。
-    //   捕縛点が面のほぼ上（SideEpsilon 未満）でどちら側か決められないときは、引いた向きに上限をかける
+    //   捕縛点が面のほぼ上（SideEpsilon 未満）でどちら側か決められないときは、引いた向きに上限をかけ、pullOnly も効かせない
+    //   （面をわずかに貫いて捕まった手足を、押し込み扱いにして置き去りにしないように）
     // 副出力（U# は out 引数が使えない）: _tmpGoal = 上限をかける前の追従先、_tmpSide = くっついた側の法線（決められないときは 0）
     private Vector3 PullTarget(int b, Vector3 anchorLocal, Vector3 a, Vector3 t)
     {
@@ -1081,12 +1082,13 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         Vector3 n = SurfaceNormal(b, anchorLocal);
         float side = Vector3.Dot(OffsetWorld(b, anchorLocal), n);
         if (side < 0f) { n = -n; side = -side; }
+        // 面を通ってから捕まえる巣（captureOnlyBelowSurface）は、面のすぐ下で捕まえても裏側と決まっている
+        bool known = side >= SideEpsilon || (captureOnlyBelowSurface && shape == SurfaceShape.Plane);
         float dn = Vector3.Dot(t - a, n);
-        if (pullOnly && dn < 0f) { t -= n * dn; dn = 0f; }
+        if (pullOnly && known && dn < 0f) { t -= n * dn; dn = 0f; }
         _tmpGoal = t;
         if (webMaxBulge <= 0f) { return t; }
-        // 面を通ってから捕まえる巣（captureOnlyBelowSurface）は、面のすぐ下で捕まえても裏側と決まっている
-        if (side >= SideEpsilon || (captureOnlyBelowSurface && shape == SurfaceShape.Plane)) { _tmpSide = n; }
+        if (known) { _tmpSide = n; }
         else if (dn < 0f) { n = -n; dn = -dn; }
         return (dn > webMaxBulge) ? t - n * (dn - webMaxBulge) : t;
     }
