@@ -2,10 +2,11 @@ name: Bump Version
 
 # Run this workflow from "Run workflow" on main and enter the version to release next.
 # It rewrites the version in the package.json to that value and opens a pull request from
-# release/<version> with the change. Merge it, then run "Build Release" to publish.
+# bump-version/<version> with the change. Merge it, then run "Build Release" to publish.
+# The branch and the pull request are handled by peter-evans/create-pull-request, which
+# reuses and updates them when the workflow runs again for the same version.
 # Opening the pull request needs "Allow GitHub Actions to create and approve pull requests"
-# in Settings > Actions > General (it also lets workflows approve pull requests); without it,
-# a link to open one by hand is shown instead.
+# in Settings > Actions > General (it also lets workflows approve pull requests).
 on:
   workflow_dispatch:
     inputs:
@@ -14,9 +15,8 @@ on:
         required: true
         type: string
 
-# Runs of the same version wait for each other so they never push the same branch at once.
+# Runs of the same version wait for each other so they never update the same branch at once.
 # The input is used as it is, which is enough since only an exact version passes validation.
-# GitHub keeps only one waiting run per group: a newer run of the same version replaces it.
 concurrency:
   group: bump-version-${{ inputs.version }}
   cancel-in-progress: false
@@ -36,8 +36,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Validate the version entered in "Run workflow". The inputs are passed through env so
-      # they are never expanded into the scripts themselves.
+      # Validate the version entered in "Run workflow" and list the published versions.
+      # The inputs are passed through env so they are never expanded into the scripts themselves.
       - name: Validate Version
         env:
           PACKAGE_NAME: ${{ vars.PACKAGE_NAME }}
@@ -61,48 +61,70 @@ jobs:
             echo "::error::$version はタグの名前に使えません（末尾の .lock など）"
             exit 1
           fi
-          if [ "$GITHUB_REF_TYPE" != "branch" ]; then
-            echo "::error::Bump Version はブランチ（ふつうは main）を選んで実行してください"
+          if [ "$GITHUB_REF_TYPE" != "branch" ] || [[ "$GITHUB_REF_NAME" == bump-version/* ]]; then
+            echo "::error::Bump Version は、リリースのもとになるブランチ（ふつうは main）を選んで実行してください"
             exit 1
           fi
-          # The published versions, also used by the next step
           if ! refs="$(git ls-remote --tags --refs origin)"; then
             echo "::error::タグの一覧を取得できませんでした"
             exit 1
           fi
           printf '%s\n' "$refs" | sed -n 's|^.*refs/tags/||p' > "$RUNNER_TEMP/tags"
-          if grep -qxF -e "$version" -e "v$version" "$RUNNER_TEMP/tags"; then
-            echo "::error::タグ $version はもうあります。まだ出していないバージョンを入力してください"
-            exit 1
-          fi
           echo "version=$version" >> "$GITHUB_ENV"
 
-      # Set the version in the package.json, keeping its indentation, line endings and byte
-      # order mark. The version must come after the latest published one (tags that are not
-      # versions are ignored); an unpublished version already in the package.json may be lowered.
+      # Set the version in the package.json, changing nothing else in the file. The version
+      # must not be published yet and must come after the latest published one (tags that are
+      # not versions are ignored); an unpublished version already in the package.json may be
+      # lowered. Nothing is left to do when the package.json already has the version.
       - name: Set Version
+        id: set_version
         run: |
           node - "$packagePath/package.json" "$version" "$RUNNER_TEMP/tags" <<'EOF'
           const fs = require('fs');
           const [file, version, tagsFile] = process.argv.slice(2);
-          const text = fs.readFileSync(file, 'utf8');
-          const bom = text.startsWith('\uFEFF') ? '\uFEFF' : '';
-          const manifest = JSON.parse(text.slice(bom.length));
 
+          // Published versions: tags like 1.2.3, v1.2.3 or 1.2.3+build
           const published = fs.readFileSync(tagsFile, 'utf8').split('\n')
-            .map((tag) => tag.replace(/^v/, ''))
-            .filter((tag) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag));
-          const latest = published.sort(compareVersions).pop();
-          if (latest && compareVersions(version, latest) <= 0) {
-            console.log(`::error::${version} は公開済みの最新 ${latest} より後のバージョンではありません`);
+            .map((tag) => ({ tag, version: tag.replace(/^v/, '').replace(/\+.*$/, '') }))
+            .filter(({ version }) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version));
+          const same = published.find((p) => compareVersions(p.version, version) === 0);
+          if (same) {
+            console.log(`::error::タグ ${same.tag} がもうあります。まだ出していないバージョンを入力してください`);
+            process.exit(1);
+          }
+          const latest = published.map((p) => p.version).sort(compareVersions).pop();
+          if (latest && compareVersions(version, latest) < 0) {
+            console.log(`::error::${version} は公開済みの最新 ${latest} より前のバージョンです`);
             process.exit(1);
           }
 
-          manifest.version = version;
-          const indent = /^[ \t]+(?=")/m.exec(text)?.[0] ?? '  ';
-          const newline = text.includes('\r\n') ? '\r\n' : '\n';
-          const json = JSON.stringify(manifest, null, indent).replace(/\n/g, newline);
-          fs.writeFileSync(file, bom + json + (/\r?\n$/.test(text) ? newline : ''));
+          // Replace the "version" value that turns out to be the top-level one, so a nested
+          // "version" and the rest of the file stay as written
+          const text = fs.readFileSync(file, 'utf8');
+          const parse = (json) => JSON.parse(json.replace(/^\uFEFF/, ''));
+          const expected = JSON.stringify({ ...parse(text), version });
+          let updated;
+          for (const match of text.matchAll(/("version"\s*:\s*")((?:[^"\\]|\\.)*)(")/g)) {
+            const candidate = text.slice(0, match.index) + match[1] + version + match[3] +
+              text.slice(match.index + match[0].length);
+            try {
+              if (JSON.stringify(parse(candidate)) === expected) {
+                updated = candidate;
+                break;
+              }
+            } catch {
+              // Not a JSON string value (e.g. inside another string); try the next one
+            }
+          }
+          if (updated === undefined) {
+            console.log(`::error::${file} の version を書き換えられませんでした`);
+            process.exit(1);
+          }
+          if (updated === text) {
+            console.log(`::notice::package.json はすでに ${version} です。そのまま Build Release を実行してください`);
+          }
+          fs.writeFileSync(file, updated);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `changed=${updated !== text}\n`);
 
           // Semantic Versioning 2.0.0 precedence. Numbers are compared as digit strings so
           // leading zeros and values beyond Number precision are handled.
@@ -135,59 +157,24 @@ jobs:
           }
           EOF
 
-      # Commit the rewritten package.json to release/<version> and open a pull request into
-      # the branch the workflow ran on. An open pull request from a previous run is left as it
-      # is (pull requests from forks are ignored even when their branch has the same name).
-      # A release/<version> that no open pull request uses is replaced only when it holds just
-      # this workflow's commit, i.e. a previous run pushed it but could not open the pull request.
+      # Commit the package.json to bump-version/<version> and open (or update) the pull request
+      # into the branch the workflow ran on
       - name: Open Pull Request
-        env:
-          GH_TOKEN: ${{ github.token }}
+        id: open_pr
+        if: steps.set_version.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: bump-version/${{ env.version }}
+          add-paths: ${{ env.packagePath }}/package.json
+          commit-message: "chore: バージョンを ${{ env.version }} にする"
+          title: "chore: バージョンを ${{ env.version }} にする"
+          body: package.json の version を ${{ env.version }} にします。マージしたら Build Release を実行してください。
+
+      # When the pull request could not be opened (most often because the repository setting
+      # above is off), point to where it can be opened by hand
+      - name: Show Pull Request Link
+        if: failure() && steps.open_pr.outcome == 'failure'
         run: |
-          if git diff --quiet; then
-            echo "::notice::package.json はすでに $version です。そのまま Build Release を実行してください"
-            exit 0
-          fi
-          branch="release/$version"
-          title="chore: バージョンを $version にする"
-          prs="$(gh pr list --head "$branch" --state open --json url,baseRefName,isCrossRepository \
-            --jq '.[] | select(.isCrossRepository | not) | [.baseRefName, .url] | @tsv')"
-          while IFS=$'\t' read -r base url; do
-            if [ "$base" = "$GITHUB_REF_NAME" ]; then
-              echo "::notice::$branch の pull request はもうあります: $url（$GITHUB_REF_NAME が進んでいたら、PR の Update branch で取り込んでください）"
-              exit 0
-            elif [ -n "$url" ]; then
-              echo "::error::$branch は $base への pull request で使われています: $url"
-              exit 1
-            fi
-          done <<< "$prs"
-          if ! remote="$(git ls-remote --heads origin "refs/heads/$branch")"; then
-            echo "::error::$branch があるかを確かめられませんでした"
-            exit 1
-          fi
-          lease=""
-          if [ -n "$remote" ]; then
-            git fetch --depth 1 origin "refs/heads/$branch"
-            if [ "$(git log -1 --format='%an %s' FETCH_HEAD)" != "github-actions[bot] $title" ]; then
-              echo "::error::$branch に、このワークフローのもの以外のコミットがあります。中身を確かめてからブランチを消すか、別のバージョンで実行してください"
-              exit 1
-            fi
-            lease="--force-with-lease=refs/heads/$branch:$(git rev-parse FETCH_HEAD)"
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "$title" -- "$packagePath/package.json"
-          git push ${lease:+"$lease"} origin "HEAD:refs/heads/$branch"
-          body="package.json の version を $version にします。マージしたら Build Release を実行してください。"
-          if out="$(gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" --body "$body" 2>&1)"; then
-            echo "$out"
-            exit 0
-          fi
-          echo "$out"
-          # Only the missing repository setting falls back to a link; any other failure fails the run
-          if ! grep -qi "not permitted to create" <<< "$out"; then
-            exit 1
-          fi
-          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...$branch?expand=1"
-          echo "::warning::GitHub Actions に pull request を作る許可がありません（Allow GitHub Actions to create and approve pull requests）。$url から作ってください"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...bump-version/$version?expand=1"
+          echo "::warning::pull request を作れませんでした。「Allow GitHub Actions to create and approve pull requests」がオフなら、オンにして実行し直すか、$url から作ってください"
           echo "package.json を $version にする pull request: $url" >> "$GITHUB_STEP_SUMMARY"
