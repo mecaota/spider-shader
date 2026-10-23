@@ -1,0 +1,98 @@
+name: Bump Version
+
+# Run this workflow from "Run workflow" on main and enter the version to release next.
+# It rewrites only the version in the package.json to that value and opens a pull request
+# from release/<version> with the change. Merge it, then run "Build Release" to publish.
+# Opening the pull request needs "Allow GitHub Actions to create and approve pull requests"
+# in Settings > Actions > General; without it, a link to open one by hand is shown instead.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 次に出すバージョン（例 1.2.3）。package.json をこの値に書き換える PR を作ります
+        required: true
+        type: string
+
+jobs:
+
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      packagePath: Packages/${{ vars.PACKAGE_NAME }}
+    steps:
+
+      # Checkout Local Repository
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Validate the version entered in "Run workflow" (a leading "v" is dropped).
+      # The input is passed through env so it is never expanded into the script itself.
+      - name: Validate Version
+        env:
+          PACKAGE_NAME: ${{ vars.PACKAGE_NAME }}
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          if [ -z "$PACKAGE_NAME" ]; then
+            echo "::error::リポジトリ変数 PACKAGE_NAME を設定してください"
+            exit 1
+          fi
+          version="$(printf '%s' "$VERSION_INPUT" | tr -d '[:space:]')"
+          version="${version#v}"
+          # Semantic Versioning 2.0.0 without build metadata: no leading zeros in numbers,
+          # prerelease identifiers separated by single dots
+          num='(0|[1-9][0-9]*)'
+          pre='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          semver="^$num\.$num\.$num(-$pre(\.$pre)*)?$"
+          if [[ ! "$version" =~ $semver ]] || ! git check-ref-format "refs/tags/$version"; then
+            echo "::error::バージョンは 1.2.3 や 1.2.3-beta.1 の形で入力してください（先頭の 0 や続けた . は使えません）"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" != "branch" ]; then
+            echo "::error::Bump Version はブランチ（ふつうは main）を選んで実行してください"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null; then
+            echo "::error::タグ $version はもうあります。まだ出していないバージョンを入力してください"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      # Rewrite only the version in the package.json so the rest of the file stays as written
+      - name: Set Version
+        run: |
+          node - "${{ env.packagePath }}/package.json" "${{ env.version }}" <<'EOF'
+          const fs = require('fs');
+          const [file, version] = process.argv.slice(2);
+          const text = fs.readFileSync(file, 'utf8');
+          const updated = text.replace(/("version"\s*:\s*")[^"]*(")/, (_, head, tail) => head + version + tail);
+          if (JSON.parse(updated.replace(/^\uFEFF/, '')).version !== version) {
+            throw new Error(`Could not set the version in ${file}`);
+          }
+          fs.writeFileSync(file, updated);
+          EOF
+
+      # Commit the rewritten package.json to release/<version> and open a pull request
+      # into the branch the workflow ran on
+      - name: Open Pull Request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then
+            echo "::notice::package.json はすでに ${{ env.version }} です。そのまま Build Release を実行してください"
+            exit 0
+          fi
+          branch="release/${{ env.version }}"
+          title="chore: バージョンを ${{ env.version }} にする"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "$title" -- "${{ env.packagePath }}/package.json"
+          git push origin "HEAD:refs/heads/$branch"
+          if ! gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" \
+              --body "package.json の version を ${{ env.version }} にします。マージしたら Build Release を実行してください。"; then
+            url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...$branch?expand=1"
+            echo "::warning::pull request を作れませんでした。$url から作ってください"
+            echo "package.json を ${{ env.version }} にする pull request: $url" >> "$GITHUB_STEP_SUMMARY"
+          fi
