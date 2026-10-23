@@ -20,6 +20,8 @@ using VRC.Udon.Common.Interfaces;
 ///   ボーン位置・向きへ毎フレーム追従させる（見た目の「糸が巻き付く」演出）
 /// ・threadBySlot（任意）を与えると、くっついた場所（面の上）とボーンの間に太い粘液の糸
 ///   （LineRenderer）を張る。伸びるほど細り、千切れ（autoReleaseDistance）で消える
+/// ・webMaxBulge > 0 なら、面は手足の方へその長さまでしか膨らまず、それより離れた分は粘液の糸が受け持つ
+///   （伸び切った巣から糸が引き出される見え方）。押し込む向きは面だけが凹み、糸は出ない
 /// ・別のスクリプトは GetOccupiedSlotMask / GetSlotPlayerId / GetSlotHumanBone などで
 ///   「どのスロットに、誰の、どの部位が付いているか」を読める（読み取り専用。同期や捕縛は変えない）
 ///
@@ -180,6 +182,10 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public float threadSag = 0.06f;
     [Tooltip("ON: 糸の始点を「変形した巣の面」（くっついた点がシェーダーで動いた先）にする。_PullEnable の巣で凹み・伸びと糸を併用するとき用（落とし穴の巣）。OFF: 変形前の面の上の点（従来）")]
     public bool threadFromDeformedWeb = false;
+    [Tooltip("面が膨らむ上限（m。くっついた側へ引っ張られる向きの量）。手足がこれより離れた分は面を引っ張らず、粘液の糸（threadBySlot）が受け持つ。押し込む向き（凹み）と面に沿った向きには効かない（凹むときは糸を出さない）。0 で上限なし（従来）。0 より大きいときは、糸の始点がいつも変形した面になる")]
+    public float webMaxBulge = 0f;
+    [Tooltip("webMaxBulge > 0 のとき、糸が受け持つ長さがこの値（m）に届くまで糸を細くしておく（上限の前後で糸がぱっと出入りしないように）。0 で細くしない")]
+    public float threadFadeLength = 0.03f;
 
     [Header("効果音（任意）")]
     [Tooltip("手足がくっついた瞬間に鳴らす AudioSource（くっついた場所へ移して clip を PlayOneShot）。同期済みのスロットから鳴らすので周りの人にも聞こえる。空なら鳴らさない")]
@@ -238,6 +244,8 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     private float _nextExternalClaim, _nextExternalRelease;
     private const float ExternalCleanupWait = 2f; // 外部捕縛の解除後、遅れて届く claim を待つ秒数（再送待ちの 1 秒の後）
     private Vector3[] _threadEnds;
+    private float[] _threadFades;                    // webMaxBulge: 糸の太さの倍率（上限を超えた長さで 0→1）
+    private float _tmpThreadLength;                  // CapBulge の副出力: 上限を超えて糸が受け持つ長さ（m）
     private int[] _threadPullIndices;
     private Vector3[] _pullAnchors3, _pullDeltas3;   // threadFromDeformedWeb: 今フレームの接点と変位（WebFollow 用）
     // 外部 claim の再送は初回と同じ捕縛点を使い、遅延で二重到着しても巣を飛ばさない。
@@ -286,6 +294,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         _threadDrawn = new bool[MaxSlots];
         _threadPts = new Vector3[ThreadPoints];
         _threadEnds = new Vector3[MaxSlots];
+        _threadFades = new float[MaxSlots];
         _threadPullIndices = new int[MaxSlots];
         _pullAnchors3 = new Vector3[MaxSlots];
         _pullDeltas3 = new Vector3[MaxSlots];
@@ -296,10 +305,17 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         RefreshFanShape();
     }
 
-    // threadFromDeformedWeb 用: 巣のマテリアルの引っ張りの強さ・千切れの値を読む
+    // 糸の始点を変形した面にするか（threadFromDeformedWeb、または膨らみの上限あり）
+    private bool ThreadFromDeformed()
+    {
+        return threadFromDeformedWeb || webMaxBulge > 0f;
+    }
+
+    // 糸の始点を変形した面にするとき用（WebFollow）: 巣のマテリアルの引っ張りの強さ・千切れの値を読む。
+    // 実行中に threadFromDeformedWeb / webMaxBulge を変えても使えるよう、いつも読んでおく（初期化と RefreshFanShape のときだけ）
     private void RefreshPullWeights()
     {
-        if (!threadFromDeformedWeb || targetRenderer == null) { return; }
+        if (targetRenderer == null) { return; }
         Material mat = targetRenderer.sharedMaterial;
         if (mat == null) { return; }
         _webPullEnabled = mat.HasProperty("_PullEnable") && mat.GetFloat("_PullEnable") > .5f;
@@ -728,6 +744,7 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     {
         if (targetRenderer == null) { return; }
         int n = 0;
+        bool fromDeformed = ThreadFromDeformed();
         for (int i = 0; i < MaxSlots; i++) { _threadDrawn[i] = false; _threadPullIndices[i] = -1; }
         // wrap を今フレームの割り当てで塗り替えるため、まず前回分をクリア候補にする
         for (int i = 0; i < MaxSlots; i++)
@@ -743,11 +760,17 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
 
             Vector3 a = AnchorSurfaceWorld(b, _slotAnchor[i]);
             Vector3 t = PullTarget(b, _slotAnchor[i], a, bp - OffsetWorld(b, _slotAnchor[i]));
+            float fade = 1f;
+            if (webMaxBulge > 0f)
+            {
+                t = CapBulge(b, _slotAnchor[i], a, t);
+                fade = (threadFadeLength > 0f) ? Mathf.SmoothStep(0f, 1f, _tmpThreadLength / threadFadeLength) : ((_tmpThreadLength > 0f) ? 1f : 0f);
+            }
             // 各巣は単一面レンダラーなので .w=1（有効フラグ）で足りる
             _anchorsV4[n] = new Vector4(a.x, a.y, a.z, 1f);
             _targetsV4[n] = new Vector4(t.x, t.y, t.z, 0f);
-            if (threadFromDeformedWeb) { _threadPullIndices[i] = n; _threadEnds[i] = bp; _pullAnchors3[n] = a; _pullDeltas3[n] = t - a; }
-            else { DrawThread(i, p, a, bp); }
+            if (fromDeformed) { _threadPullIndices[i] = n; _threadEnds[i] = bp; _threadFades[i] = fade; _pullAnchors3[n] = a; _pullDeltas3[n] = t - a; }
+            else { DrawThread(i, p, a, bp, fade); }
             n++;
             if (_seenPlayer[i] != pid || _seenBone[i] != b)
             {
@@ -758,13 +781,13 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         for (int i = n; i < MaxSlots; i++) { _anchorsV4[i] = Vector4.zero; _targetsV4[i] = Vector4.zero; }
         for (int i = 0; i < MaxSlots; i++) { if (_slotPlayer[i] <= 0) { _seenPlayer[i] = 0; } }
         // 全接点を詰めてから糸の始点を計算する（未更新の後続接点を混ぜない）。
-        if (threadFromDeformedWeb)
+        if (fromDeformed)
         {
             for (int i = 0; i < MaxSlots; i++)
             {
                 int index = _threadPullIndices[i];
                 if (index < 0) { continue; }
-                DrawThread(i, VRCPlayerApi.GetPlayerById(_slotPlayer[i]), WebFollow(_pullAnchors3[index], n), _threadEnds[i]);
+                DrawThread(i, VRCPlayerApi.GetPlayerById(_slotPlayer[i]), WebFollow(_pullAnchors3[index], n), _threadEnds[i], _threadFades[i]);
             }
         }
         HideUnusedThreads();
@@ -814,17 +837,19 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
 
     // くっついた場所 a（面の上）とボーン上の点 bp の間に粘液の糸を張る。スロット単位なので
     // 同期済みのスロットから全クライアントで同じ糸になる（追加の通信なし）。長く伸びるほど細り、
-    // autoReleaseDistance を超えるとスロットごと千切れて消える
-    private void DrawThread(int slot, VRCPlayerApi player, Vector3 a, Vector3 bp)
+    // autoReleaseDistance を超えるとスロットごと千切れて消える。
+    // fade = 太さの倍率（webMaxBulge の上限を超えた長さで 0→1。0 なら描かない）
+    private void DrawThread(int slot, VRCPlayerApi player, Vector3 a, Vector3 bp, float fade)
     {
         if (threadBySlot == null || slot >= threadBySlot.Length) { return; }
         LineRenderer line = threadBySlot[slot];
         if (line == null) { return; }
+        if (fade <= 0f) { return; }   // 描かない（HideUnusedThreads が消す）
         _threadDrawn[slot] = true;
         float length = Vector3.Distance(a, bp);
         float scale = Mathf.Clamp(player.GetAvatarEyeHeightAsMeters() / 1.6f, 0.5f, 2f);
         float thin = (length > threadRestLength && length > 1e-4f) ? Mathf.Sqrt(threadRestLength / length) : 1f;
-        line.widthMultiplier = threadWidth * scale * Mathf.Max(thin, threadMinWidth);
+        line.widthMultiplier = threadWidth * scale * Mathf.Max(thin, threadMinWidth) * fade;
         for (int k = 0; k < ThreadPoints; k++) { _threadPts[k] = Vector3.Lerp(a, bp, k / (float)(ThreadPoints - 1)); }
         line.positionCount = ThreadPoints;
         line.SetPositions(_threadPts);
@@ -1022,6 +1047,17 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         Vector3 n = CaptureSideNormal(b, anchorLocal);
         float dn = Vector3.Dot(t - a, n);
         return (dn < 0f) ? t - n * dn : t;
+    }
+
+    // webMaxBulge: 追従先のうち「くっついた側へ引っ張る向き」の成分を webMaxBulge で頭打ちにする。
+    // 上限を超えた長さは _tmpThreadLength に入れる（その分は粘液の糸が受け持つ）。
+    // 押し込む向き・面に沿った向きはそのまま（面だけが凹む・ずれる。糸の長さは 0）
+    private Vector3 CapBulge(int b, Vector3 anchorLocal, Vector3 a, Vector3 t)
+    {
+        Vector3 n = CaptureSideNormal(b, anchorLocal);
+        float over = Vector3.Dot(t - a, n) - webMaxBulge;
+        _tmpThreadLength = Mathf.Max(over, 0f);
+        return (over > 0f) ? t - n * over : t;
     }
 
     private float ContactDistanceOf(int b)
