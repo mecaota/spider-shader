@@ -10,7 +10,7 @@
 README.md                             利用者向けの入口（配布ページにも埋め込まれる）
 CONTRIBUTING.md                       このファイル（開発者向けノート）
 Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布される範囲）
-  package.json                        VPM パッケージの定義（バージョンはここで上げる）
+  package.json                        VPM パッケージの定義（バージョンは Bump Version の PR で上げる）
   README.md                           パッケージ内の入口（docs/ へのリンクのみ）
   Runtime/                            シェーダー（*.shader）と共通コード（CGINC/*.cginc）
     CocoonGroupLinker/                繭のまとめ描きの Udon
@@ -24,7 +24,7 @@ Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布さ�
   Presets/                            標準プリセット（SpiderShaderPreset アセット）
 docs/                                 利用者向けドキュメント（シェーダーごと＋共通機能＋Udon ギミック）
 Website/                              配布ページのテンプレート
-.github/workflows/                    リリースと VPM リスティングの自動生成
+.github/workflows/                    リリース・バージョンを上げる PR・VPM リスティングの自動生成
 .github/scripts/                      リスティング（index.json）と配布ページの生成スクリプト
 ```
 
@@ -77,7 +77,7 @@ Website/                              配布ページのテンプレート
 
 1. GitHub リポジトリの「Settings > Secrets and variables > Actions」で、リポジトリ変数 `PACKAGE_NAME` に `com.mecaota.spider-shader` を設定（初回のみ）
 2. 「Settings > Pages > Source」を「GitHub Actions」に設定（初回のみ）
-3. `Packages/com.mecaota.spider-shader/package.json` の `version` を、公開済みの最新より上げてコミット
+3. Actions タブの「Bump Version」で「Run workflow」を押し、ブランチは `main` のまま、`version` に出すバージョン（例 `1.2.3`。公開済みの最新より上）を入れて実行 → `package.json` の `version` だけを書き換えた pull request が `bump-version/<バージョン>` から作られるので、マージする。同じバージョンで実行し直すと、そのブランチと pull request が更新される（このブランチには手でコミットしない）。pull request を自動で作るには「Settings > Actions > General」の「Allow GitHub Actions to create and approve pull requests」をオンにする（オフなら、作るためのリンクが実行結果に出る。この設定はワークフローに pull request の承認も許すので、必須のレビューを設けるときは気をつける）。GITHUB_TOKEN で作った pull request ではほかのワークフローが動かないので、PR 向けのチェックを必須にするときも気をつける。機能の PR では `version` を上げなくてよい
 4. Actions タブから「Build Release」workflow を手動実行 → zip / unitypackage 付きの Release が作成され、続けて「Build Repo Listing」が GitHub Pages のリスティングと配布ページを更新
 5. README.md や Website/ の変更を main に push した場合も「Build Repo Listing」が自動実行され、配布ページが更新される（GitHub 上で手動作成・編集した Release を反映するには「Build Repo Listing」を手動実行）
 
