@@ -37,8 +37,8 @@
 //     Foot はかかとからつま先まで）。
 //     受け手の各画素の「体の位置」（膨張前の頂点のワールド座標）を、骨と骨を結ぶ部位ごとの円柱と比べ、
 //     一番近い円柱（中に入っている深さが一番深い円柱）の部位が OFF なら印を立てない（discard）。
-//     ただし腕・手の円柱が一番近い所と、腕・手の円柱に入っている所は、腕・手の部位だけで決める
-//     （胴や脚の円柱は太いので、体の横に下ろした手が胴の側に数えられないように）。
+//     ただし前腕・手の円柱が胴・首・頭の円柱より近い所と、前腕・手の円柱に入っている所では、胴・首・頭の部位を数えない
+//     （胴の円柱は太いので、体の横に下ろした手が胴の側に数えられないように）。
 //     境目は _PartEdgeFray の幅までノイズでほつれさせる。ほつれは ON の部位の外側へだけ広がるので、
 //     隣り合う部位を別々の Projector（別々のマテリアル）で出しても、境目に穴が開かない。
 //     ノイズは受け手のメッシュの UV で引く（肌に貼り付くので、腕を振っても体の向きを変えても模様が流れない）。
@@ -236,11 +236,12 @@ Shader "mecaota/CocoonProjector"
                 else          dOff = min(dOff, d);
             }
 
-            // 腕・手の部位（太さ r）。SCPM_Part と同じに入れ、円柱の側面から外へ太さの半分までに入っていれば inArm を立てる
-            void SCPM_ArmPart(float d, float r, float on, inout float dOn, inout float dOff, inout bool inArm)
+            // 前腕・手の部位（太さ r）。SCPM_Part と同じに入れ、円柱の側面から外へ太さの半分までに入っていれば inHand を立てる
+            void SCPM_HandPart(float d, float r, float on, inout float dOn, inout float dOff, inout float dHand, inout bool inHand)
             {
                 SCPM_Part(d, on, dOn, dOff);
-                inArm = inArm || d < 0.5 * r;
+                dHand  = min(dHand, d);
+                inHand = inHand || d < 0.5 * r;
             }
 
             // 境目のほつれ用の 3D 値ノイズ（-1..1）
@@ -327,35 +328,36 @@ Shader "mecaota/CocoonProjector"
                 float3 pelvis   = SCPM_Valid(chest) ? SCPM_Extend(hips, chest, 0.4)
                                 : (SCPM_Valid(spine) ? SCPM_Extend(hips, spine, 0.8) : hips);
 
-                // A = 腕・手、B = それ以外（胴・首・頭・脚・足）
-                float dOnA = 1e5, dOffA = 1e5, dOnB = 1e5, dOffB = 1e5;
-                bool  inArm = false;
-                SCPM_Part(SCPM_Cylinder(p, pelvis, spine,   0.15 * s), _PartHips,  dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, spine,  chest,   0.15 * s), _PartSpine, dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, chest,  neck,    0.15 * s), _PartChest, dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, neck,   head,    0.06 * s), _PartNeck,  dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, head,   headTop, 0.10 * s), _PartHead,  dOnB, dOffB);
-                SCPM_ArmPart(SCPM_Cylinder(p, _JointLeftUpperArm.xyz, elbowL, 0.050 * s), 0.050 * s, _PartLeftUpperArm, dOnA, dOffA, inArm);
-                SCPM_ArmPart(SCPM_Cylinder(p, elbowL, handL,                  0.045 * s), 0.045 * s, _PartLeftLowerArm, dOnA, dOffA, inArm);
-                SCPM_ArmPart(SCPM_Cylinder(p, handL,  handTipL,               0.060 * s), 0.060 * s, _PartLeftHand,     dOnA, dOffA, inArm);   // 親指の分だけ太く
-                SCPM_ArmPart(SCPM_Cylinder(p, _JointRightUpperArm.xyz, elbowR, 0.050 * s), 0.050 * s, _PartRightUpperArm, dOnA, dOffA, inArm);
-                SCPM_ArmPart(SCPM_Cylinder(p, elbowR, handR,                   0.045 * s), 0.045 * s, _PartRightLowerArm, dOnA, dOffA, inArm);
-                SCPM_ArmPart(SCPM_Cylinder(p, handR,  handTipR,                0.060 * s), 0.060 * s, _PartRightHand,     dOnA, dOffA, inArm);
-                SCPM_Part(SCPM_Cylinder(p, _JointLeftUpperLeg.xyz, kneeL, 0.080 * s), _PartLeftUpperLeg, dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, kneeL, footL,                  0.055 * s), _PartLeftLowerLeg, dOnB, dOffB);
-                SCPM_Part(SCPM_Foot(p, footL, kneeL, _JointLeftToes, s),               _PartLeftFoot,     dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, _JointRightUpperLeg.xyz, kneeR, 0.080 * s), _PartRightUpperLeg, dOnB, dOffB);
-                SCPM_Part(SCPM_Cylinder(p, kneeR, footR,                   0.055 * s), _PartRightLowerLeg, dOnB, dOffB);
-                SCPM_Part(SCPM_Foot(p, footR, kneeR, _JointRightToes, s),               _PartRightFoot,     dOnB, dOffB);
+                // T = 胴・首・頭、R = それ以外（上腕・前腕・手・脚・足）
+                float dOnT = 1e5, dOffT = 1e5, dOnR = 1e5, dOffR = 1e5;
+                float dHand = 1e5;      // 前腕・手の円柱までの距離の最小
+                bool  inHand = false;   // 前腕・手の円柱に入っている（側面から外へ太さの半分まで）
+                SCPM_Part(SCPM_Cylinder(p, pelvis, spine,   0.15 * s), _PartHips,  dOnT, dOffT);
+                SCPM_Part(SCPM_Cylinder(p, spine,  chest,   0.15 * s), _PartSpine, dOnT, dOffT);
+                SCPM_Part(SCPM_Cylinder(p, chest,  neck,    0.15 * s), _PartChest, dOnT, dOffT);
+                SCPM_Part(SCPM_Cylinder(p, neck,   head,    0.06 * s), _PartNeck,  dOnT, dOffT);
+                SCPM_Part(SCPM_Cylinder(p, head,   headTop, 0.10 * s), _PartHead,  dOnT, dOffT);
+                SCPM_Part(SCPM_Cylinder(p, _JointLeftUpperArm.xyz, elbowL, 0.050 * s), _PartLeftUpperArm, dOnR, dOffR);
+                SCPM_HandPart(SCPM_Cylinder(p, elbowL, handL,    0.045 * s), 0.045 * s, _PartLeftLowerArm, dOnR, dOffR, dHand, inHand);
+                SCPM_HandPart(SCPM_Cylinder(p, handL,  handTipL, 0.060 * s), 0.060 * s, _PartLeftHand,     dOnR, dOffR, dHand, inHand);   // 親指の分だけ太く
+                SCPM_Part(SCPM_Cylinder(p, _JointRightUpperArm.xyz, elbowR, 0.050 * s), _PartRightUpperArm, dOnR, dOffR);
+                SCPM_HandPart(SCPM_Cylinder(p, elbowR, handR,    0.045 * s), 0.045 * s, _PartRightLowerArm, dOnR, dOffR, dHand, inHand);
+                SCPM_HandPart(SCPM_Cylinder(p, handR,  handTipR, 0.060 * s), 0.060 * s, _PartRightHand,     dOnR, dOffR, dHand, inHand);
+                SCPM_Part(SCPM_Cylinder(p, _JointLeftUpperLeg.xyz, kneeL, 0.080 * s), _PartLeftUpperLeg, dOnR, dOffR);
+                SCPM_Part(SCPM_Cylinder(p, kneeL, footL,                  0.055 * s), _PartLeftLowerLeg, dOnR, dOffR);
+                SCPM_Part(SCPM_Foot(p, footL, kneeL, _JointLeftToes, s),               _PartLeftFoot,     dOnR, dOffR);
+                SCPM_Part(SCPM_Cylinder(p, _JointRightUpperLeg.xyz, kneeR, 0.080 * s), _PartRightUpperLeg, dOnR, dOffR);
+                SCPM_Part(SCPM_Cylinder(p, kneeR, footR,                   0.055 * s), _PartRightLowerLeg, dOnR, dOffR);
+                SCPM_Part(SCPM_Foot(p, footR, kneeR, _JointRightToes, s),               _PartRightFoot,     dOnR, dOffR);
 
                 // ON の部位の円柱が 1 つも作れない（骨の位置が来ていない・足りない）ときは、部位で切らずに体全体に印を立てる
-                if (min(dOnA, dOnB) > 1e4) return true;
-                // 腕・手の円柱が一番近い所と、腕・手の円柱に入っている所（側面から外へ太さの半分まで）は、腕・手の部位だけで決める。
-                // 胴や脚の円柱は太いので、体の横に下ろした手や胸に当てた腕が胴や脚の側に数えられ、
-                // 下のほつれも胴から手へ届いてしまうため（例: 腰だけを選ぶと、腰の横に下ろした手にも付く）
-                inArm = inArm || min(dOnA, dOffA) < min(dOnB, dOffB);
-                float dOn  = inArm ? dOnA  : min(dOnA,  dOnB);
-                float dOff = inArm ? dOffA : min(dOffA, dOffB);
+                if (min(dOnT, dOnR) > 1e4) return true;
+                // 前腕・手の円柱が胴・首・頭の円柱より近い所と、前腕・手の円柱に入っている所では、胴・首・頭の部位を数えない。
+                // 胴の円柱は太いので、体の横に下ろした手が胴の側に数えられ、下のほつれも胴から手へ届いてしまうため
+                // （例: 腰だけを選ぶと、腰の横に下ろした手にも付く）。上腕と脚は今までどおり比べる（肩やももの境目を変えない）
+                bool  noTorso = inHand || dHand < min(dOnT, dOffT);
+                float dOn  = noTorso ? dOnR  : min(dOnT,  dOnR);
+                float dOff = noTorso ? dOffR : min(dOffT, dOffR);
                 // ON の部位のほうが近ければ入る。さらに OFF の部位へ 0〜_PartEdgeFray m だけノイズではみ出させて境目をほつれさせる
                 // （外側へだけはみ出すので、隣の部位を別のマテリアルで出しても境目に隙間ができない）。
                 // ノイズはメッシュの UV で引く（肌に貼り付くので、腕を振っても体の向きを変えても模様が流れない）
