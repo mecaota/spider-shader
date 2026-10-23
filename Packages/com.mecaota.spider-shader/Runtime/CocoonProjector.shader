@@ -30,6 +30,15 @@
 //     手前に来てテストに通り、手前の柱・壁・他人には負ける（そこには立たない）。
 //     裏面（髪カード・スカートの内側）も同じ向きに膨らむよう Cull Off にしてある。
 //
+//  ★ 手前の物で切る（_OccluderCut、2026-10-23）:
+//     膨らませた面は実メッシュより _Inflate だけ手前にあるので、そのすき間に入った物
+//     （腰に置いた手、胸の前で組んだ腕、触れている他人の手など）にも印が立ってしまう。
+//     そこで各画素で _CameraDepthTexture（繭デカールと同じ深度テクスチャ）を読み、
+//     見えている面が「膨らませる前の体の位置」より _OccluderTolerance 以上手前なら印を立てない。
+//     体の面そのもの（深さがほぼ同じ）と、輪郭の外の背景（深さが奥）には今までどおり立つ。
+//     判定は Projector ごとに閉じているので、部位ごとに Projector を重ねても互いの印を消さない。
+//     深度の読み方（VR の両目・ミラーの斜めの近クリップ面）は CocoonDecal と同じ書き方にしてある。
+//
 //  ★ 部位の選択（_PartHips 〜 _PartRightFoot、2026-10-23）:
 //     繭を付ける部位を、Humanoid のボーンと同じ名前の 17 部位（Hips・Spine・Chest・Neck・Head、
 //     左右の UpperArm・LowerArm・Hand、左右の UpperLeg・LowerLeg・Foot）から選べる。
@@ -71,6 +80,12 @@ Shader "mecaota/CocoonProjector"
         [IntRange] _StencilReceiverBit ("受け手ビット 繭デカールの Glue Stencil Ref と同じ (Receiver Bit)", Range(0, 255)) = 32
         // デカールの糸の厚み（_GlueThickness）と同じ値にする
         _Inflate ("輪郭の外への膨張 m 繭デカールの糸の厚みと同じ (Inflate)", Range(0, 0.2)) = 0.06
+
+        [Header(Occluder Cut)]
+        // 体の面より手前にある物（腰に置いた手など）には印を立てない。深度テクスチャを読む（繭デカールと同じ）
+        [ToggleUI] _OccluderCut ("手前の物で切る (Occluder Cut)", Float) = 1
+        // 見えている面が体の面よりこの距離以上手前なら「手前の物」とみなす。手の厚み（2〜3 cm）より小さくする
+        _OccluderTolerance ("手前とみなす距離 m (Occluder Tolerance)", Range(0, 0.05)) = 0.01
 
         [Header(Owner)]
         [Enum(Everyone In Frustum,0,Owner Only,1)] _OwnerMode ("対象 0=視錐台の全員 1=所有者のみ (Owner Mode)", Float) = 1
@@ -166,9 +181,12 @@ Shader "mecaota/CocoonProjector"
             CGPROGRAM
             #pragma vertex   vert
             #pragma fragment frag
-            #pragma target   3.0
+            #pragma target   3.5           // 深度テクスチャを VR のシングルパスインスタンシング（テクスチャ配列）でも読むため
             #pragma multi_compile_instancing
             #include "UnityCG.cginc"
+
+            // 手前の物で切る判定に使う深度テクスチャ（繭デカールと同じもの）
+            UNITY_DECLARE_SCREENSPACE_TEXTURE(_CameraDepthTexture);
 
             // Projector コンポーネントが受け手ごとに供給する行列（受け手のオブジェクト空間から）。
             //   unity_Projector     : 頂点 → Projector の 0..1 座標（xy/w）
@@ -177,6 +195,8 @@ Shader "mecaota/CocoonProjector"
             float4x4 unity_ProjectorClip;
 
             float  _Inflate;
+            float  _OccluderCut;
+            float  _OccluderTolerance;
             float  _OwnerMode;
             float  _FrustumClip;
             float4 _OwnerRoot;
@@ -349,6 +369,45 @@ Shader "mecaota/CocoonProjector"
                 return dOn - dOff < fray;
             }
 
+            // 画面 UV（片目ローカル 0..1）から深度テクスチャの読み先へ。Single-Pass(double-wide) では横長テクスチャの片目側へ、
+            // それ以外では恒等変換（CocoonDecal の SC_DEPTH_UV と同じ）
+            #define SCPM_DEPTH_UV(uv) UnityStereoTransformScreenSpaceTex(uv)
+
+            // 生の深度から視線方向の深さ m を戻す。ミラーカメラの斜めの近クリップ面（oblique 投影）でも正しい
+            // （CocoonDecal の SC_EyeDepthOblique と同じ。通常の透視投影でも同じ値になる）
+            float SCPM_EyeDepthOblique(float2 uv, float rawDepth)
+            {
+                float2 ndc = float2(uv.x * 2.0 - 1.0, (uv.y * 2.0 - 1.0) * _ProjectionParams.x);
+                #if defined(UNITY_REVERSED_Z)
+                    float ndcZ = rawDepth;
+                #else
+                    float ndcZ = rawDepth * 2.0 - 1.0;
+                #endif
+                float K = UNITY_MATRIX_P._m20 * (ndc.x + UNITY_MATRIX_P._m02) / UNITY_MATRIX_P._m00
+                        + UNITY_MATRIX_P._m21 * (ndc.y + UNITY_MATRIX_P._m12) / UNITY_MATRIX_P._m11
+                        - UNITY_MATRIX_P._m22;
+                float denom = ndcZ - K;
+                denom = (abs(denom) < 1e-8) ? 1e-8 : denom;
+                return UNITY_MATRIX_P._m23 / denom;
+            }
+
+            // 見えている面が、体の位置 bodyPos より _OccluderTolerance 以上手前か（＝手前に別の物がある）。
+            // 深度が無い画素（背景・空）と正射影のカメラでは false（今までどおり印を立てる）
+            bool SCPM_Occluded(float4 screenPos, float3 bodyPos)
+            {
+                if (unity_OrthoParams.w > 0.5) return false;
+                float2 uv  = screenPos.xy / max(screenPos.w, 1e-5);
+                float  raw = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_CameraDepthTexture, SCPM_DEPTH_UV(uv)).r;
+                #if defined(UNITY_REVERSED_Z)
+                    if (raw < 1e-7) return false;
+                #else
+                    if (raw > 1.0 - 1e-7) return false;
+                #endif
+                float sceneZ = SCPM_EyeDepthOblique(uv, raw);
+                float bodyZ  = -mul(UNITY_MATRIX_V, float4(bodyPos, 1.0)).z;   // 体の位置の視線方向の深さ
+                return sceneZ < bodyZ - _OccluderTolerance;
+            }
+
             struct appdata
             {
                 float4 vertex : POSITION;
@@ -364,6 +423,7 @@ Shader "mecaota/CocoonProjector"
                 float4 uvDepth : TEXCOORD1;   // Projector の near..far
                 float3 bodyPos : TEXCOORD2;   // 膨張前の体の位置（部位の判定用、ワールド座標）
                 float2 uv      : TEXCOORD3;   // 受け手のメッシュの UV（部位の境目のほつれ用）
+                float4 screenPos : TEXCOORD4; // 画面の位置（手前の物で切る判定で深度テクスチャを読む）
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -403,6 +463,8 @@ Shader "mecaota/CocoonProjector"
                 wp += n * (s * _Inflate);
 
                 o.pos     = mul(UNITY_MATRIX_VP, float4(wp, 1.0));
+                // 非ステレオ版（片目ローカル 0..1）。ステレオの変換は深度を読む瞬間に SCPM_DEPTH_UV で 1 回だけ行う（CocoonDecal と同じ約束）
+                o.screenPos = ComputeNonStereoScreenPos(o.pos);
                 o.uvProj  = mul(unity_Projector,     v.vertex);   // 視錐台の判定は膨張前の頂点で
                 o.uvDepth = mul(unity_ProjectorClip, v.vertex);
                 return o;
@@ -417,6 +479,8 @@ Shader "mecaota/CocoonProjector"
                     float  d  = i.uvDepth.x / max(i.uvDepth.w, 1e-5);
                     if (any(uv < 0.0) || any(uv > 1.0) || d < 0.0 || d > 1.0) discard;
                 }
+                // 体の面より手前に別の物（腰に置いた手など）が見えている画素には立てない
+                if (_OccluderCut > 0.5 && SCPM_Occluded(i.screenPos, i.bodyPos)) discard;
                 // 部位の選択。全部 ON（17）なら判定しない
                 if (SCPM_PartsOn() < 16.5)
                 {
