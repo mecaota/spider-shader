@@ -10,7 +10,7 @@
 README.md                             利用者向けの入口（配布ページにも埋め込まれる）
 CONTRIBUTING.md                       このファイル（開発者向けノート）
 Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布される範囲）
-  package.json                        VPM パッケージの定義（バージョンはここで上げる）
+  package.json                        VPM パッケージの定義（バージョンは Build Release の実行時に書き換わる）
   README.md                           パッケージ内の入口（docs/ へのリンクのみ）
   Runtime/                            シェーダー（*.shader）と共通コード（CGINC/*.cginc）
     CocoonGroupLinker/                繭のまとめ描きの Udon
@@ -77,8 +77,8 @@ Website/                              配布ページのテンプレート
 
 1. GitHub リポジトリの「Settings > Secrets and variables > Actions」で、リポジトリ変数 `PACKAGE_NAME` に `com.mecaota.spider-shader` を設定（初回のみ）
 2. 「Settings > Pages > Source」を「GitHub Actions」に設定（初回のみ）
-3. `Packages/com.mecaota.spider-shader/package.json` の `version` を、公開済みの最新より上げてコミット
-4. Actions タブから「Build Release」workflow を手動実行 → zip / unitypackage 付きの Release が作成され、続けて「Build Repo Listing」が GitHub Pages のリスティングと配布ページを更新
+3. Actions タブの「Build Release」で「Run workflow」を押し、ブランチは `main` のまま、`version` に出すバージョン（例 `1.2.3`。公開済みの最新より上）を入れて実行 → `package.json` の `version` をその値に書き換えてから、zip / unitypackage 付きの Release が作成され、続けて「Build Repo Listing」が GitHub Pages のリスティングと配布ページを更新
+4. 書き換えた `package.json` は、ワークフローが `main` にコミットして push する（すでにその値なら何もしない）。`main` に push できないとき（保護ルールで pull request が必須など）は `release/<バージョン>` ブランチに push して pull request を作るので、それをマージする。pull request を自動で作るには「Settings > Actions > General」の「Allow GitHub Actions to create and approve pull requests」をオンにする（オフなら、作るためのリンクが実行結果に出る）。機能の PR では `version` を上げなくてよい
 5. README.md や Website/ の変更を main に push した場合も「Build Repo Listing」が自動実行され、配布ページが更新される（GitHub 上で手動作成・編集した Release を反映するには「Build Repo Listing」を手動実行）
 
 ## 作者のワールド（WebbedWorld）での使用例と経緯

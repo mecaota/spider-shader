@@ -1,7 +1,19 @@
 name: Build Release
 
-on: 
+# Run this workflow from "Run workflow" on main and enter the version to release.
+# The version in the package.json is rewritten to that value before the zip and the
+# unitypackage are built, and the tag and the release point at the commit with the
+# rewritten package.json. That commit is then pushed back to the branch the workflow
+# ran on. When the push is rejected (the branch requires pull requests, or it moved on
+# while this workflow ran), the commit is pushed to release/<version> instead and a
+# pull request is opened.
+on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: リリースするバージョン（例 1.2.3）。package.json をこの値に書き換えてからビルドします
+        required: true
+        type: string
 
 jobs:
 
@@ -29,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     env:
       packagePath: Packages/${{ vars.PACKAGE_NAME }}
     if: needs.config.outputs.config_package == 'true'
@@ -38,44 +51,82 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Get the Package version based on the package.json file
-      - name: Get Version
-        id: version
-        uses: zoexx/github-action-json-file-properties@42c424cc2a0f9dfd36c79aedb70d429c0ae3e3fa # 1.0.7
-        with: 
-            file_path: "${{ env.packagePath }}/package.json"
-            prop_path: "version"
-    
+      # Validate the version entered in "Run workflow" (a leading "v" is dropped).
+      # The input is passed through env so it is never expanded into the script itself.
+      - name: Validate Version
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          version="$(printf '%s' "$VERSION_INPUT" | tr -d '[:space:]')"
+          version="${version#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::バージョンは 1.2.3 や 1.2.3-beta.1 の形で入力してください"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" != "branch" ]; then
+            echo "::error::Build Release はブランチ（ふつうは main）を選んで実行してください"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null; then
+            echo "::error::タグ $version はもうあります。まだ出していないバージョンを入力してください"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+
+      # Rewrite only the version in the package.json so the rest of the file stays as written
+      - name: Set Version
+        run: |
+          node - "${{ env.packagePath }}/package.json" "${{ env.version }}" <<'EOF'
+          const fs = require('fs');
+          const [file, version] = process.argv.slice(2);
+          const text = fs.readFileSync(file, 'utf8');
+          const updated = text.replace(/("version"\s*:\s*")[^"]*(")/, (_, head, tail) => head + version + tail);
+          if (JSON.parse(updated.replace(/^\uFEFF/, '')).version !== version) {
+            throw new Error(`Could not set the version in ${file}`);
+          }
+          fs.writeFileSync(file, updated);
+          EOF
+
+      # Commit the rewritten package.json (nothing to commit if it already had the version)
+      - name: Commit Version
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: バージョンを ${{ env.version }} にする" -- "${{ env.packagePath }}/package.json"
+          fi
+          echo "releaseSha=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       # Configure the Environment Variables needed for releasing the Package
       - name: Set Environment Variables
         run: |
-          echo "zipFile=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
-          echo "unityPackage=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
-          echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
+          echo "zipFile=${{ vars.PACKAGE_NAME }}-${{ env.version }}".zip >> $GITHUB_ENV
+          echo "unityPackage=${{ vars.PACKAGE_NAME }}-${{ env.version }}.unitypackage" >> $GITHUB_ENV
 
       # Zip the Package for release
       - name: Create Package Zip
         working-directory: "${{ env.packagePath }}"
         run: zip -r "${{ github.workspace }}/${{ env.zipFile }}" .
-      
+
       # Build a list of .meta files for future use
       - name: Track Package Meta Files
         run: find "${{ env.packagePath }}/" -name \*.meta >> metaList
-      
+
       # Make a UnityPackage version of the Package for release
       - name: Create UnityPackage
         uses: pCYSl5EDgo/create-unitypackage@b5c57408698b1fab8b3a84d4b67f767b8b7c0be9 # v1.2.3
         with:
           package-path: ${{ env.unityPackage }}
           include-files: metaList
-      
-      # Make a release tag of the version from the package.json file 
+
+      # Make a release tag of the entered version on the commit with the rewritten package.json
       - name: Create Tag
         id: tag_version
         uses: rickstaa/action-create-tag@a1c7777fcb2fee4f19b0f283ba888afa11678b72 # v1.7.2
         with:
           tag: "${{ env.version }}"
-      
+          commit_sha: "${{ env.releaseSha }}"
+
       # Publish the Release to GitHub
       - name: Make Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -85,3 +136,29 @@ jobs:
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ env.version }}
+
+      # Bring the rewritten package.json back to the branch the workflow ran on.
+      # If the push is rejected, push the commit to release/<version> and open a pull request.
+      # Creating the pull request needs "Allow GitHub Actions to create and approve pull requests"
+      # in Settings > Actions > General; without it, a link to open one by hand is shown instead.
+      - name: Push Version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ env.releaseSha }}" = "$GITHUB_SHA" ]; then
+            echo "package.json already had ${{ env.version }}; nothing to push"
+            exit 0
+          fi
+          if git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"; then
+            exit 0
+          fi
+          branch="release/${{ env.version }}"
+          echo "::notice::$GITHUB_REF_NAME に push できなかったので、$branch から pull request を出します"
+          git push origin "HEAD:refs/heads/$branch"
+          if ! gh pr create --base "$GITHUB_REF_NAME" --head "$branch" \
+              --title "chore: バージョンを ${{ env.version }} にする" \
+              --body "Build Release で ${{ env.version }} をリリースしたときに書き換えた package.json を $GITHUB_REF_NAME に戻します。"; then
+            url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$GITHUB_REF_NAME...$branch?expand=1"
+            echo "::warning::pull request を作れませんでした。$url から作ってください"
+            echo "package.json の変更を $GITHUB_REF_NAME に戻す pull request: $url" >> "$GITHUB_STEP_SUMMARY"
+          fi
