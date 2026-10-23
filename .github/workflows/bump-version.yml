@@ -112,8 +112,8 @@ jobs:
           EOF
 
       # Commit the rewritten package.json to release/<version> and open a pull request
-      # into the branch the workflow ran on. When a previous run already pushed that branch
-      # with the same package.json, it is reused (never force-pushed).
+      # into the branch the workflow ran on. A branch a previous run already pushed is reused
+      # only when its files are exactly the ones this run would commit (never force-pushed).
       - name: Open Pull Request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -126,11 +126,11 @@ jobs:
           title="chore: バージョンを $version にする"
           if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
             git fetch --depth 1 origin "$branch"
-            if ! git diff --quiet FETCH_HEAD -- "$packagePath/package.json"; then
-              echo "::error::$branch はもうあり、package.json が今回の書き換えと違います。ブランチを消してから実行し直してください"
+            if ! git diff --quiet FETCH_HEAD; then
+              echo "::error::$branch はもうあり、中身が今回の書き換えと違います（ほかのブランチで実行したときのものなど）。ブランチを消してから実行し直してください"
               exit 1
             fi
-            pr="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty' || true)"
+            pr="$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json url --jq '.[0].url // empty' || true)"
             if [ -n "$pr" ]; then
               echo "::notice::$branch の pull request はもうあります: $pr"
               exit 0
