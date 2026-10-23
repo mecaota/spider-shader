@@ -12,14 +12,15 @@ using VRC.SDKBase;
 /// ・このスクリプトは毎フレーム、本人の足元・腰・頭・胸・両手・両足の位置をマスクのマテリアルに渡し
 ///   （_OwnerRoot / _OwnerHips / _OwnerPt0〜5）、Projector を本人の頭の上へ動かして真下へ向ける。
 /// ・誰も捕まっていない間は Projector の GameObject を無効にする（描き直しの負荷をなくす）。
-/// ・繭を付ける部位（頭・胸・腰・左右の上腕・左右の前腕と手・左右のもも・左右のすねと足）を選べる。
-///   部位の判定に使う首・肩・肘・股関節・膝の位置も毎フレーム渡す（_JointNeck など）。
+/// ・繭を付ける部位を、SurfaceContactDeformer と同じ TrackBone の配列（bones）で選べる（空なら全身）。
+///   部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先の位置も毎フレーム渡す（_JointSpine など）。
 ///
 /// 使い方（別の UdonSharp スクリプトから。どれも呼んだクライアントの見た目だけを変える）:
-/// ・SetOwner(playerId)  この人のアバターにだけ繭を描かせる
-/// ・ClearOwner()        やめる（Projector を無効にする）
-/// ・SetParts(mask)      繭を付ける部位をまとめて選ぶ（ビットの並びは PartHead 〜 PartShinRight の定数）
-/// ・SetPart(part, on)   部位を 1 つだけ ON / OFF する
+/// ・SetOwner(playerId)   この人のアバターにだけ繭を描かせる
+/// ・ClearOwner()         やめる（Projector を無効にする）
+/// ・SetBones(bones)      繭を付ける骨をまとめて選ぶ（空の配列 = 全身）
+/// ・SetBone(bone, on)    骨を 1 つだけ ON / OFF する（全部 OFF にすると何も付かない。SetBones / SetWholeBody で戻る）
+/// ・SetWholeBody()       全身に戻す
 /// 全員に同じ見え方をさせたいときは、捕獲を同期しているスクリプトから全員のクライアントで呼ぶ。
 ///
 /// 注意:
@@ -54,39 +55,25 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     [Tooltip("手に持つ物・帽子・靴・衣装の付属品など骨の下に付いた物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない。広げすぎると、すぐ隣に立つ人の物まで本人の物とみなす")]
     public float attachmentRadius = 0.5f;
 
-    [Header("繭を付ける部位（OFF の部位には繭が出ない）")]
-    public bool head = true;
-    public bool chest = true;
-    [Tooltip("腰（股関節の高さから胸の骨の高さまで。骨盤とお尻を含む）")]
-    public bool waist = true;
-    public bool upperArmLeft = true;
-    [Tooltip("左の前腕と手")]
-    public bool forearmLeft = true;
-    public bool upperArmRight = true;
-    [Tooltip("右の前腕と手")]
-    public bool forearmRight = true;
-    public bool thighLeft = true;
-    [Tooltip("左のすねと足")]
-    public bool shinLeft = true;
-    public bool thighRight = true;
-    [Tooltip("右のすねと足")]
-    public bool shinRight = true;
+    [Header("繭を付ける部位")]
+    [Tooltip("繭を付ける骨。空なら全身（衣装の付属品まで丸ごと）。各骨の部位は「その骨から次の骨まで」（Hips は骨盤から背骨の骨まで、Hand は手首から指先まで、Foot はかかとからつま先まで）。UpperChest・LeftShoulder・RightShoulder は Chest、LeftToes・RightToes は Foot として扱う")]
+    public TrackBone[] bones = new TrackBone[0];
 
-    // SetParts / SetPart / GetParts のビット（PartAll = 全部）
-    public const int PartHead = 0, PartChest = 1, PartWaist = 2;
-    public const int PartUpperArmLeft = 3, PartForearmLeft = 4, PartUpperArmRight = 5, PartForearmRight = 6;
-    public const int PartThighLeft = 7, PartShinLeft = 8, PartThighRight = 9, PartShinRight = 10;
-    public const int PartAll = 2047;
+    private const int PartCount = 17;
+    private const int PartAll = (1 << PartCount) - 1;
 
     // マスクのシェーダーの _OwnerPt0〜5 の順（頭・胸・左手・右手・左足・右足）
     private int[] _pointBones;
     private string[] _pointNames;
-    // 部位の判定に使う関節（首・左肩・左肘・右肩・右肘・左股関節・左膝・右股関節・右膝）
+    // 部位の判定に使う骨（背骨・首・左肩・左肘・右肩・右肘・左股関節・左膝・右股関節・右膝・左つま先・右つま先）
     private int[] _jointBones;
     private string[] _jointNames;
-    // 部位の ON / OFF を渡すプロパティ（ビットの順）
+    // シェーダーの部位（_PartHips 〜 _PartRightFoot）と、その部位を代表する骨（ビットの順）
     private string[] _partNames;
+    private TrackBone[] _partBones;
+    private int[] _partOfBone;        // HumanBodyBones の値 → 部位の番号（-1 = 部位なし）
     private int _partsWritten = -1;   // マテリアルに書いた部位のビット（-1 = まだ書いていない）
+    private bool _noParts = false;    // SetBone で全部 OFF にした（空の bones は全身なので、別に覚える）
     private bool _inited = false;
     private int _ownerId = 0;
     private bool _projectorOn = true;
@@ -99,16 +86,36 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
                                   (int)HumanBodyBones.LeftHand, (int)HumanBodyBones.RightHand,
                                   (int)HumanBodyBones.LeftFoot, (int)HumanBodyBones.RightFoot };
         _pointNames = new string[] { "_OwnerPt0", "_OwnerPt1", "_OwnerPt2", "_OwnerPt3", "_OwnerPt4", "_OwnerPt5" };
-        _jointBones = new int[] { (int)HumanBodyBones.Neck,
+        _jointBones = new int[] { (int)HumanBodyBones.Spine, (int)HumanBodyBones.Neck,
                                   (int)HumanBodyBones.LeftUpperArm, (int)HumanBodyBones.LeftLowerArm,
                                   (int)HumanBodyBones.RightUpperArm, (int)HumanBodyBones.RightLowerArm,
                                   (int)HumanBodyBones.LeftUpperLeg, (int)HumanBodyBones.LeftLowerLeg,
-                                  (int)HumanBodyBones.RightUpperLeg, (int)HumanBodyBones.RightLowerLeg };
-        _jointNames = new string[] { "_JointNeck", "_JointUpperArmL", "_JointLowerArmL", "_JointUpperArmR", "_JointLowerArmR",
-                                     "_JointUpperLegL", "_JointLowerLegL", "_JointUpperLegR", "_JointLowerLegR" };
-        _partNames = new string[] { "_PartHead", "_PartChest", "_PartWaist",
-                                    "_PartUpperArmL", "_PartForearmL", "_PartUpperArmR", "_PartForearmR",
-                                    "_PartThighL", "_PartShinL", "_PartThighR", "_PartShinR" };
+                                  (int)HumanBodyBones.RightUpperLeg, (int)HumanBodyBones.RightLowerLeg,
+                                  (int)HumanBodyBones.LeftToes, (int)HumanBodyBones.RightToes };
+        _jointNames = new string[] { "_JointSpine", "_JointNeck",
+                                     "_JointLeftUpperArm", "_JointLeftLowerArm", "_JointRightUpperArm", "_JointRightLowerArm",
+                                     "_JointLeftUpperLeg", "_JointLeftLowerLeg", "_JointRightUpperLeg", "_JointRightLowerLeg",
+                                     "_JointLeftToes", "_JointRightToes" };
+        _partBones = new TrackBone[] { TrackBone.Hips, TrackBone.Spine, TrackBone.Chest, TrackBone.Neck, TrackBone.Head,
+                                       TrackBone.LeftUpperArm, TrackBone.LeftLowerArm, TrackBone.LeftHand,
+                                       TrackBone.RightUpperArm, TrackBone.RightLowerArm, TrackBone.RightHand,
+                                       TrackBone.LeftUpperLeg, TrackBone.LeftLowerLeg, TrackBone.LeftFoot,
+                                       TrackBone.RightUpperLeg, TrackBone.RightLowerLeg, TrackBone.RightFoot };
+        // U# では自作 enum が int として扱われ ToString() が数字になるので、名前は手で並べる
+        _partNames = new string[] { "_PartHips", "_PartSpine", "_PartChest", "_PartNeck", "_PartHead",
+                                    "_PartLeftUpperArm", "_PartLeftLowerArm", "_PartLeftHand",
+                                    "_PartRightUpperArm", "_PartRightLowerArm", "_PartRightHand",
+                                    "_PartLeftUpperLeg", "_PartLeftLowerLeg", "_PartLeftFoot",
+                                    "_PartRightUpperLeg", "_PartRightLowerLeg", "_PartRightFoot" };
+        _partOfBone = new int[(int)HumanBodyBones.LastBone];
+        for (int i = 0; i < _partOfBone.Length; i++) { _partOfBone[i] = -1; }
+        for (int i = 0; i < PartCount; i++) { _partOfBone[(int)_partBones[i]] = i; }
+        // 部位を持たない骨は、その骨を含む部位に寄せる（肩の上と上胸は胸の円柱、つま先は足の円柱に入る）
+        _partOfBone[(int)TrackBone.UpperChest] = 2;
+        _partOfBone[(int)TrackBone.LeftShoulder] = 2;
+        _partOfBone[(int)TrackBone.RightShoulder] = 2;
+        _partOfBone[(int)TrackBone.LeftToes] = 13;
+        _partOfBone[(int)TrackBone.RightToes] = 16;
     }
 
     void Start()
@@ -149,49 +156,45 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return _ownerId;
     }
 
-    // 繭を付ける部位をまとめて選ぶ。mask のビット = PartHead 〜 PartShinRight（例: 腰と両腕 =
-    // (1 << PartWaist) | (1 << PartUpperArmLeft) | (1 << PartForearmLeft) | (1 << PartUpperArmRight) | (1 << PartForearmRight)）
-    public void SetParts(int mask)
+    // 繭を付ける骨をまとめて選ぶ。空の配列（または null）なら全身
+    public void SetBones(TrackBone[] newBones)
     {
-        head = (mask & (1 << PartHead)) != 0;
-        chest = (mask & (1 << PartChest)) != 0;
-        waist = (mask & (1 << PartWaist)) != 0;
-        upperArmLeft = (mask & (1 << PartUpperArmLeft)) != 0;
-        forearmLeft = (mask & (1 << PartForearmLeft)) != 0;
-        upperArmRight = (mask & (1 << PartUpperArmRight)) != 0;
-        forearmRight = (mask & (1 << PartForearmRight)) != 0;
-        thighLeft = (mask & (1 << PartThighLeft)) != 0;
-        shinLeft = (mask & (1 << PartShinLeft)) != 0;
-        thighRight = (mask & (1 << PartThighRight)) != 0;
-        shinRight = (mask & (1 << PartShinRight)) != 0;
+        bones = newBones != null ? newBones : new TrackBone[0];
+        _noParts = false;
         WriteParts();
     }
 
-    // 部位を 1 つだけ ON / OFF する（part = PartHead 〜 PartShinRight）
-    public void SetPart(int part, bool on)
+    // 骨を 1 つだけ ON / OFF する。その骨を含む部位ごと切り替わる（例: UpperChest を OFF にすると Chest が OFF）
+    public void SetBone(TrackBone bone, bool on)
     {
-        if (part < 0 || part > PartShinRight) { return; }
-        int mask = GetParts();
+        EnsureInit();
+        int part = PartOf((int)bone);
+        if (part < 0) { return; }
+        int mask = GetPartMask();
         if (on) { mask |= 1 << part; } else { mask &= ~(1 << part); }
-        SetParts(mask);
+        bones = BonesFromMask(mask);
+        _noParts = mask == 0;
+        WriteParts();
     }
 
-    // 今の部位のビット
-    public int GetParts()
+    // 全身に戻す
+    public void SetWholeBody()
     {
-        int m = 0;
-        if (head) { m |= 1 << PartHead; }
-        if (chest) { m |= 1 << PartChest; }
-        if (waist) { m |= 1 << PartWaist; }
-        if (upperArmLeft) { m |= 1 << PartUpperArmLeft; }
-        if (forearmLeft) { m |= 1 << PartForearmLeft; }
-        if (upperArmRight) { m |= 1 << PartUpperArmRight; }
-        if (forearmRight) { m |= 1 << PartForearmRight; }
-        if (thighLeft) { m |= 1 << PartThighLeft; }
-        if (shinLeft) { m |= 1 << PartShinLeft; }
-        if (thighRight) { m |= 1 << PartThighRight; }
-        if (shinRight) { m |= 1 << PartShinRight; }
-        return m;
+        SetBones(new TrackBone[0]);
+    }
+
+    // 骨（を含む部位）に繭を付けるか
+    public bool HasBone(TrackBone bone)
+    {
+        EnsureInit();
+        int part = PartOf((int)bone);
+        return part >= 0 && (GetPartMask() & (1 << part)) != 0;
+    }
+
+    // 今の骨の配列（空 = 全身）
+    public TrackBone[] GetBones()
+    {
+        return bones;
     }
 
     // ================= 毎フレーム =================
@@ -217,26 +220,24 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         {
             maskMaterial.SetVector(_pointNames[i], BonePoint(p, _pointBones[i], attachmentRadius));
         }
-        // 胸の骨が無いアバターは背骨で代わりにする（部位の判定で腰と胸の境目に使う）
-        if (p.GetBonePosition(HumanBodyBones.Chest).sqrMagnitude < 1e-8f)
-        {
-            maskMaterial.SetVector(_pointNames[1], BonePoint(p, (int)HumanBodyBones.Spine, attachmentRadius));
-        }
         for (int i = 0; i < _jointBones.Length; i++)
         {
             maskMaterial.SetVector(_jointNames[i], BonePoint(p, _jointBones[i], 0f));
         }
-        // 首の骨が無いアバターは、胸（無ければ背骨）と頭の間で代わりにする
-        if (p.GetBonePosition(HumanBodyBones.Neck).sqrMagnitude < 1e-8f)
+        // 胸・首の骨が無いアバターは、背骨と頭の間で代わりにする（部位の判定で背骨・胸・首の境目に使う）
+        Vector3 spinePos = p.GetBonePosition(HumanBodyBones.Spine);
+        Vector3 chestPos = p.GetBonePosition(HumanBodyBones.Chest);
+        Vector3 headBone = p.GetBonePosition(HumanBodyBones.Head);
+        bool canGuess = spinePos.sqrMagnitude > 1e-8f && headBone.sqrMagnitude > 1e-8f;
+        if (chestPos.sqrMagnitude < 1e-8f && canGuess)
         {
-            Vector3 c = p.GetBonePosition(HumanBodyBones.Chest);
-            if (c.sqrMagnitude < 1e-8f) { c = p.GetBonePosition(HumanBodyBones.Spine); }
-            Vector3 h = p.GetBonePosition(HumanBodyBones.Head);
-            if (c.sqrMagnitude > 1e-8f && h.sqrMagnitude > 1e-8f)
-            {
-                Vector3 n = Vector3.Lerp(c, h, 0.6f);
-                maskMaterial.SetVector(_jointNames[0], new Vector4(n.x, n.y, n.z, 0f));
-            }
+            chestPos = Vector3.Lerp(spinePos, headBone, 0.3f);
+            maskMaterial.SetVector(_pointNames[1], new Vector4(chestPos.x, chestPos.y, chestPos.z, attachmentRadius > 0f ? attachmentRadius : 0f));
+        }
+        if (p.GetBonePosition(HumanBodyBones.Neck).sqrMagnitude < 1e-8f && canGuess)
+        {
+            Vector3 n = Vector3.Lerp(chestPos, headBone, 0.6f);
+            maskMaterial.SetVector(_jointNames[1], new Vector4(n.x, n.y, n.z, 0f));
         }
 
         if (projectorTransform != null)
@@ -268,12 +269,48 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return new Vector4(v.x, v.y, v.z, radius > 0f ? radius : 0f);
     }
 
+    // HumanBodyBones の値 → シェーダーの部位の番号（-1 = 部位なし）
+    private int PartOf(int bone)
+    {
+        if (bone < 0 || bone >= _partOfBone.Length) { return -1; }
+        return _partOfBone[bone];
+    }
+
+    // bones から、ON の部位のビット（空 = 全部）
+    private int GetPartMask()
+    {
+        if (_noParts) { return 0; }
+        if (bones == null || bones.Length == 0) { return PartAll; }
+        int m = 0;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            int part = PartOf((int)bones[i]);
+            if (part >= 0) { m |= 1 << part; }
+        }
+        return m;
+    }
+
+    // 部位のビットから骨の配列を作る（全部 ON・全部 OFF なら空）
+    private TrackBone[] BonesFromMask(int mask)
+    {
+        if ((mask & PartAll) == PartAll || mask == 0) { return new TrackBone[0]; }
+        int n = 0;
+        for (int i = 0; i < PartCount; i++) { if ((mask & (1 << i)) != 0) { n++; } }
+        TrackBone[] result = new TrackBone[n];
+        n = 0;
+        for (int i = 0; i < PartCount; i++)
+        {
+            if ((mask & (1 << i)) != 0) { result[n] = _partBones[i]; n++; }
+        }
+        return result;
+    }
+
     // 部位の ON / OFF をマスクのマテリアルに書く（変わったときだけ）
     private void WriteParts()
     {
         EnsureInit();
         if (maskMaterial == null) { return; }
-        int mask = GetParts();
+        int mask = GetPartMask();
         if (mask == _partsWritten) { return; }
         _partsWritten = mask;
         for (int i = 0; i < _partNames.Length; i++)

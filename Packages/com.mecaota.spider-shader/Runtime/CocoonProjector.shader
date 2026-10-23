@@ -30,13 +30,18 @@
 //     手前に来てテストに通り、手前の柱・壁・他人には負ける（そこには立たない）。
 //     裏面（髪カード・スカートの内側）も同じ向きに膨らむよう Cull Off にしてある。
 //
-//  ★ 部位の選択（_PartHead 〜 _PartShinR、2026-10-23）:
-//     繭を付ける部位を 11 個（頭・胸・腰・左右の上腕・左右の前腕と手・左右のもも・左右のすねと足）から選べる。
+//  ★ 部位の選択（_PartHips 〜 _PartRightFoot、2026-10-23）:
+//     繭を付ける部位を、Humanoid のボーンと同じ名前の 17 部位（Hips・Spine・Chest・Neck・Head、
+//     左右の UpperArm・LowerArm・Hand、左右の UpperLeg・LowerLeg・Foot）から選べる。
+//     各部位は「そのボーンから次のボーンまで」（Hips は骨盤から Spine まで、Hand は手首から指先まで、
+//     Foot はかかとからつま先まで）。
 //     受け手の各画素の「体の位置」（膨張前の頂点のワールド座標）を、骨と骨を結ぶ部位ごとの円柱と比べ、
 //     一番近い円柱（中に入っている深さが一番深い円柱）の部位が OFF なら印を立てない（discard）。
-//     ON の部位の距離と OFF の部位の距離の差が _PartEdgeFray より小さい境目は、ノイズでほつれさせる。
-//     骨の位置は Owner の xyz（腰・頭・胸・両手・両足）と Part Joints（首・肩・肘・股関節・膝）を使う。
+//     境目は _PartEdgeFray の幅までノイズでほつれさせる。ほつれは ON の部位の外側へだけ広がるので、
+//     隣り合う部位を別々の Projector（別々のマテリアル）で出しても、境目に穴が開かない。
+//     骨の位置は Owner の xyz（腰・頭・胸・両手・両足）と Part Joints（背骨・首・肩・肘・股関節・膝・つま先）を使う。
 //     全部 ON なら判定そのものを飛ばす（従来と同じ見た目・同じ負荷）。全部 OFF なら何も描かない。
+//     Udon（SpiderCocoonProjectorMaskDriver）では TrackBone の配列で選ぶ（空 = 全身）。
 //
 //  ★ セットアップ:
 //     - Projector: Orthographic、被害者に追従（Udon）、Ignore Layers = Player 系以外すべて、
@@ -79,35 +84,45 @@ Shader "mecaota/CocoonProjector"
         _OwnerPt5 ("所有者の右足 xyz=位置 w=許容半径 m (Owner Point 5)", Vector) = (0, -9999, 0, 0)
 
         [Header(Parts)]
-        // 繭を付ける部位。OFF の部位には印を立てない（その部位に繭が出ない）。全部 ON で従来どおり体全体
+        // 繭を付ける部位（Humanoid のボーン名）。OFF の部位には印を立てない（その部位に繭が出ない）。全部 ON で従来どおり体全体
+        [ToggleUI] _PartHips ("部位 骨盤 股関節から背骨の骨まで (Hips)", Float) = 1
+        [ToggleUI] _PartSpine ("部位 お腹 背骨の骨から胸の骨まで (Spine)", Float) = 1
+        [ToggleUI] _PartChest ("部位 胸 肩も含む (Chest)", Float) = 1
+        [ToggleUI] _PartNeck ("部位 首 (Neck)", Float) = 1
         [ToggleUI] _PartHead ("部位 頭 (Head)", Float) = 1
-        [ToggleUI] _PartChest ("部位 胸 (Chest)", Float) = 1
-        [ToggleUI] _PartWaist ("部位 腰 (Waist)", Float) = 1
-        [ToggleUI] _PartUpperArmL ("部位 左の上腕 (Left Upper Arm)", Float) = 1
-        [ToggleUI] _PartForearmL ("部位 左の前腕と手 (Left Forearm And Hand)", Float) = 1
-        [ToggleUI] _PartUpperArmR ("部位 右の上腕 (Right Upper Arm)", Float) = 1
-        [ToggleUI] _PartForearmR ("部位 右の前腕と手 (Right Forearm And Hand)", Float) = 1
-        [ToggleUI] _PartThighL ("部位 左のもも (Left Thigh)", Float) = 1
-        [ToggleUI] _PartShinL ("部位 左のすねと足 (Left Shin And Foot)", Float) = 1
-        [ToggleUI] _PartThighR ("部位 右のもも (Right Thigh)", Float) = 1
-        [ToggleUI] _PartShinR ("部位 右のすねと足 (Right Shin And Foot)", Float) = 1
+        [ToggleUI] _PartLeftUpperArm ("部位 左の上腕 (Left Upper Arm)", Float) = 1
+        [ToggleUI] _PartLeftLowerArm ("部位 左の前腕 (Left Lower Arm)", Float) = 1
+        [ToggleUI] _PartLeftHand ("部位 左手 (Left Hand)", Float) = 1
+        [ToggleUI] _PartRightUpperArm ("部位 右の上腕 (Right Upper Arm)", Float) = 1
+        [ToggleUI] _PartRightLowerArm ("部位 右の前腕 (Right Lower Arm)", Float) = 1
+        [ToggleUI] _PartRightHand ("部位 右手 (Right Hand)", Float) = 1
+        [ToggleUI] _PartLeftUpperLeg ("部位 左のもも (Left Upper Leg)", Float) = 1
+        [ToggleUI] _PartLeftLowerLeg ("部位 左のすね (Left Lower Leg)", Float) = 1
+        [ToggleUI] _PartLeftFoot ("部位 左足 足首から先 (Left Foot)", Float) = 1
+        [ToggleUI] _PartRightUpperLeg ("部位 右のもも (Right Upper Leg)", Float) = 1
+        [ToggleUI] _PartRightLowerLeg ("部位 右のすね (Right Lower Leg)", Float) = 1
+        [ToggleUI] _PartRightFoot ("部位 右足 足首から先 (Right Foot)", Float) = 1
         // 部位ごとの円柱の太さに掛ける倍率（体格が標準から外れて境目がずれるときに調整する）
         _PartRadiusScale ("部位の太さの倍率 (Part Radius Scale)", Range(0.3, 3)) = 1
-        // 部位の境目をほつれさせる幅 m。0 でまっすぐ切れる
+        // 部位の境目をほつれさせる幅 m（ON の部位の外側へこの幅まで）。0 でまっすぐ切れる
         _PartEdgeFray ("部位の境目のほつれ幅 m (Part Edge Fray)", Range(0, 0.1)) = 0.02
 
         [Header(Part Joints)]
-        // 部位の判定に使う関節の位置（xyz、w は使わない。Udon が骨の位置を渡す）。
+        // 部位の判定に使う骨の位置（xyz、w は使わない。Udon が骨の位置を渡す）。
         // 腰・頭・胸・両手・両足は Owner の xyz を使う（w は所有者の判定用。0 でも位置は部位の判定に使われる）
-        _JointNeck ("関節 首 (Neck)", Vector) = (0, -9999, 0, 0)
-        _JointUpperArmL ("関節 左肩 (Left Upper Arm)", Vector) = (0, -9999, 0, 0)
-        _JointLowerArmL ("関節 左肘 (Left Lower Arm)", Vector) = (0, -9999, 0, 0)
-        _JointUpperArmR ("関節 右肩 (Right Upper Arm)", Vector) = (0, -9999, 0, 0)
-        _JointLowerArmR ("関節 右肘 (Right Lower Arm)", Vector) = (0, -9999, 0, 0)
-        _JointUpperLegL ("関節 左の股関節 (Left Upper Leg)", Vector) = (0, -9999, 0, 0)
-        _JointLowerLegL ("関節 左膝 (Left Lower Leg)", Vector) = (0, -9999, 0, 0)
-        _JointUpperLegR ("関節 右の股関節 (Right Upper Leg)", Vector) = (0, -9999, 0, 0)
-        _JointLowerLegR ("関節 右膝 (Right Lower Leg)", Vector) = (0, -9999, 0, 0)
+        _JointSpine ("骨 背骨 (Spine)", Vector) = (0, -9999, 0, 0)
+        _JointNeck ("骨 首 (Neck)", Vector) = (0, -9999, 0, 0)
+        _JointLeftUpperArm ("骨 左肩 (Left Upper Arm)", Vector) = (0, -9999, 0, 0)
+        _JointLeftLowerArm ("骨 左肘 (Left Lower Arm)", Vector) = (0, -9999, 0, 0)
+        _JointRightUpperArm ("骨 右肩 (Right Upper Arm)", Vector) = (0, -9999, 0, 0)
+        _JointRightLowerArm ("骨 右肘 (Right Lower Arm)", Vector) = (0, -9999, 0, 0)
+        _JointLeftUpperLeg ("骨 左の股関節 (Left Upper Leg)", Vector) = (0, -9999, 0, 0)
+        _JointLeftLowerLeg ("骨 左膝 (Left Lower Leg)", Vector) = (0, -9999, 0, 0)
+        _JointRightUpperLeg ("骨 右の股関節 (Right Upper Leg)", Vector) = (0, -9999, 0, 0)
+        _JointRightLowerLeg ("骨 右膝 (Right Lower Leg)", Vector) = (0, -9999, 0, 0)
+        // つま先の骨。無ければ足首から真下へ足の円柱をのばす
+        _JointLeftToes ("骨 左のつま先 (Left Toes)", Vector) = (0, -9999, 0, 0)
+        _JointRightToes ("骨 右のつま先 (Right Toes)", Vector) = (0, -9999, 0, 0)
 
         [Header(Clip And Debug)]
         // 所有者モードでは体を丸ごと塗る（指先が切れない）ので既定 OFF。全員モードで範囲を絞るときだけ ON
@@ -162,14 +177,17 @@ Shader "mecaota/CocoonProjector"
             float4 _OwnerHips;
             float4 _OwnerPt0, _OwnerPt1, _OwnerPt2, _OwnerPt3, _OwnerPt4, _OwnerPt5;
 
-            float  _PartHead, _PartChest, _PartWaist;
-            float  _PartUpperArmL, _PartForearmL, _PartUpperArmR, _PartForearmR;
-            float  _PartThighL, _PartShinL, _PartThighR, _PartShinR;
+            float  _PartHips, _PartSpine, _PartChest, _PartNeck, _PartHead;
+            float  _PartLeftUpperArm, _PartLeftLowerArm, _PartLeftHand;
+            float  _PartRightUpperArm, _PartRightLowerArm, _PartRightHand;
+            float  _PartLeftUpperLeg, _PartLeftLowerLeg, _PartLeftFoot;
+            float  _PartRightUpperLeg, _PartRightLowerLeg, _PartRightFoot;
             float  _PartRadiusScale;
             float  _PartEdgeFray;
-            float4 _JointNeck;
-            float4 _JointUpperArmL, _JointLowerArmL, _JointUpperArmR, _JointLowerArmR;
-            float4 _JointUpperLegL, _JointLowerLegL, _JointUpperLegR, _JointLowerLegR;
+            float4 _JointSpine, _JointNeck;
+            float4 _JointLeftUpperArm, _JointLeftLowerArm, _JointRightUpperArm, _JointRightLowerArm;
+            float4 _JointLeftUpperLeg, _JointLeftLowerLeg, _JointRightUpperLeg, _JointRightLowerLeg;
+            float4 _JointLeftToes, _JointRightToes;
 
             // 原点が点 pt（xyz = 位置、w = 半径）の半径内か。w <= 0 の点は無効（distance >= 0 なので常に false）
             bool SCPM_Near(float3 origin, float4 pt)
@@ -177,12 +195,14 @@ Shader "mecaota/CocoonProjector"
                 return distance(origin, pt.xyz) < pt.w;
             }
 
-            // ON の部位の数（0〜11）。ドロー単位で一定
+            // ON の部位の数（0〜17）。ドロー単位で一定
             float SCPM_PartsOn()
             {
-                return _PartHead + _PartChest + _PartWaist
-                     + _PartUpperArmL + _PartForearmL + _PartUpperArmR + _PartForearmR
-                     + _PartThighL + _PartShinL + _PartThighR + _PartShinR;
+                return _PartHips + _PartSpine + _PartChest + _PartNeck + _PartHead
+                     + _PartLeftUpperArm + _PartLeftLowerArm + _PartLeftHand
+                     + _PartRightUpperArm + _PartRightLowerArm + _PartRightHand
+                     + _PartLeftUpperLeg + _PartLeftLowerLeg + _PartLeftFoot
+                     + _PartRightUpperLeg + _PartRightLowerLeg + _PartRightFoot;
             }
 
             // 点 p から、a→b を軸とする半径 r の円柱（両端は平ら）までの符号付き距離 m。中なら負。
@@ -232,6 +252,16 @@ Shader "mecaota/CocoonProjector"
                 return n * 2.0 - 1.0;
             }
 
+            // 足（足首から先）の円柱までの距離。つま先の骨があれば、かかとからつま先の先まで。
+            // 無ければ足首から真下（すねの向き）へ少しのばす
+            float SCPM_Foot(float3 p, float3 foot, float3 knee, float4 toes, float s)
+            {
+                if (toes.y < -9000.0) return SCPM_Cylinder(p, foot, foot + (foot - knee) * 0.15, 0.055 * s);
+                float3 heel   = foot - (toes.xyz - foot) * 0.35;
+                float3 toeTip = toes.xyz + (toes.xyz - foot) * 0.3;
+                return SCPM_Cylinder(p, heel, toeTip, 0.050 * s);
+            }
+
             // 体の位置 p が ON の部位に入るか。部位ごとの円柱のうち、p が一番深く入っている（距離が最小の）ものの部位で決める。
             // 円柱の太さは大人の体（腰〜首 0.45 m）の目安を、所有者の腰〜首の長さで伸び縮みさせる。
             bool SCPM_InSelectedParts(float3 p)
@@ -239,43 +269,47 @@ Shader "mecaota/CocoonProjector"
                 float3 hips  = _OwnerHips.xyz;
                 float3 head  = _OwnerPt0.xyz;
                 float3 chest = _OwnerPt1.xyz;
+                float3 spine = _JointSpine.xyz;
                 float3 neck  = _JointNeck.xyz;
                 float3 handL = _OwnerPt2.xyz, handR = _OwnerPt3.xyz;
                 float3 footL = _OwnerPt4.xyz, footR = _OwnerPt5.xyz;
-                float3 elbowL = _JointLowerArmL.xyz, elbowR = _JointLowerArmR.xyz;
-                float3 kneeL  = _JointLowerLegL.xyz, kneeR  = _JointLowerLegR.xyz;
+                float3 elbowL = _JointLeftLowerArm.xyz, elbowR = _JointRightLowerArm.xyz;
+                float3 kneeL  = _JointLeftLowerLeg.xyz, kneeR  = _JointRightLowerLeg.xyz;
 
                 float s = clamp(distance(hips, neck) / 0.45, 0.2, 5.0) * _PartRadiusScale;
-                // 頭のてっぺん・指先・かかとには骨が無いので、一つ手前の骨からのばす
+                // 頭のてっぺん・指先には骨が無いので、一つ手前の骨からのばす
                 float3 headTop  = head + (head - neck) * 2.0;
                 float3 handTipL = handL + (handL - elbowL) * 0.7;
                 float3 handTipR = handR + (handR - elbowR) * 0.7;
-                float3 soleL    = footL + (footL - kneeL) * 0.15;
-                float3 soleR    = footR + (footR - kneeR) * 0.15;
-                // 腰は腰の骨より少し下（股関節の高さあたり）から。骨盤とお尻を腰に入れる
+                // 骨盤は腰の骨より少し下（股関節の高さあたり）から。お尻を Hips に入れる
                 float3 pelvis   = hips + (hips - chest) * 0.4;
 
                 float dOn = 1e5, dOff = 1e5;
-                SCPM_Part(SCPM_Cylinder(p, neck,   headTop, 0.10 * s), _PartHead,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, pelvis, spine,   0.15 * s), _PartHips,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, spine,  chest,   0.15 * s), _PartSpine, dOn, dOff);
                 SCPM_Part(SCPM_Cylinder(p, chest,  neck,    0.15 * s), _PartChest, dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, pelvis, chest,   0.15 * s), _PartWaist, dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, _JointUpperArmL.xyz, elbowL, 0.050 * s), _PartUpperArmL, dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, elbowL, handL,               0.045 * s), _PartForearmL,  dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, handL, handTipL,             0.060 * s), _PartForearmL,  dOn, dOff);   // 手（親指の分だけ太く）
-                SCPM_Part(SCPM_Cylinder(p, _JointUpperArmR.xyz, elbowR, 0.050 * s), _PartUpperArmR, dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, elbowR, handR,               0.045 * s), _PartForearmR,  dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, handR, handTipR,             0.060 * s), _PartForearmR,  dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, _JointUpperLegL.xyz, kneeL,  0.080 * s), _PartThighL,    dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, kneeL, soleL,                0.055 * s), _PartShinL,     dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, _JointUpperLegR.xyz, kneeR,  0.080 * s), _PartThighR,    dOn, dOff);
-                SCPM_Part(SCPM_Cylinder(p, kneeR, soleR,                0.055 * s), _PartShinR,     dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, neck,   head,    0.06 * s), _PartNeck,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, head,   headTop, 0.10 * s), _PartHead,  dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, _JointLeftUpperArm.xyz, elbowL, 0.050 * s), _PartLeftUpperArm, dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, elbowL, handL,                  0.045 * s), _PartLeftLowerArm, dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, handL,  handTipL,               0.060 * s), _PartLeftHand,     dOn, dOff);   // 親指の分だけ太く
+                SCPM_Part(SCPM_Cylinder(p, _JointRightUpperArm.xyz, elbowR, 0.050 * s), _PartRightUpperArm, dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, elbowR, handR,                   0.045 * s), _PartRightLowerArm, dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, handR,  handTipR,                0.060 * s), _PartRightHand,     dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, _JointLeftUpperLeg.xyz, kneeL, 0.080 * s), _PartLeftUpperLeg, dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, kneeL, footL,                  0.055 * s), _PartLeftLowerLeg, dOn, dOff);
+                SCPM_Part(SCPM_Foot(p, footL, kneeL, _JointLeftToes, s),               _PartLeftFoot,     dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, _JointRightUpperLeg.xyz, kneeR, 0.080 * s), _PartRightUpperLeg, dOn, dOff);
+                SCPM_Part(SCPM_Cylinder(p, kneeR, footR,                   0.055 * s), _PartRightLowerLeg, dOn, dOff);
+                SCPM_Part(SCPM_Foot(p, footR, kneeR, _JointRightToes, s),               _PartRightFoot,     dOn, dOff);
 
                 // 骨の位置が 1 つも来ていない（設定忘れ）ときは、部位で切らずに従来どおり体全体に印を立てる
                 if (dOn > 1e4 && dOff > 1e4) return true;
-                // ON の部位のほうが近ければ入る。差が _PartEdgeFray より小さい境目はノイズで出入りさせる。
+                // ON の部位のほうが近ければ入る。さらに OFF の部位へ 0〜_PartEdgeFray m だけノイズではみ出させて境目をほつれさせる
+                // （外側へだけはみ出すので、隣の部位を別のマテリアルで出しても境目に隙間ができない）。
                 // ノイズは腰からの相対位置で引く（歩いても模様が体の上を流れない）
-                float fray = _PartEdgeFray > 0.0 ? SCPM_Noise((p - hips) * (1.0 / 0.025)) * _PartEdgeFray : 0.0;
-                return dOff - dOn > fray;
+                float fray = _PartEdgeFray > 0.0 ? (SCPM_Noise((p - hips) * (1.0 / 0.025)) * 0.5 + 0.5) * _PartEdgeFray : 0.0;
+                return dOn - dOff < fray;
             }
 
             struct appdata
@@ -343,8 +377,8 @@ Shader "mecaota/CocoonProjector"
                     float  d  = i.uvDepth.x / max(i.uvDepth.w, 1e-5);
                     if (any(uv < 0.0) || any(uv > 1.0) || d < 0.0 || d > 1.0) discard;
                 }
-                // 部位の選択。全部 ON（11）なら判定しない
-                if (SCPM_PartsOn() < 10.5)
+                // 部位の選択。全部 ON（17）なら判定しない
+                if (SCPM_PartsOn() < 16.5)
                 {
                     if (!SCPM_InSelectedParts(i.bodyPos)) discard;
                 }
