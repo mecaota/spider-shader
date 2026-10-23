@@ -13,9 +13,10 @@ on:
         required: true
         type: string
 
-# Runs one at a time so two runs never push the same branch or open conflicting pull requests
+# Runs of the same version wait for each other so they never push the same branch at once.
+# GitHub keeps only one waiting run per group: a newer run of the same version replaces it.
 concurrency:
-  group: bump-version
+  group: bump-version-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
@@ -76,59 +77,85 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_ENV"
 
-      # Rewrite only the version in the package.json so the rest of the file stays as written.
-      # The version must come after the latest published one (tags that are not versions are
-      # ignored); an unpublished version already in the package.json may be lowered.
+      # Rewrite only the top-level version in the package.json so the rest of the file stays
+      # as written. On the default branch the version must come after the latest published one
+      # (an unpublished version already in the package.json may be lowered); on other branches,
+      # such as one for fixes to an older version, only an existing tag is rejected (above).
       - name: Set Version
+        env:
+          CHECK_LATEST: ${{ github.ref_name == github.event.repository.default_branch }}
         run: |
           node - "$packagePath/package.json" "$version" "$RUNNER_TEMP/tags" <<'EOF'
           const fs = require('fs');
           const [file, version, tagsFile] = process.argv.slice(2);
           const text = fs.readFileSync(file, 'utf8');
           const parse = (json) => JSON.parse(json.replace(/^\uFEFF/, ''));
-          const current = parse(text);
-          const updated = text.replace(/("version"\s*:\s*")[^"]*(")/, (_, head, tail) => head + version + tail);
-          // Nothing but the top-level version may change
-          if (JSON.stringify(parse(updated)) !== JSON.stringify({ ...current, version })) {
-            throw new Error(`Could not set the version in ${file}`);
+          const expected = JSON.stringify({ ...parse(text), version });
+
+          // Replace the "version" value that turns out to be the top-level one, so a nested
+          // "version" (and anything else) is never changed
+          let updated;
+          for (const match of text.matchAll(/("version"\s*:\s*")[^"]*(")/g)) {
+            const candidate = text.slice(0, match.index) + match[1] + version + match[2] +
+              text.slice(match.index + match[0].length);
+            if (JSON.stringify(parse(candidate)) === expected) {
+              updated = candidate;
+              break;
+            }
           }
-          const published = fs.readFileSync(tagsFile, 'utf8').split('\n')
-            .map((tag) => tag.replace(/^v/, ''))
-            .filter((tag) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag));
-          const latest = published.sort(compareVersions).pop();
-          if (latest && compareVersions(version, latest) <= 0) {
-            console.log(`::error::${version} は公開済みの最新 ${latest} より後のバージョンではありません`);
+          if (updated === undefined) {
+            console.log(`::error::${file} の version を書き換えられませんでした`);
             process.exit(1);
+          }
+
+          if (process.env.CHECK_LATEST === 'true') {
+            const published = fs.readFileSync(tagsFile, 'utf8').split('\n')
+              .map((tag) => tag.replace(/^v/, ''))
+              .filter((tag) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag));
+            const latest = published.sort(compareVersions).pop();
+            if (latest && compareVersions(version, latest) <= 0) {
+              console.log(`::error::${version} は公開済みの最新 ${latest} より後のバージョンではありません`);
+              process.exit(1);
+            }
           }
           fs.writeFileSync(file, updated);
 
-          // Semantic Versioning 2.0.0 precedence of two valid versions
+          // Semantic Versioning 2.0.0 precedence. Numbers are compared as digit strings so
+          // leading zeros and values beyond Number precision are handled.
           function compareVersions(a, b) {
             const split = (v) => {
               const [core, ...pre] = v.split('-');
-              return { core: core.split('.').map(Number), pre: pre.length ? pre.join('-').split('.') : [] };
+              return { core: core.split('.'), pre: pre.length ? pre.join('-').split('.') : [] };
+            };
+            const compareNumbers = (p, q) => {
+              p = p.replace(/^0+(?=\d)/, '');
+              q = q.replace(/^0+(?=\d)/, '');
+              return p.length - q.length || (p < q ? -1 : p > q ? 1 : 0);
             };
             const x = split(a), y = split(b);
             for (let i = 0; i < 3; i++) {
-              if (x.core[i] !== y.core[i]) return x.core[i] - y.core[i];
+              const order = compareNumbers(x.core[i], y.core[i]);
+              if (order !== 0) return order;
             }
             if (x.pre.length === 0 || y.pre.length === 0) return y.pre.length - x.pre.length;
             for (let i = 0; i < Math.min(x.pre.length, y.pre.length); i++) {
               const p = x.pre[i], q = y.pre[i];
-              if (p === q) continue;
               const pNum = /^\d+$/.test(p), qNum = /^\d+$/.test(q);
-              if (pNum && qNum) return Number(p) - Number(q);
-              if (pNum !== qNum) return pNum ? -1 : 1;
-              return p < q ? -1 : 1;
+              let order;
+              if (pNum && qNum) order = compareNumbers(p, q);
+              else if (pNum !== qNum) order = pNum ? -1 : 1;
+              else order = p < q ? -1 : p > q ? 1 : 0;
+              if (order !== 0) return order;
             }
             return x.pre.length - y.pre.length;
           }
           EOF
 
-      # Commit the rewritten package.json to release/<version> and open a pull request
-      # into the branch the workflow ran on. An open pull request from a previous run is left
-      # as it is, and a branch a previous run pushed without opening one is reused only when
-      # its files are exactly the ones this run would commit (never force-pushed).
+      # Commit the rewritten package.json to release/<version> and open a pull request into
+      # the branch the workflow ran on. An open pull request from a previous run is left as it
+      # is. A release/<version> that no open pull request uses (a previous run pushed it but
+      # could not open one) is replaced with this run's commit, unless it moved meanwhile.
+      # Pull requests from forks are ignored even when their branch has the same name.
       - name: Open Pull Request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -139,27 +166,28 @@ jobs:
           fi
           branch="release/$version"
           title="chore: バージョンを $version にする"
-          pr="$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json url --jq '.[0].url // empty')"
+          prs="$(gh pr list --head "$branch" --state open --json url,baseRefName,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | "\(.baseRefName) \(.url)"')"
+          pr="$(awk -v base="$GITHUB_REF_NAME" '$1 == base { print $2; exit }' <<< "$prs")"
           if [ -n "$pr" ]; then
             echo "::notice::$branch の pull request はもうあります: $pr（$GITHUB_REF_NAME が進んでいたら、PR の Update branch で取り込んでください）"
             exit 0
           fi
-          status=0
-          git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null || status=$?
-          if [ "$status" -eq 0 ]; then
-            git fetch --depth 1 origin "refs/heads/$branch"
-            if ! git diff --quiet FETCH_HEAD; then
-              echo "::error::$branch はもうあり、中身が今回の書き換えと違います（ほかのブランチで実行したときのものなど）。開いている pull request が無いのを確かめてからブランチを消し、実行し直してください"
-              exit 1
-            fi
-          elif [ "$status" -eq 2 ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "$title" -- "$packagePath/package.json"
-            git push origin "HEAD:refs/heads/$branch"
-          else
-            echo "::error::$branch があるかを確かめられませんでした（git ls-remote の終了コード $status）"
+          if [ -n "$prs" ]; then
+            echo "::error::$branch は、ほかのブランチへの pull request で使われています: $prs"
             exit 1
+          fi
+          if ! remote="$(git ls-remote --heads origin "refs/heads/$branch")"; then
+            echo "::error::$branch があるかを確かめられませんでした"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "$title" -- "$packagePath/package.json"
+          if [ -n "$remote" ]; then
+            git push --force-with-lease="refs/heads/$branch:${remote%%[[:space:]]*}" origin "HEAD:refs/heads/$branch"
+          else
+            git push origin "HEAD:refs/heads/$branch"
           fi
           body="package.json の version を $version にします。マージしたら Build Release を実行してください。"
           if out="$(gh pr create --base "$GITHUB_REF_NAME" --head "$branch" --title "$title" --body "$body" 2>&1)"; then

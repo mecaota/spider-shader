@@ -24,7 +24,7 @@ Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布さ�
   Presets/                            標準プリセット（SpiderShaderPreset アセット）
 docs/                                 利用者向けドキュメント（シェーダーごと＋共通機能＋Udon ギミック）
 Website/                              配布ページのテンプレート
-.github/workflows/                    リリースと VPM リスティングの自動生成
+.github/workflows/                    リリース・バージョンを上げる PR・VPM リスティングの自動生成
 .github/scripts/                      リスティング（index.json）と配布ページの生成スクリプト
 ```
 
