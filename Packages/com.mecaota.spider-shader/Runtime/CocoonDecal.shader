@@ -804,59 +804,65 @@ Shader "mecaota/CocoonDecal"
         void SC_DecalJackWall(float3 worldDir, out float outDepth, out float3 lp, out float3 wp,
                               out float3 nOut, out float fade)
         {
-            fade = 1.0;
+            // 早い return を使わず、out の値は先に全部決めておく（D3D の「初期化していないかもしれない変数」の警告を出さないため）
+            fade     = 1.0;
+            outDepth = UNITY_NEAR_CLIP_VALUE;
+            lp       = float3(0.0, 0.0, 0.0);
+            wp       = _WorldSpaceCameraPos;
+            nOut     = float3(0.0, 1.0, 0.0);
             if (abs(_JackHead.w) <= 1e-5)
             {
                 float3 nIn;
                 SC_VisionJackWallHit(worldDir, _RadiusFit * _JackRadius, _HeightFit * _JackStretch, outDepth, lp, wp, nIn);
                 nOut = -nIn;
-                return;
-            }
-
-            float3 rd  = normalize(worldDir);
-            float3 eye = SC_MonoCameraPos();
-            float3 ga, gb;
-            float  gr;
-            float  t = -1.0;
-            bool   tube = SC_GirthCapsule(ga, gb, gr) && SC_SegmentDist(eye, ga, gb) < gr;
-            if (tube) t = SC_RayCapsuleFar(_WorldSpaceCameraPos, rd, ga, gb, gr);
-            if (t > 0.0)
-            {
-                // 太さをそろえた筒の内側の面。法線は軸から外向き
-                wp = _WorldSpaceCameraPos + rd * t;
-                float3 ba = gb - ga;
-                float  hh = saturate(dot(wp - ga, ba) / max(dot(ba, ba), 1e-8));
-                float3 n  = wp - (ga + ba * hh);
-                nOut = dot(n, n) > 1e-12 ? normalize(n) : -rd;
             }
             else
             {
-                // 頭の周りの内壁: 目（両目の中点）を中心にした球の奥側の面。目は球の中なので必ず当たる
-                float  R  = max(_JackHoodRadius, 0.02);
-                float3 oc = _WorldSpaceCameraPos - eye;
-                float  b  = dot(rd, oc);
-                t  = -b + sqrt(max(b * b - (dot(oc, oc) - R * R), 0.0));
-                wp = _WorldSpaceCameraPos + rd * t;
-                nOut = normalize(wp - eye);
-                // 体を見下ろす向き（体の軸の真下から _JackHoodOpen 度まで）は開ける。縁はぼかす
-                float3 up      = normalize(float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21));
-                float  fromDown = degrees(acos(clamp(-dot(nOut, up), -1.0, 1.0)));
-                fade = smoothstep(_JackHoodOpen, _JackHoodOpen + SC_JACK_HOOD_FADE_DEG, fromDown);
-            }
-            lp = mul(unity_WorldToObject, float4(wp, 1.0)).xyz;
-            // 深度は SC_VisionJackWallHit と同じ変換（カメラの真横〜後ろは最前面）
-            float4 clipPos = UnityWorldToClipPos(wp);
-            if (clipPos.w <= 1e-4)
-            {
-                outDepth = UNITY_NEAR_CLIP_VALUE;
-            }
-            else
-            {
-                float zBuf = clipPos.z / clipPos.w;
-            #if !defined(UNITY_REVERSED_Z)
-                zBuf = zBuf * 0.5 + 0.5;
-            #endif
-                outDepth = saturate(zBuf);
+                float3 rd  = normalize(worldDir);
+                float3 eye = SC_MonoCameraPos();
+                float3 ga, gb;
+                float  gr;
+                float  t = -1.0;
+                bool   tube = SC_GirthCapsule(ga, gb, gr) && SC_SegmentDist(eye, ga, gb) < gr;
+                if (tube) t = SC_RayCapsuleFar(_WorldSpaceCameraPos, rd, ga, gb, gr);
+                if (t > 0.0)
+                {
+                    // 太さをそろえた筒の内側の面。法線は軸から外向き
+                    wp = _WorldSpaceCameraPos + rd * t;
+                    float3 ba = gb - ga;
+                    float  hh = saturate(dot(wp - ga, ba) / max(dot(ba, ba), 1e-8));
+                    float3 n  = wp - (ga + ba * hh);
+                    nOut = dot(n, n) > 1e-12 ? normalize(n) : -rd;
+                }
+                else
+                {
+                    // 頭の周りの内壁: 目（両目の中点）を中心にした球の奥側の面。目は球の中なので必ず当たる
+                    float  R  = max(_JackHoodRadius, 0.02);
+                    float3 oc = _WorldSpaceCameraPos - eye;
+                    float  b  = dot(rd, oc);
+                    t  = -b + sqrt(max(b * b - (dot(oc, oc) - R * R), 0.0));
+                    wp = _WorldSpaceCameraPos + rd * t;
+                    nOut = normalize(wp - eye);
+                    // 体を見下ろす向き（体の軸の真下から _JackHoodOpen 度まで）は開ける。縁はぼかす
+                    float3 up      = normalize(float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21));
+                    float  fromDown = degrees(acos(clamp(-dot(nOut, up), -1.0, 1.0)));
+                    fade = smoothstep(_JackHoodOpen, _JackHoodOpen + SC_JACK_HOOD_FADE_DEG, fromDown);
+                }
+                lp = mul(unity_WorldToObject, float4(wp, 1.0)).xyz;
+                // 深度は SC_VisionJackWallHit と同じ変換（カメラの真横〜後ろは最前面）
+                float4 clipPos = UnityWorldToClipPos(wp);
+                if (clipPos.w <= 1e-4)
+                {
+                    outDepth = UNITY_NEAR_CLIP_VALUE;
+                }
+                else
+                {
+                    float zBuf = clipPos.z / clipPos.w;
+                #if !defined(UNITY_REVERSED_Z)
+                    zBuf = zBuf * 0.5 + 0.5;
+                #endif
+                    outDepth = saturate(zBuf);
+                }
             }
         }
 
