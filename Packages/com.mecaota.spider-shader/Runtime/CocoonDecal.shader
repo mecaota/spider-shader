@@ -26,6 +26,9 @@
 //     自分のアバターの体などは遮られず見える＝繭に包まれている見え方。
 //     実装は Cocoon 本体と共通（CGINC/SpiderCocoon_VisionJack.cginc）。
 //     （近クリップ対策として、ジャック中はボックスを頂点で拡大する）
+//     捕まった本人の視界（2026-10-25）: 駆動スクリプトが本人の頭の位置（_JackHead）を渡すと、発火は
+//     「カメラが本人の頭の近くにあるか」になり（覗き込んだ他の人には出ない）、壁は目の周りの小さな内壁
+//     （体を見下ろす向きは開けて、体に張り付いた繭を見せる）か、太さをそろえた筒の内側の面になる（SC_DecalJackWall）。
 //
 //  ★ 質感: 本体と同じ粘液の帯（CGINC/SpiderCocoon_Goo.cginc）。平たい帯を奥→手前へ
 //     重ね、上の帯の縁が下の帯に影を落とす。塗りは蜘蛛糸・蜘蛛の巣と共通
@@ -241,6 +244,13 @@ Shader "mecaota/CocoonDecal"
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
         _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
         _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
+        // 捕まった本人の視界を「実際の繭の内側」にする（2026-10-25）。駆動スクリプトが本人の頭の位置（_JackHead）を
+        // 渡したときだけ使う。渡されていなければ従来の紡錘形の内壁（上の 2 つ）。
+        // 頭の周りの内壁: 目を中心にした球。体の繭と同じ模様で、下（体を見下ろす向き）は開けて体に張り付いた繭を見せる。
+        // 太さをそろえる（_EvenGirth）が 0 より大きいときは、内壁をその筒の内側の面にする（外から見える繭と同じ形）
+        _JackHoodRadius     ("頭の周りの内壁の半径 m (Jack Hood Radius)", Range(0.08, 0.5)) = 0.15
+        _JackHoodOpen       ("頭の周りの内壁の下の開き 度 真下から (Jack Hood Opening)", Range(0, 150)) = 55
+        [HideInInspector] _JackHead ("Jack Head xyz w=Gate Radius (script)", Vector) = (0, 0, 0, 0)
 
         [Header(Render State)]
         // ジャック壁の目印に使うステンシルビット。他のステンシル利用シェーダー
@@ -294,6 +304,10 @@ Shader "mecaota/CocoonDecal"
         float _HeightFit;
         float _ProjectRange;
         float _GlueThickness;
+        // 捕まった本人の視界（実際の繭の内側）。_JackHead は駆動スクリプトが渡す（xyz = 本人の頭、w = 発火の半径 m）
+        float  _JackHoodRadius;
+        float  _JackHoodOpen;
+        float4 _JackHead;
 
         // 近接した繭を 1 つの繭として描く（CocoonGroupLinker が MPB で指示する）
         #include "CGINC/SpiderCocoon_Group.cginc"
@@ -497,8 +511,17 @@ Shader "mecaota/CocoonDecal"
         // 中央カメラ位置により左右の目で必ず同じ結果になる。
         // ※ SC_CylRadialNormal / SC_ShadeCocoonAt は
         //    SpiderCocoon_Goo.cginc にある（繭と共通）。
+        // 駆動スクリプトが本人の頭の位置を渡しているとき（_JackHead.w が 0 でない）は、箱の円柱ではなく
+        // 「カメラが本人の頭の近く（w m 以内）にあるか」で決める。捕まった本人の目だけが入るので、
+        // 覗き込んだ他の人の視界はジャックされない（w < 0 は「この画面では出さない」）
         bool SC_DecalJackActive()
         {
+            if (abs(_JackHead.w) > 1e-5)
+            {
+                if (_JackHead.w < 0.0 || _VisionJackEnable < 0.5) return false;
+                if (SC_IsInMirror() && _VisionJackInMirror < 0.5) return false;
+                return distance(SC_MonoCameraPos(), _JackHead.xyz) < _JackHead.w;
+            }
             return SC_VisionJackActiveEx(_RadiusFit, _HeightFit);
         }
 
@@ -735,6 +758,108 @@ Shader "mecaota/CocoonDecal"
             return c;
         }
 
+        // ---------------------------------------------------------------------
+        // ★ 捕まった本人の視界を「実際の繭の内側」にする（2026-10-25）
+        // 繭プロジェクターの繭は体の表面に貼るので、本人が自分の体を見下ろすと、ほかの人に見えているのと同じ
+        // 体に張り付いた繭（Pass 2）が見える。ただし VRChat は本人の頭を消すので、顔の前には繭が出ない。
+        // そこで駆動スクリプトが本人の頭の位置（_JackHead）を渡したときは、視界ジャックの壁を次の形にする:
+        //   - 太さをそろえる（_EvenGirth）が効いていて、目がその筒の中にある: 筒の内側の面（外から見える繭と同じ形）
+        //   - それ以外: 目を中心にした半径 _JackHoodRadius の球（頭の周りの内壁）。体を見下ろす向き
+        //     （真下から _JackHoodOpen 度まで）は開けて、体に張り付いた繭が見えるようにする
+        // 模様は体の繭と同じ箱の巻き座標で塗るので、体の繭の続きに見える。帯は体に固定（頭を回しても糸は回らない）。
+        // 球の中心は両目の中点なので、左右の目は同じ壁を見る（立体視が合う）。
+        // 渡されていないとき（_JackHead.w = 0）は従来の紡錘形（箱の円柱から決まる楕円体）。
+        // ---------------------------------------------------------------------
+        #define SC_JACK_HOOD_FADE_DEG 15.0   // 下の開きの縁をぼかす幅（度）
+
+        // 内側の点 ro から、カプセル（線分 pa〜pb、半径 r）の外へ出る点までの距離（rd は正規化）。出ないときは負
+        float SC_RayCapsuleFar(float3 ro, float3 rd, float3 pa, float3 pb, float r)
+        {
+            float3 ba   = pb - pa;
+            float3 oa   = ro - pa;
+            float  baba = dot(ba, ba);
+            float  bard = dot(ba, rd);
+            float  baoa = dot(ba, oa);
+            float  qa   = baba - bard * bard;   // 視線が軸と平行に近いと 0 になる（そのときは進む向きの端の球から出る）
+            float  qb   = baba * dot(rd, oa) - baoa * bard;
+            float  qc   = baba * dot(oa, oa) - baoa * baoa - r * r * baba;
+            float  h    = qb * qb - qa * qc;
+            bool   top  = bard > 0.0;
+            if (qa > 1e-6 * baba && h >= 0.0)
+            {
+                float ts = (-qb + sqrt(h)) / qa;    // 無限に長い筒から出る点
+                float y  = baoa + ts * bard;        // その点の軸に沿った位置（0〜baba なら筒の側面から出る）
+                if (y > 0.0 && y < baba) return ts;
+                top = y >= baba;                    // 側面の外なら、そちら側の端の球から出る
+            }
+            float3 oc = top ? (ro - pb) : oa;
+            float  b  = dot(rd, oc);
+            float  hs = b * b - (dot(oc, oc) - r * r);
+            return (hs > 0.0) ? -b + sqrt(hs) : -1.0;
+        }
+
+        // 視界ジャックの壁の当たり。worldDir はカメラ→画素のワールドレイ（頂点から補間）。
+        // outDepth = 壁の深度（Zバッファ値）、lp / wp = 壁の点（箱のローカル / ワールド）、nOut = 塗りに使う外向きの法線、
+        // fade = 頭の周りの内壁の下の開きの縁で薄める倍率（0..1。ほかの形は 1）
+        void SC_DecalJackWall(float3 worldDir, out float outDepth, out float3 lp, out float3 wp,
+                              out float3 nOut, out float fade)
+        {
+            fade = 1.0;
+            if (abs(_JackHead.w) <= 1e-5)
+            {
+                float3 nIn;
+                SC_VisionJackWallHit(worldDir, _RadiusFit * _JackRadius, _HeightFit * _JackStretch, outDepth, lp, wp, nIn);
+                nOut = -nIn;
+                return;
+            }
+
+            float3 rd  = normalize(worldDir);
+            float3 eye = SC_MonoCameraPos();
+            float3 ga, gb;
+            float  gr;
+            float  t = -1.0;
+            bool   tube = SC_GirthCapsule(ga, gb, gr) && SC_SegmentDist(eye, ga, gb) < gr;
+            if (tube) t = SC_RayCapsuleFar(_WorldSpaceCameraPos, rd, ga, gb, gr);
+            if (t > 0.0)
+            {
+                // 太さをそろえた筒の内側の面。法線は軸から外向き
+                wp = _WorldSpaceCameraPos + rd * t;
+                float3 ba = gb - ga;
+                float  hh = saturate(dot(wp - ga, ba) / max(dot(ba, ba), 1e-8));
+                float3 n  = wp - (ga + ba * hh);
+                nOut = dot(n, n) > 1e-12 ? normalize(n) : -rd;
+            }
+            else
+            {
+                // 頭の周りの内壁: 目（両目の中点）を中心にした球の奥側の面。目は球の中なので必ず当たる
+                float  R  = max(_JackHoodRadius, 0.02);
+                float3 oc = _WorldSpaceCameraPos - eye;
+                float  b  = dot(rd, oc);
+                t  = -b + sqrt(max(b * b - (dot(oc, oc) - R * R), 0.0));
+                wp = _WorldSpaceCameraPos + rd * t;
+                nOut = normalize(wp - eye);
+                // 体を見下ろす向き（体の軸の真下から _JackHoodOpen 度まで）は開ける。縁はぼかす
+                float3 up      = normalize(float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21));
+                float  fromDown = degrees(acos(clamp(-dot(nOut, up), -1.0, 1.0)));
+                fade = smoothstep(_JackHoodOpen, _JackHoodOpen + SC_JACK_HOOD_FADE_DEG, fromDown);
+            }
+            lp = mul(unity_WorldToObject, float4(wp, 1.0)).xyz;
+            // 深度は SC_VisionJackWallHit と同じ変換（カメラの真横〜後ろは最前面）
+            float4 clipPos = UnityWorldToClipPos(wp);
+            if (clipPos.w <= 1e-4)
+            {
+                outDepth = UNITY_NEAR_CLIP_VALUE;
+            }
+            else
+            {
+                float zBuf = clipPos.z / clipPos.w;
+            #if !defined(UNITY_REVERSED_Z)
+                zBuf = zBuf * 0.5 + 0.5;
+            #endif
+                outDepth = saturate(zBuf);
+            }
+        }
+
         struct appdata_d
         {
             float4 vertex : POSITION;
@@ -875,11 +1000,15 @@ Shader "mecaota/CocoonDecal"
                 if (!SC_DecalJackActive()) discard;
 
                 // 芯（不透明度 0.9 以上）の画素だけ深度を書く。色と光は計算しない（深度だけのパス）。
-                // 不透明度の式と 0.9 の境目は色パス（Pass 1）と同じなので、書く範囲は従来と同じ
-                if (!SC_VisionJackWallSolid(i.worldDir,
-                                            _RadiusFit * _JackRadius,
-                                            _HeightFit * _JackStretch,
-                                            outDepth)) discard;
+                // 不透明度の式と 0.9 の境目は色パス（Pass 1）と同じなので、書く範囲は従来と同じ。
+                // 壁の形は SC_DecalJackWall（従来の紡錘形 / 頭の周りの内壁 / 太さをそろえた筒の内側）。
+                // 頭の周りの内壁の下の開きの縁（fade < 1）は、色パスと同じく不透明度に fade を掛けて比べる
+                float3 lp, wp, nOut;
+                float  fade;
+                SC_DecalJackWall(i.worldDir, outDepth, lp, wp, nOut, fade);
+                if (fade < SC_JACK_DEPTH_SOLID_ALPHA) discard;   // 掛けても 0.9 に届かない（開きの中と縁）
+                float need = SC_JACK_DEPTH_SOLID_ALPHA / fade;
+                if (SC_CocoonAlphaAt(lp, wp, nOut, need) < need) discard;
                 return 0;
             }
             ENDCG
@@ -922,10 +1051,17 @@ Shader "mecaota/CocoonDecal"
 
                 if (!SC_DecalJackActive()) discard;
 
-                return SC_VisionJackWallShade(i.worldDir,
-                                              _RadiusFit * _JackRadius,
-                                              _HeightFit * _JackStretch,
-                                              outDepth);
+                // 壁の形は深度パスと同じ SC_DecalJackWall。塗りは従来の SC_ShadeCocoonAt と同じ（箱の巻き座標・ほつれ無し）
+                float3 lp, wp, nOut;
+                float  fade;
+                SC_DecalJackWall(i.worldDir, outDepth, lp, wp, nOut, fade);
+                if (fade <= 0.001) discard;  // 下の開きの中は塗りを計算しない（体を見下ろす向きは軽くなる）
+                float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+                float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+                fixed4 c = SC_ShadeCocoonAtExUnclipped(lp, wp, nOut, colX, colY, 1.0);
+                c.a *= fade;
+                if (c.a <= 0.001) discard;   // 糸の隙間・下の開き（色・深度・ステンシルとも書かない）
+                return c;
             }
             ENDCG
         }

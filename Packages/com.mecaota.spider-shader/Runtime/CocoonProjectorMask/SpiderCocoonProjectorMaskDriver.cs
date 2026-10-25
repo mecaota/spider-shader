@@ -19,6 +19,10 @@ using VRC.SDKBase;
 ///   毎フレーム計算し、その Renderer の MaterialPropertyBlock に渡す（_EvenGirthA / _EvenGirthB）。
 ///   腕を下ろして立っていれば、一番太い所は腕の外側になる。衣装のふくらみは骨からは分からないので、
 ///   繭デカールの「そろえた繭の太さの足し引き」で調整する。
+/// ・捕まった本人の視界（2026-10-25）: cocoonRenderer を入れると、繭デカールの視界ジャックを捕まった本人の画面だけで出し、
+///   形を「実際の繭の内側」にする（ownerInsideView）。本人の頭の位置を _JackHead で渡すと、繭デカールは目の周りに
+///   体の繭と同じ模様の小さな内壁を描き、体を見下ろす向きは開けて、体に張り付いた繭を見せる（太さをそろえているときは
+///   その筒の内側の面）。箱に頭を入れて覗き込んだ他の人の画面には出さない（画面全体の重い描画も走らない）。
 ///
 /// 使い方（別の UdonSharp スクリプトから。どれも呼んだクライアントの見た目だけを変える）:
 /// ・SetOwner(playerId)  この人のアバターにだけ繭を描かせる
@@ -66,6 +70,13 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     [HideInInspector] public Vector3 girthTop;
     [HideInInspector] public float girthRadius;
 
+    [Header("捕まった本人の視界（Cocoon Renderer を入れたときだけ）")]
+    [Tooltip("ON（既定）: 繭デカールの視界ジャックを捕まった本人の画面だけで出し、形を実際の繭の内側にする（目の周りに体の繭と同じ模様の小さな内壁。体を見下ろす向きは開けて、体に張り付いた繭を見せる。太さをそろえているときはその筒の内側）。覗き込んだ他の人の画面には出さない。OFF: マテリアルどおり（箱の円柱にカメラが入った人なら誰にでも紡錘形の内壁）")]
+    public bool ownerInsideView = true;
+
+    [Tooltip("本人の頭の骨からこの距離 m 以内にカメラがあれば本人の視界とみなす（目の高さ 1.6 m のとき。アバターの大きさで伸び縮みする）")]
+    public float insideViewRadius = 0.3f;
+
     // マスクのシェーダーの _OwnerPt0〜5 の順（頭・胸・左手・右手・左足・右足）
     private int[] _pointBones;
     private string[] _pointNames;
@@ -75,6 +86,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     private bool _projectorOn = true;
     // 太さをそろえる筒（WriteGirth）。軸の原点（腰）と向き、軸に沿った下端・上端、軸から一番遠い所までの距離
     private MaterialPropertyBlock _girthBlock;
+    private MaterialPropertyBlock _jackBlock;   // 本人の視界（WriteJackHead）
     private Vector3 _gOrigin;
     private Vector3 _gUp;
     private float _gMinAlong;
@@ -123,6 +135,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         }
         // 太さをそろえる筒も「渡していない」に戻す（繭デカールの箱を次の人に使い回すとき、前の人の筒が残らないように）
         WriteGirthNone();
+        WriteJackHeadNone();
         SetProjector(false);
     }
 
@@ -156,7 +169,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
             maskMaterial.SetVector(_pointNames[i], Point(_pointPos[i], attachmentRadius));
         }
         // 繭デカールの「太さをそろえる」の筒（繭デカールの Renderer を入れたときだけ）
-        if (cocoonRenderer != null) { WriteGirth(p); }
+        if (cocoonRenderer != null) { WriteGirth(p); WriteJackHead(p); }
 
         if (projectorTransform != null)
         {
@@ -319,6 +332,37 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
             GirthSeg(foot, sole, 0.055f * s);
         }
         _gMinAlong = Mathf.Min(_gMinAlong, Vector3.Dot(foot - _gOrigin, _gUp) - 0.10f * s);
+    }
+
+    // ---- 捕まった本人の視界（繭デカールの _JackHead） ----
+    // xyz = 本人の頭の骨、w = カメラがそこからこの距離以内なら視界ジャックを出す（本人の目だけが入る）。
+    // 本人でないクライアントでは w = -1（この画面では出さない）。ownerInsideView が OFF なら 0（マテリアルどおりの紡錘形）
+    private void WriteJackHead(VRCPlayerApi p)
+    {
+        Vector4 v = Vector4.zero;
+        if (ownerInsideView)
+        {
+            Vector3 head = _pointPos[0];
+            if (!Valid(head)) { head = p.GetTrackingData(VRCPlayerApi.TrackingDataType.Head).position; }
+            float scale = Mathf.Max(p.GetAvatarEyeHeightAsMeters(), 0.3f) / 1.6f;
+            float gate = p.isLocal ? Mathf.Max(insideViewRadius * scale, 0.05f) : -1f;
+            v = new Vector4(head.x, head.y, head.z, gate);
+        }
+        if (_jackBlock == null) { _jackBlock = new MaterialPropertyBlock(); }
+        // 繭デカールの箱には別のスクリプト（巻きアニメ・太さをそろえる筒など）も値を渡すので、今の値を読んでから書き足す
+        cocoonRenderer.GetPropertyBlock(_jackBlock);
+        _jackBlock.SetVector("_JackHead", v);
+        cocoonRenderer.SetPropertyBlock(_jackBlock);
+    }
+
+    // 本人の視界を「渡していない」に戻す（繭デカールの箱を次の人に使い回すとき、前の人の頭が残らないように）
+    private void WriteJackHeadNone()
+    {
+        if (cocoonRenderer == null) { return; }
+        if (_jackBlock == null) { _jackBlock = new MaterialPropertyBlock(); }
+        cocoonRenderer.GetPropertyBlock(_jackBlock);
+        _jackBlock.SetVector("_JackHead", Vector4.zero);
+        cocoonRenderer.SetPropertyBlock(_jackBlock);
     }
 
     // 骨の位置が取れているか（GetBonePosition は骨が無いとゼロを返す）
