@@ -15,10 +15,16 @@ using VRC.SDKBase;
 /// ・繭を付ける部位を、SurfaceContactDeformer と同じ TrackBone の配列（bones）で選べる（空なら全身）。
 ///   部位を絞っている間は、部位の判定に使う背骨・首・肩・肘・股関節・膝・つま先・中指の付け根の位置も
 ///   毎フレーム渡す（_JointSpine など。全身のときはシェーダーが部位の判定をしないので渡さない）。
+/// ・腕・脚の骨は、その骨から手・足の先までをまとめて付ける（2026-10-25。例: LeftUpperArm だけで左腕全部）。
+///   手足は動かすので、肘・膝・手首・足首で切れた繭は見栄えしないため。
+/// ・よく使う選び方は 2 つ: 胴体だけ（SetTorso）と、首から下（SetBelowNeck。胴体と両腕・両脚）。
+///   胴体（腰・背骨）は手足ほど動かないので、境目が安定する。
 ///
 /// 使い方（別の UdonSharp スクリプトから。どれも呼んだクライアントの見た目だけを変える）:
 /// ・SetOwner(playerId)   この人のアバターにだけ繭を描かせる
 /// ・ClearOwner()         やめる（Projector を無効にする）
+/// ・SetTorso()           胴体だけ（Hips・Spine・Chest）
+/// ・SetBelowNeck()       首から下（胴体と両腕・両脚、手・足の先まで。首と頭には付けない）
 /// ・SetBones(bones)      繭を付ける骨をまとめて選ぶ（空の配列 = 全身。何も付けないときは SetNoBones）
 /// ・SetBone(bone, on)    骨を 1 つだけ ON / OFF する（全部 OFF にすると何も付かない）
 /// ・SetWholeBody()       全身に戻す
@@ -59,11 +65,14 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     public float attachmentRadius = 0.5f;
 
     [Header("繭を付ける部位")]
-    [Tooltip("繭を付ける骨。空なら全身（衣装の付属品まで丸ごと）。各骨の部位は「その骨から次の骨まで」（Hips は骨盤から背骨の骨まで、Hand は手首から指先まで、Foot はかかとからつま先まで）。UpperChest・LeftShoulder・RightShoulder は Chest、LeftToes・RightToes は Foot として扱う")]
+    [Tooltip("繭を付ける骨。空なら全身（衣装の付属品まで丸ごと）。各骨の部位は「その骨から次の骨まで」（Hips は骨盤から背骨の骨まで、Chest は肩の上まで）。腕・脚の骨はその骨から手・足の先までまとめて付く（LeftUpperArm だけで左腕全部、LeftLowerLeg なら左のすねと左足）。胴体だけ = Hips・Spine・Chest、首から下 = それに LeftUpperArm・RightUpperArm・LeftUpperLeg・RightUpperLeg。UpperChest・LeftShoulder・RightShoulder は Chest、LeftToes・RightToes は Foot として扱う")]
     public TrackBone[] bones = new TrackBone[0];
 
     private const int PartCount = 17;
     private const int PartAll = (1 << PartCount) - 1;
+    // 胴体（Hips・Spine・Chest）と、首から下（胴体と両腕・両脚。首 3 と頭 4 を除く全部）の部位のビット
+    private const int PartTorso = (1 << 0) | (1 << 1) | (1 << 2);
+    private const int PartBelowNeck = PartAll & ~((1 << 3) | (1 << 4));
     // 「どこにも付けない」を bones で表すための値（どの部位にも当たらない。空の bones は全身なので、これ 1 つだけの配列にする）
     private const int NoBone = -1;
 
@@ -173,16 +182,32 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         WriteParts();
     }
 
-    // 骨を 1 つだけ ON / OFF する。その骨を含む部位ごと切り替わる（例: UpperChest を OFF にすると Chest が OFF）
+    // 骨を 1 つだけ ON / OFF する。その骨を含む部位ごと切り替わる（例: UpperChest を OFF にすると Chest が OFF）。
+    // 腕・脚の骨は ON にすると手・足の先までが付く。OFF にすると、その骨と、同じ腕・脚のそれより根元の骨が外れる
+    // （根元の骨が残ると先まで付くため。例: 左腕全部から LeftHand を OFF にすると左腕まるごと外れる）。先の骨は残る
     public void SetBone(TrackBone bone, bool on)
     {
         EnsureInit();
         int part = PartOf((int)bone);
         if (part < 0) { return; }
         int mask = GetPartMask();
-        if (on) { mask |= 1 << part; } else { mask &= ~(1 << part); }
+        if (on) { mask |= 1 << part; } else { mask &= ~(PartAndRootward(part)); }
         bones = BonesFromMask(mask);
         WriteParts();
+    }
+
+    // 胴体だけ（Hips・Spine・Chest）。手足は動かすので、腰・背骨のように動かない所だけに付けたいときに使う
+    public void SetTorso()
+    {
+        EnsureInit();
+        SetBones(BonesFromMask(PartTorso));
+    }
+
+    // 首から下（胴体と両腕・両脚、手・足の先まで）。首と頭には付けない
+    public void SetBelowNeck()
+    {
+        EnsureInit();
+        SetBones(BonesFromMask(PartBelowNeck));
     }
 
     // 全身に戻す
@@ -197,12 +222,12 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         SetBones(BonesFromMask(0));
     }
 
-    // 骨（を含む部位）に繭を付けるか
+    // 骨（を含む部位）に繭を付けるか（腕・脚の根元の骨から先まで付いている部位も true）
     public bool HasBone(TrackBone bone)
     {
         EnsureInit();
         int part = PartOf((int)bone);
-        return part >= 0 && (GetPartMask() & (1 << part)) != 0;
+        return part >= 0 && (ToLimbEnds(GetPartMask()) & (1 << part)) != 0;
     }
 
     // 今の骨の配列（空 = 全身。どこにも付けないときは、どの骨でもない値（-1）1 つだけの配列）。
@@ -298,7 +323,29 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return _partOfBone[bone];
     }
 
-    // bones から、ON の部位のビット（空 = 全部。どの部位にも当たらない値だけなら 0）
+    // 腕・脚の部位の並び（ビットの順）: 左腕 5〜7・右腕 8〜10・左脚 11〜13・右脚 14〜16 が、根元・中・先の 3 つずつ。
+    // part が腕・脚なら、その部位と、同じ腕・脚のそれより根元の部位のビット。それ以外の部位はその部位のビットだけ
+    private int PartAndRootward(int part)
+    {
+        if (part < 5) { return 1 << part; }
+        int root = 5 + ((part - 5) / 3) * 3;
+        int m = 0;
+        for (int i = root; i <= part; i++) { m |= 1 << i; }
+        return m;
+    }
+
+    // 腕・脚の部位を先まで広げる（上腕があれば前腕と手、前腕があれば手。脚も同じ）。シェーダーに書くのはこの結果
+    private int ToLimbEnds(int mask)
+    {
+        for (int root = 5; root < PartCount; root += 3)
+        {
+            if ((mask & (1 << root)) != 0) { mask |= 1 << (root + 1); }
+            if ((mask & (1 << (root + 1))) != 0) { mask |= 1 << (root + 2); }
+        }
+        return mask;
+    }
+
+    // bones から、ON の部位のビット（空 = 全部。どの部位にも当たらない値だけなら 0）。腕・脚は広げる前（指定どおり）
     private int GetPartMask()
     {
         if (bones == null || bones.Length == 0) { return PartAll; }
@@ -332,11 +379,11 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         return result;
     }
 
-    // 部位の ON / OFF をマスクのマテリアルに書く（変わったときだけ）。戻り値 = 今の部位のビット
+    // 部位の ON / OFF をマスクのマテリアルに書く（変わったときだけ。腕・脚は先まで広げて書く）。戻り値 = 書いた部位のビット
     private int WriteParts()
     {
         EnsureInit();
-        int mask = GetPartMask();
+        int mask = ToLimbEnds(GetPartMask());
         if (maskMaterial == null || mask == _partsWritten) { return mask; }
         _partsWritten = mask;
         for (int i = 0; i < _partNames.Length; i++)

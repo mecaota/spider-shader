@@ -23,7 +23,24 @@
 
 ## 繭を付ける部位を選ぶ
 
-体全体ではなく、腰だけ・腰と腕・腕と脚だけ、のように**繭を付ける部位**を選べます。部位は Humanoid のボーンと同じ名前の 17 個で、左右は別々に選べます。それぞれ「そのボーンから次のボーンまで」の範囲です。
+体全体ではなく、**胴体だけ**や**首から下**のように、繭を付ける部位を選べます。
+
+### よく使う 2 つの選び方
+
+| 選び方 | 繭が付く所 | 駆動スクリプト |
+|---|---|---|
+| 胴体だけ | 骨盤・おなか・胸（Hips・Spine・Chest） | `SetTorso()`、または Bones に `Hips`・`Spine`・`Chest` |
+| 首から下 | 胴体と両腕・両脚（手・足の先まで）。首と頭には付けない | `SetBelowNeck()`、または Bones に `Hips`・`Spine`・`Chest`・`LeftUpperArm`・`RightUpperArm`・`LeftUpperLeg`・`RightUpperLeg` |
+
+手足は動かすので、肘や膝で切れた繭は手足を動かすと見栄えがしません。腰や背骨はあまり動かないので、胴体で区切ると境目が安定します。そのため、迷ったらこの 2 つ（と全身）から選んでください。
+
+**腕・脚は手・足の先までまとめて付きます。** Bones に腕・脚の骨を入れると、その骨から先の部位も付きます（`LeftUpperArm` だけで左腕全部、`LeftLowerLeg` なら左のすねと左足）。手だけ・足だけを付けたいときは `LeftHand`・`LeftFoot` などを入れます。
+
+**繭のデカールの箱は手の先まで入る大きさにしてください。** マスクは目印を立てるだけで、繭そのものを描くのは繭デカールです。手を広げたり上げたりして手が箱（円筒）の外へ出ると、そこには繭が出ません。腕に繭を付けるときは、箱を体に合わせて動かすスクリプトで、手・肘の骨も箱の大きさに含めてください。
+
+### 部位の一覧
+
+部位は Humanoid のボーンと同じ名前の 17 個で、左右は別々に選べます。それぞれ「そのボーンから次のボーンまで」の範囲です。
 
 | 部位（ボーン） | 範囲 |
 |---|---|
@@ -41,7 +58,9 @@
 
 左右は**アバター本人から見た左右**です。正面から見ると、本人の左腕は見ている人の右側にあります。
 
-駆動スクリプトでは、[SurfaceContactDeformer](UdonGimmicks.md#接触追従の変形surfacecontactdeformer) の Bones と同じ [`TrackBone`](UdonGimmicks.md#trackboneボーンの指定) の配列で選びます（`Bones` が空なら全身）。たとえば「腰だけ」は `Hips`・`Spine` の 2 つ、「腰と腕」はそれに左右の `UpperArm`・`LowerArm`・`Hand` を足した 8 つです。部位を持たないボーンは、そのボーンを含む部位として扱います（`UpperChest`・`LeftShoulder`・`RightShoulder` は `Chest`、`LeftToes`・`RightToes` は `Foot`）。
+駆動スクリプトでは、[SurfaceContactDeformer](UdonGimmicks.md#接触追従の変形surfacecontactdeformer) の Bones と同じ [`TrackBone`](UdonGimmicks.md#trackboneボーンの指定) の配列で選びます（`Bones` が空なら全身）。たとえば「腰だけ」は `Hips`・`Spine` の 2 つ、「腰と両腕」はそれに `LeftUpperArm`・`RightUpperArm` を足した 4 つです（腕は手の先まで付きます）。部位を持たないボーンは、そのボーンを含む部位として扱います（`UpperChest`・`LeftShoulder`・`RightShoulder` は `Chest`、`LeftToes`・`RightToes` は `Foot`）。
+
+マテリアルの「部位」の値を自分で書くとき（駆動スクリプトを使わないとき）は、腕・脚は先まで広がりません。腕全部に付けるなら、上腕・前腕・手の 3 つとも ON にしてください。
 
 **しくみ**: 骨と骨を結ぶ線のまわりに、部位ごとの円柱を考えます（Hips なら股関節の高さから背骨の骨まで、LeftUpperArm なら左肩から左肘まで）。アバターの画素ごとに、その画素の体の位置が「どの部位の円柱に一番深く入っているか」を比べ、選んでいない部位に一番近ければ目印を立てません。円柱の太さは大人の体の目安を、その人の腰から首までの長さに合わせて伸び縮みさせます。骨の位置は、駆動スクリプトが毎フレーム渡します。
 
@@ -91,24 +110,28 @@
 | Root Radius | 0.35 | アバターのメッシュの原点が足元からこの距離以内なら本人とみなす |
 | Hips Radius | 0.35 | 原点が腰の骨からこの距離以内なら本人とみなす |
 | Attachment Radius | 0.5 | 手に持つ物・帽子・靴・衣装の付属品（しっぽ・羽など）など骨の下の物の原点が、頭・胸・両手・両足からこの距離以内なら本人の物とみなす。0 で使わない。広げすぎると、すぐ隣に立つ人の物まで本人の物とみなす（0.12.0 までの既定は 0.25。置き済みのスクリプトは値が残るので、インスペクタで変える） |
-| Bones | 空（全身） | 繭を付ける骨（`TrackBone` の配列）。空なら全身。選んでいない部位には繭が出ない |
+| Bones | 空（全身） | 繭を付ける骨（`TrackBone` の配列）。空なら全身。選んでいない部位には繭が出ない。腕・脚の骨は手・足の先まで付く（[よく使う 2 つの選び方](#よく使う-2-つの選び方)） |
 
 | メソッド | 内容 |
 |---|---|
 | `SetOwner(int playerId)` | この人のアバターにだけ繭を描かせる |
 | `ClearOwner()` | やめる（Projector を無効にする） |
 | `GetOwnerId()` | 今の対象の playerId（いなければ 0） |
-| `SetBones(TrackBone[] bones)` | 繭を付ける骨をまとめて選ぶ（空の配列 ＝ 全身） |
-| `SetBone(TrackBone bone, bool on)` | 骨を 1 つだけ ON / OFF する。全身の状態から OFF にすると「その部位以外の全部」になる。全部 OFF にすると何も付かない |
+| `SetTorso()` | 胴体だけ（`Hips`・`Spine`・`Chest`） |
+| `SetBelowNeck()` | 首から下（胴体と両腕・両脚、手・足の先まで。首と頭には付けない） |
+| `SetBones(TrackBone[] bones)` | 繭を付ける骨をまとめて選ぶ（空の配列 ＝ 全身）。腕・脚の骨は手・足の先まで付く |
+| `SetBone(TrackBone bone, bool on)` | 骨を 1 つだけ ON / OFF する。腕・脚の骨を ON にすると手・足の先まで付く。OFF にすると、その骨と、同じ腕・脚のそれより根元の骨が外れる（例: 全身から `LeftHand` を OFF にすると左腕まるごと外れる。根元が残ると先まで付くため）。全身の状態から胴体・首・頭の骨を OFF にすると「その部位以外の全部」になる。全部 OFF にすると何も付かない |
 | `SetWholeBody()` | 全身に戻す |
 | `SetNoBones()` | どこにも付けない（所有者と Projector はそのまま） |
-| `HasBone(TrackBone bone)` | その骨（を含む部位）に繭を付けるか |
+| `HasBone(TrackBone bone)` | その骨（を含む部位）に繭を付けるか（根元の骨から先まで付いている部位も true） |
 | `GetBones()` | 今の骨の配列（空 ＝ 全身）。どこにも付けないときは、どの骨でもない値（-1）1 つだけの配列。`SetBones` にそのまま渡すと同じ状態に戻る |
 
-例（別の UdonSharp スクリプトから、腰だけにする）:
+例（別の UdonSharp スクリプトから）:
 
 ```csharp
-maskDriver.SetBones(new TrackBone[] { TrackBone.Hips, TrackBone.Spine });
+maskDriver.SetTorso();       // 胴体だけ
+maskDriver.SetBelowNeck();   // 首から下
+maskDriver.SetBones(new TrackBone[] { TrackBone.Hips, TrackBone.Spine });   // 腰だけ
 ```
 
 - 空の配列は「全身」です。くっついている骨を集めて `SetBones` に渡す使い方では、0 本になったときに `SetNoBones` を呼んでください（空の配列を渡すと全身に繭が出ます）。
