@@ -184,8 +184,10 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
     public float threadSag = 0.06f;
     [Tooltip("ON: 糸の始点を「変形した巣の面」（くっついた点がシェーダーで動いた先）にする。_PullEnable の巣で凹み・伸びと糸を併用するとき用（落とし穴の巣）。OFF: 変形前の面の上の点（従来。webMaxBulge > 0 のときは ON と同じ）")]
     public bool threadFromDeformedWeb = false;
-    [Tooltip("面が膨らむ上限（m。くっついた側へ引っ張られる向きの量）。手足がこれより離れた分は面を引っ張らず、粘液の糸（threadBySlot）が受け持つ。押し込む向き（凹み）と面に沿った向きには効かない（凹むときは糸を出さない）。0 で上限なし（従来）。0 より大きいときは、糸の始点がいつも変形した面になり、面の先が手足に届かない分だけ糸を出す。autoReleaseDistance より十分小さくする（近いと糸が出る前に千切れる）")]
+    [Tooltip("面が膨らむ上限（m。くっついた所から引っ張られる向きの量）。手足がこれより離れた分は面を引っ張らず、粘液の糸（threadBySlot）が受け持つ。押し込む向き（凹み）には効かない（凹むときは糸を出さない）。面に沿った向きに効くかは webMaxBulgeAlongSurface で決める。0 で上限なし（従来）。0 より大きいときは、糸の始点がいつも変形した面になり、面の先が手足に届かない分だけ糸を出す。autoReleaseDistance より十分小さくする（近いと糸が出る前に千切れる）")]
     public float webMaxBulge = 0f;
+    [Tooltip("ON: webMaxBulge を面に沿った向きにもかける（くっついた所からどの向きに引いても、巣はその長さまでしか伸びず、超えた分は糸）。木の幹の巣のように、歩いて離れる向きが面に沿う巣でも糸が出る。OFF: 面から離れる向き（法線方向）だけにかけ、面に沿ったずれは面がそのまま追従する（0.13.0〜0.14.0 の動き）")]
+    public bool webMaxBulgeAlongSurface = true;
     [Tooltip("webMaxBulge > 0 のとき、面の先が手足に届かない長さがこの値（m）になるまで糸を細くしておく（上限の前後で糸がぱっと出入りしないように）。0 で細くしない")]
     public float threadFadeLength = 0.03f;
 
@@ -1071,7 +1073,9 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
 
     // 追従先 t の「面の法線方向の成分」を収める。法線は 1 回だけ求める。
     // ・pullOnly: くっついた側の反対（面の奥へ押し込む向き）へは動かさない（近づけても凹まない）
-    // ・webMaxBulge: くっついた側へは webMaxBulge まで（超えた分は粘液の糸が受け持つ）。押し込む向き・面に沿った向きはそのまま。
+    // ・webMaxBulge: くっついた側へは webMaxBulge まで（超えた分は粘液の糸が受け持つ）。押し込む向きはそのまま。
+    //   webMaxBulgeAlongSurface なら、面に沿った向きも合わせた「引っ張る向きのずれ」の長さを webMaxBulge までにする
+    //   （OFF なら法線方向の量だけを収め、面に沿った向きはそのまま）。
     //   捕縛点が面のほぼ上（SideEpsilon 未満）でどちら側か決められないときは、引いた向きに上限をかけ、pullOnly も効かせない
     //   （面をわずかに貫いて捕まった手足を、押し込み扱いにして置き去りにしないように）
     // 副出力（U# は out 引数が使えない）: _tmpGoal = 上限をかける前の追従先、_tmpSide = くっついた側の法線（決められないときは 0）
@@ -1090,7 +1094,12 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         if (webMaxBulge <= 0f) { return t; }
         if (known) { _tmpSide = n; }
         else if (dn < 0f) { n = -n; dn = -dn; }
-        return (dn > webMaxBulge) ? t - n * (dn - webMaxBulge) : t;
+        if (!webMaxBulgeAlongSurface) { return (dn > webMaxBulge) ? t - n * (dn - webMaxBulge) : t; }
+        // 押し込む成分（くっついた側が決まっていて pullOnly でないときだけ負）は残し、それ以外のずれの長さを収める
+        float inward = Mathf.Min(dn, 0f);
+        Vector3 pull = (t - a) - n * inward;
+        float len = pull.magnitude;
+        return (len > webMaxBulge) ? a + n * inward + pull * (webMaxBulge / len) : t;
     }
 
     private float ContactDistanceOf(int b)
