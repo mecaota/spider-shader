@@ -44,6 +44,12 @@
 //     同じ関数で塗るので、包まれる本人の視界にも糸が巻かれていく。実装は
 //     CGINC/SpiderCocoon_Goo.cginc（SC_CompositeGoo）。OFF（既定）は従来どおり完成した繭。
 //
+//  ★ 太さをそろえる（_EvenGirth、2026-10-25）: 体に沿って巻いた繭はミイラのように見えるので、
+//     体の一番太い所に合わせた「太さのそろった筒」（両端が丸いカプセル）を体の繭と重ね、手前の方を描く。
+//     0 で今までどおり、1 で体全体が筒の中に入る。筒は式で交点を求めるので、体の輪郭の外にも描ける。
+//     筒の位置と太さは繭プロジェクターの駆動スクリプトが骨から渡す（繭プロジェクターと組まないときは、この箱の円柱）。
+//     繭プロジェクターの目印の無い画素の筒は Pass 6（EVEN_GIRTH）が描く。
+//
 //  ★ 軽量化（2026-10-14。見た目は変えずに、描かれない画素の計算を省く。詳しくは README の「描画の軽量化」）:
 //     - Pass 2 は鏡の中、Pass 3 は鏡の外で、頂点の段階で三角形を潰す（フラグメントを出さない）。
 //     - Pass 2 は視線が円柱（代表は箱）に届かない画素を、床判定と糸の厚みのループの前に捨てる。
@@ -136,6 +142,17 @@ Shader "mecaota/CocoonDecal"
 
         [Header(Glue Thickness)]
         _GlueThickness      ("糸の厚み m 輪郭の外への膨張 (Glue Thickness)", Range(0, 0.2)) = 0.06
+
+        // 体に沿って巻く（ミイラのよう）か、体の一番太い所に合わせた太さのそろった繭にするか（2026-10-25）。
+        // 0 = 今までどおり体に沿う。1 = 一番太い所の太さの筒（両端は丸い）で体全体を包む。間は筒が少しずつ太る。
+        // 筒の位置と太さは、繭プロジェクターの駆動スクリプト（Cocoon Renderer にこの箱を入れたとき）が骨から毎フレーム渡す
+        // （_EvenGirthA / _EvenGirthB）。繭プロジェクターと組むのに渡されていないときは筒を描かない。
+        // 繭プロジェクターと組まないときは、この箱の円柱（円筒半径・円筒高さ）を、箱からはみ出さない太さに収めて筒にする
+        [Header(Even Girth)]
+        _EvenGirth          ("太さをそろえる 0=体に沿う 1=均一な繭 (Even Girth)", Range(0, 1)) = 0
+        _EvenGirthMargin    ("そろえた繭の太さの足し引き m (Even Girth Margin)", Range(-0.1, 0.2)) = 0.02
+        [HideInInspector] _EvenGirthA ("Even Girth Bottom xyz (script)", Vector) = (0, 0, 0, 0)
+        [HideInInspector] _EvenGirthB ("Even Girth Top xyz w=Radius (script)", Vector) = (0, 0, 0, 0)
 
         // 巻きの端で帯が細って途切れる「ほつれ」の幅（近くの繭とのまとめ描きは
         // CocoonGroupLinker が MaterialPropertyBlock で指示する）
@@ -551,6 +568,173 @@ Shader "mecaota/CocoonDecal"
 
         #include "CGINC/SpiderCocoon_GroupShell.cginc"
 
+        // ---------------------------------------------------------------------
+        // ★ 太さをそろえる（_EvenGirth、2026-10-25）
+        // 体に沿って巻いた繭（ミイラのような見た目）を、体の一番太い所に合わせた「太さのそろった筒」
+        // （両端は丸い＝カプセル）へ近づける。筒と体の繭を重ね、画素ごとに手前にある方を描く。
+        // 筒の半径 = _EvenGirth ×（一番太い所の半径 + 足し引き + 糸の厚み）なので、
+        //   0   … 筒が無い（今までどおり）
+        //   途中 … 細い所（首・脚の間・足首）から先に筒で埋まり、太い所はまだ体の形が見える
+        //   1   … 体の繭がすべて筒の中に入り、太さのそろった繭になる
+        // 筒は深度テクスチャを使わずに式で交点を求めるので、体の輪郭の外（脚の間の背景など）にも描ける。
+        // 見えている面の深さと比べて、筒より手前に物（柱・他の人）がある画素には描かない。
+        // 帯の模様は角度と高さで決まる（SC_ShadeCocoonAtEx）ので、体の繭と筒の境目でも帯が続く。
+        // 筒の位置と太さは駆動スクリプト（SpiderCocoonProjectorMaskDriver）が骨から渡す。繭プロジェクターと組まないときは
+        // この箱の円柱。筒は箱の外へは描かないので、箱は筒が入る大きさにする（はみ出した所は箱の面でほつれて切れる）。
+        // まとめ描き（CocoonGroupLinker）の繭では使わない。
+        // ---------------------------------------------------------------------
+        float  _EvenGirth;
+        float  _EvenGirthMargin;
+        float4 _EvenGirthA;       // xyz = 筒の下端（ワールド）
+        float4 _EvenGirthB;       // xyz = 筒の上端、w = 体の一番太い所の半径 m（0 以下 = 渡されていない）
+        float  _GlueStencilRef;   // 繭プロジェクターと組んでいるか（0 でない）を頂点で見る（パス 6）
+
+        // 筒（カプセル）の軸の両端 a・b と半径 r。使わないときは false
+        bool SC_GirthCapsule(out float3 a, out float3 b, out float r)
+        {
+            a = float3(0.0, 0.0, 0.0);
+            b = a;
+            r = 0.0;
+            if (_EvenGirth <= 0.001 || SCG_Lead() || SCG_Hidden()) return false;
+            float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+            float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+            float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
+            float3 lo, hi;
+            float  R;
+            bool   fromBones = _EvenGirthB.w > 0.0;
+            if (fromBones)
+            {
+                lo = _EvenGirthA.xyz;
+                hi = _EvenGirthB.xyz;
+                R  = _EvenGirthB.w;
+            }
+            else
+            {
+                // 繭プロジェクターと組むときは、駆動スクリプトの値が無い（誰も捕まっていない・骨が取れない・
+                // Cocoon Renderer が空）なら筒を描かない（目印の無い画素の Pass 6 が、箱の大きさの筒を宙に描かないように）
+                if (_GlueStencilRef >= 0.5) return false;
+                // 繭プロジェクターと組まないとき: この箱の円柱（円筒半径・円筒高さ）
+                float3 c = float3(unity_ObjectToWorld._m03, unity_ObjectToWorld._m13, unity_ObjectToWorld._m23);
+                lo = c - colY * _HeightFit;
+                hi = c + colY * _HeightFit;
+                R  = _RadiusFit * 0.5 * (length(colX) + length(colZ));
+            }
+            float k = saturate(_EvenGirth);
+            float T = max(_GlueThickness, 0.0);
+            r = k * (max(R + _EvenGirthMargin, 0.0) + T);
+            // 両端も体の繭（厚み T）を包むよう k·T だけのばし、丸い端がそこで終わるよう軸を半径ぶん縮める
+            float3 ab = hi - lo;
+            float  L  = length(ab);
+            float3 u  = (L > 1e-5) ? ab / L : normalize(colY);
+            lo -= u * (k * T);
+            hi += u * (k * T);
+            L  += 2.0 * k * T;
+            if (!fromBones)
+            {
+                // 箱の円柱から作った筒は、箱の半幅・半分の高さから、ほつれ幅ぶん内側に収める
+                // （そのままだと 1 に近づけたとき筒が箱からはみ出し、箱で切れて消えてしまう）
+                float fray  = max(_GooEdgeFray, 0.0);
+                float halfL = clamp(0.5 * L, 0.0, max(0.5 * length(colY) - fray, 0.0));
+                float3 mid  = 0.5 * (lo + hi);
+                r  = min(r, 0.5 * min(length(colX), length(colZ)) - fray);
+                lo = mid - u * halfL;
+                hi = mid + u * halfL;
+                L  = 2.0 * halfL;
+            }
+            float inset = min(r, 0.5 * L);
+            a = lo + u * inset;
+            b = hi - u * inset;
+            return r > 1e-4;
+        }
+
+        // 視線と球の手前の交点までの距離（rd は正規化）。当たらない・始点が中なら負
+        float SC_RaySphereNear(float3 ro, float3 rd, float3 c, float r)
+        {
+            float3 oc = ro - c;
+            float  b  = dot(oc, rd);
+            float  h  = b * b - (dot(oc, oc) - r * r);
+            return (h > 0.0) ? -b - sqrt(h) : -1.0;
+        }
+
+        // 視線とカプセルの手前の交点までの距離（rd は正規化）。当たらない・始点が中なら負。
+        // カプセル = 筒の側面と両端の球。外から入る点は、それぞれに入る点のうち一番手前（筒の平らな端は球の中なので見なくてよい）
+        float SC_RayCapsuleNear(float3 ro, float3 rd, float3 pa, float3 pb, float r)
+        {
+            float  t    = 1e9;
+            float3 ba   = pb - pa;
+            float  baba = dot(ba, ba);
+            if (baba > 1e-8)
+            {
+                float3 oa   = ro - pa;
+                float  bard = dot(ba, rd);
+                float  baoa = dot(ba, oa);
+                float  qa   = baba - bard * bard;   // 視線が軸と平行に近いと 0 になる（そのときは端の球だけで決まる）
+                float  qb   = baba * dot(rd, oa) - baoa * bard;
+                float  qc   = baba * dot(oa, oa) - baoa * baoa - r * r * baba;
+                float  h    = qb * qb - qa * qc;
+                if (qa > 1e-6 * baba && h >= 0.0)
+                {
+                    float ts = (-qb - sqrt(h)) / qa;
+                    float y  = baoa + ts * bard;    // 軸に沿った位置（0〜baba が筒の側面）
+                    if (ts > 0.0 && y > 0.0 && y < baba) t = ts;
+                }
+            }
+            float t0 = SC_RaySphereNear(ro, rd, pa, r);
+            float t1 = SC_RaySphereNear(ro, rd, pb, r);
+            if (t0 > 0.0) t = min(t, t0);
+            if (t1 > 0.0) t = min(t, t1);
+            return (t < 1e8) ? t : -1.0;
+        }
+
+        // 点 p から線分 a〜b までの距離
+        float SC_SegmentDist(float3 p, float3 a, float3 b)
+        {
+            float3 ba = b - a;
+            float3 pa = p - a;
+            float  h  = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-8));
+            return length(pa - ba * h);
+        }
+
+        // この画素の視線と筒の手前の交点の、視線方向の深さ m（無ければ 1e6）。
+        // rayPerZ = 視線方向の深さ 1 m あたりのワールドの進み（Pass 2 / 3 と同じもの）。
+        // カメラが筒の中（捕まった本人・抱きついている人）なら描かない（中から見た繭は視界ジャックの役目）。
+        // 中かどうかは左右の目で食い違わないよう、両目の中点で決める
+        float SC_GirthDepth(float3 rayPerZ, float3 a, float3 b, float r)
+        {
+            if (SC_SegmentDist(SC_MonoCameraPos(), a, b) < r) return 1e6;
+            float len = max(length(rayPerZ), 1e-6);
+            float t   = SC_RayCapsuleNear(_WorldSpaceCameraPos, rayPerZ / len, a, b, r);
+            if (t <= 0.0) return 1e6;
+            // 箱の外へは描かない（ほかの描き方と同じ約束。筒が箱からはみ出すと、そこは切れて見える）
+            float3 p = _WorldSpaceCameraPos + rayPerZ * (t / len);
+            if (any(abs(mul(unity_WorldToObject, float4(p, 1.0)).xyz) > 0.5)) return 1e6;
+            return t / len;
+        }
+
+        // 筒（軸 a〜b）の上の点 p を、体の繭と同じ巻き座標・同じ帯で塗る。透明（α ≒ 0）でも捨てない
+        // （筒の隙間・ほつれた所では、呼ぶ側が奥の体の繭を描けるように）。
+        // 陰影の向きは筒の面の向き（軸の線分の一番近い点から外向き）なので、丸い両端も丸く見える。
+        // ほつれは箱の面の近くだけ（筒が箱からはみ出して切れる所を、硬い切り口でなく糸のほつれにする）
+        fixed4 SC_GirthColor(float3 p, float3 a, float3 b, float3 colX, float3 colY, float3 colZ)
+        {
+            float3 lp     = mul(unity_WorldToObject, float4(p, 1.0)).xyz;
+            float3 q      = (abs(lp) - 0.5) * float3(length(colX), length(colY), length(colZ));   // 箱の面までの距離 m（負 = 内側）
+            float  edge01 = SCG_Edge01(max(q.x, max(q.y, q.z)));
+            float3 ba     = b - a;
+            float  h      = saturate(dot(p - a, ba) / max(dot(ba, ba), 1e-8));
+            float3 n      = p - (a + ba * h);
+            float3 N      = (dot(n, n) > 1e-10) ? normalize(n) : normalize(colY);
+            return SC_ShadeCocoonAtExUnclipped(lp, p, N, colX, colY, edge01);
+        }
+
+        // 筒の奥に描くものが無いとき用: 透明なら捨てる
+        fixed4 SC_ShadeGirthAt(float3 p, float3 a, float3 b, float3 colX, float3 colY, float3 colZ)
+        {
+            fixed4 c = SC_GirthColor(p, a, b, colX, colY, colZ);
+            if (c.a <= 0.001) discard;
+            return c;
+        }
+
         struct appdata_d
         {
             float4 vertex : POSITION;
@@ -634,6 +818,16 @@ Shader "mecaota/CocoonDecal"
             v2f_d o = vert(v);
             if (!SCG_Lead() || _GroupBulge <= 0.0005 || SC_DecalJackActive())
                 o.pos = float4(0, 0, 0, 0);
+            return o;
+        }
+        // Pass 6（太さをそろえた繭のうち、繭プロジェクターの目印が無い画素）用。
+        // 太さをそろえない・繭プロジェクターと組んでいない（目印を見ない。Pass 2 / 3 が全部の画素で筒も描く）・
+        // まとめ描きの繭は、頂点で三角形を潰す
+        v2f_d vertGirth(appdata_d v)
+        {
+            v2f_d o = vert(v);
+            if (_EvenGirth <= 0.001 || _GlueStencilRef < 0.5 || SCG_Lead() || SCG_Hidden())
+                o.pos = float4(0.0, 0.0, 0.0, 0.0);
             return o;
         }
         ENDCG
@@ -793,13 +987,16 @@ Shader "mecaota/CocoonDecal"
                 #else
                     hasDepth = (rawDepth < 1.0 - 1e-7);
                 #endif
-                if (!hasDepth) discard;            // 投影先の表面が無い（空）なら描かない
 
-                float  eyeZ    = LinearEyeDepth(rawDepth);
                 float  viewZ   = dot(i.worldDir, camFwd);
                 float3 rayPerZ = i.worldDir / max(viewZ, 1e-5);
-                float3 worldPos = _WorldSpaceCameraPos + rayPerZ * eyeZ;
-                float3 localPos = mul(unity_WorldToObject, float4(worldPos, 1.0)).xyz;
+
+                // 太さをそろえた繭（筒）の手前の面の深さ（筒を使わない・当たらないときは 1e6）
+                float3 girA, girB;
+                float  girR;
+                float  zGirth = 1e6;
+                [branch] if (SC_GirthCapsule(girA, girB, girR)) zGirth = SC_GirthDepth(rayPerZ, girA, girB, girR);
+                if (!hasDepth && zGirth > 1e5) discard;   // 投影先の表面も筒も無い（空）なら描かない
 
                 // 許容距離 _ProjectRange（ワールドm）: 円筒より近い距離にあるメッシュ
                 // 表面には「そこにもメッシュがあるかのように」投影する（腕・肩対策）。
@@ -818,6 +1015,15 @@ Shader "mecaota/CocoonDecal"
                 // を厳密に保証する（_RadiusFit を小さくした時の腕・肩対策マージンは維持）。
                 float limR = min(_RadiusFit + marginR, 0.5);
                 float limH = min(_HeightFit + marginH, 0.5);
+
+                // 空（深度が無い）の画素は筒だけ
+                if (!hasDepth) return SC_ShadeGirthAt(_WorldSpaceCameraPos + rayPerZ * zGirth, girA, girB, colX, colY, colZ);
+
+                float  eyeZ    = LinearEyeDepth(rawDepth);
+                float3 worldPos = _WorldSpaceCameraPos + rayPerZ * eyeZ;
+                float3 localPos = mul(unity_WorldToObject, float4(worldPos, 1.0)).xyz;
+                // 筒が見えている面より手前にあるか（奥なら、筒は手前の物に隠れている）
+                bool   girthFront = zGirth < eyeZ;
 
                 // グループの代表（CocoonGroupLinker）は、自分の円筒の代わりに
                 // 「くっついた仲間それぞれの円筒の和」の中を巻く
@@ -849,7 +1055,12 @@ Shader "mecaota/CocoonDecal"
                     float hCyl = (T < 0.0005) ? limH : min(limH + T / max(sy, 1e-4), 0.5);
                     reach = SC_RayHitsCylinder(rayO, rayD, eyeZ, rCyl + SC_EARLY_MARGIN, hCyl + SC_EARLY_MARGIN);
                 }
-                if (!reach && any(abs(localPos) > 0.5)) discard;
+                if (!reach && any(abs(localPos) > 0.5))
+                {
+                    // 体の繭は描けない。筒だけは視線が円柱を外れても描けることがある
+                    if (!girthFront) discard;
+                    return SC_ShadeGirthAt(_WorldSpaceCameraPos + rayPerZ * zGirth, girA, girB, colX, colY, colZ);
+                }
 
                 // 床・天井の判定: 面の向き（厳密復元した法線が水平面か）で行う。
                 // 高さ不問なので、アバター搭載・段差・ジャンプ中でも床を識別できる。
@@ -867,6 +1078,7 @@ Shader "mecaota/CocoonDecal"
                 if (onGlue) onGlue = SC_WrapFacingOK(screenUV, rawDepth, worldPos);
 
                 bool shellHit = false;
+                float zHit = eyeZ;   // 体の繭を描く面の深さ（筒と比べる）
 
                 if (T < 0.0005)
                 {
@@ -966,8 +1178,17 @@ Shader "mecaota/CocoonDecal"
                             localPos = lp;
                             worldPos = p;
                             shellHit = true;
+                            zHit     = zShell;
                         }
                     }
+                }
+
+                // 筒が体の繭より手前なら筒を描く（筒の中に入った体の繭は隠れ、筒から出た所だけ体の繭が見える）。
+                // 床・天井のテクスチャより手前の筒も筒が勝つ。筒が透明な所（隙間・ほつれ）は、奥の体の繭や床を描く
+                if (girthFront && (!shellHit || zGirth < zHit))
+                {
+                    fixed4 gc = SC_GirthColor(_WorldSpaceCameraPos + rayPerZ * zGirth, girA, girB, colX, colY, colZ);
+                    if (gc.a > 0.001) return gc;
                 }
 
                 if (!shellHit)
@@ -1051,14 +1272,17 @@ Shader "mecaota/CocoonDecal"
                 #else
                     hasDepth = (rawDepth < 1.0 - 1e-7);
                 #endif
-                if (!hasDepth) discard;          // 投影先の表面が無ければ描かない
 
                 float3 camFwd  = -UNITY_MATRIX_V[2].xyz;
-                float  eyeZ    = SC_EyeDepthOblique(screenUV, rawDepth);
                 float  viewZ   = dot(i.worldDir, camFwd);
                 float3 rayPerZ = i.worldDir / max(viewZ, 1e-5);
-                float3 wp = _WorldSpaceCameraPos + rayPerZ * eyeZ;
-                float3 gl = mul(unity_WorldToObject, float4(wp, 1.0)).xyz;
+
+                // 太さをそろえた繭（筒）。Pass 2 と同じ
+                float3 girA, girB;
+                float  girR;
+                float  zGirth = 1e6;
+                [branch] if (SC_GirthCapsule(girA, girB, girR)) zGirth = SC_GirthDepth(rayPerZ, girA, girB, girR);
+                if (!hasDepth && zGirth > 1e5) discard;   // 投影先の表面も筒も無ければ描かない
 
                 // 円筒＋許容距離の中の表面のみ glue（床・天井ゾーンは除外）
                 float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
@@ -1071,6 +1295,19 @@ Shader "mecaota/CocoonDecal"
                 // Pass 2 と同じく box の外へは出さない（対象外オブジェクト保護）
                 float limR = min(_RadiusFit + marginR, 0.5);
                 float limH = min(_HeightFit + marginH, 0.5);
+
+                // 筒が見えている面より手前なら筒を描く（鏡の中の体の繭には厚みが無いので、見えている面と比べるだけでよい）
+                // 筒が透明な所（隙間・ほつれ）は、奥の体の繭を描く
+                float  eyeZ = hasDepth ? SC_EyeDepthOblique(screenUV, rawDepth) : 1e6;
+                if (zGirth < eyeZ)
+                {
+                    fixed4 gc = SC_GirthColor(_WorldSpaceCameraPos + rayPerZ * zGirth, girA, girB, colX, colY, colZ);
+                    if (gc.a > 0.001) return gc;
+                    if (!hasDepth) discard;
+                }
+
+                float3 wp = _WorldSpaceCameraPos + rayPerZ * eyeZ;
+                float3 gl = mul(unity_WorldToObject, float4(wp, 1.0)).xyz;
 
                 // 円柱（代表は仲間の円筒の和）の外は描かない。床判定（深度 4 タップ）より安いので先に調べる
                 // （どれも discard するだけの条件なので、順番を入れ替えても結果は同じ）
@@ -1158,6 +1395,65 @@ Shader "mecaota/CocoonDecal"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 // i.pos.xy = SV_Position（画素の中心）。隠れた quad を捨てる判定（SCG_QuadHidden）に使う
                 return SCG_ShadeGroupShell(i.screenPos.xy / max(i.screenPos.w, 1e-5), i.worldDir, i.pos.xy, depth);
+            }
+            ENDCG
+        }
+
+        // ================= Pass 6: 太さをそろえた繭（筒）の、繭プロジェクターの目印が無い画素 =================
+        // 繭プロジェクターと組む（_GlueStencilRef 32）と、Pass 2 / 3 は目印（ビット 32）のある画素にしか描けない。
+        // 筒は体の輪郭の外（脚の間・首の横の背景など）にも広がるので、目印の無い画素の筒はこのパスで描く。
+        // 筒は式で求めた形を、見えている面の深さと比べて手前の所だけ描くので、目印が無くても床・壁・他の人へ糸がにじまない。
+        // ステンシル: (stencil & _GlueStencilReadMask) == 0 = 目印 32 も、ジャック 128・糸の芯 64・蜘蛛の体 16 も無い画素。
+        //   目印のある画素は Pass 2 / 3 が「体の繭と筒の手前の方」を描くので、画素をちょうど分け合う。
+        // 通常の視点もミラーも、このパス 1 つで描く（深さはミラーの斜めの近クリップ面でも正しい SC_EyeDepthOblique で戻す）。
+        // 繭プロジェクターと組まない（_GlueStencilRef 0）ときは、Pass 2 / 3 が全部の画素で筒も描くので、頂点で潰す（vertGirth）。
+        Pass
+        {
+            Name "EVEN_GIRTH"
+            Tags { "LightMode" = "ForwardBase" }
+            ZWrite Off
+            ZTest  Always
+            Cull   Front
+            Blend  SrcAlpha OneMinusSrcAlpha
+            Stencil
+            {
+                Ref      0
+                ReadMask [_GlueStencilReadMask]
+                Comp     Equal
+            }
+            CGPROGRAM
+            #pragma vertex   vertGirth
+            #pragma fragment fragGirth
+            #pragma target   3.5
+            #pragma multi_compile_instancing
+            #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
+            fixed4 fragGirth(v2f_d i) : SV_Target
+            {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+
+                float3 girA, girB;
+                float  girR;
+                if (!SC_GirthCapsule(girA, girB, girR)) discard;
+                float3 camFwd  = -UNITY_MATRIX_V[2].xyz;
+                float3 rayPerZ = i.worldDir / max(dot(i.worldDir, camFwd), 1e-5);
+                float  zGirth  = SC_GirthDepth(rayPerZ, girA, girB, girR);
+                if (zGirth > 1e5) discard;
+
+                // 筒より手前に物（柱・他の人・床）が見えていれば描かない
+                float2 screenUV = i.screenPos.xy / max(i.screenPos.w, 1e-5);
+                float  rawDepth = UNITY_SAMPLE_SCREENSPACE_TEXTURE(_CameraDepthTexture, SC_DEPTH_UV(screenUV)).r;
+                #if defined(UNITY_REVERSED_Z)
+                    bool hasDepth = (rawDepth > 1e-7);
+                #else
+                    bool hasDepth = (rawDepth < 1.0 - 1e-7);
+                #endif
+                if (hasDepth && SC_EyeDepthOblique(screenUV, rawDepth) <= zGirth) discard;
+
+                float3 colX = float3(unity_ObjectToWorld._m00, unity_ObjectToWorld._m10, unity_ObjectToWorld._m20);
+                float3 colY = float3(unity_ObjectToWorld._m01, unity_ObjectToWorld._m11, unity_ObjectToWorld._m21);
+                float3 colZ = float3(unity_ObjectToWorld._m02, unity_ObjectToWorld._m12, unity_ObjectToWorld._m22);
+                return SC_ShadeGirthAt(_WorldSpaceCameraPos + rayPerZ * zGirth, girA, girB, colX, colY, colZ);
             }
             ENDCG
         }

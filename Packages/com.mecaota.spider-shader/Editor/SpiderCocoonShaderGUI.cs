@@ -103,6 +103,9 @@ public class SpiderCocoonShaderGUI : ShaderGUI
                            "_GroupMarchStepsFar", "_GroupMarchFarStart", "_GroupMarchFarEnd", "_GroupDepthCut", "_GroupBridgeHeightScale" } },
         new Category{ Title = "糸の厚み", Common = false, Require = "_GlueThickness",
             Props = new[]{ "_GlueThickness" } },
+        // 体に沿う繭（ミイラ）→ 太さのそろった繭。筒の位置と太さ（_EvenGirthA / B）は駆動スクリプトが MPB で渡す
+        new Category{ Title = "太さをそろえる", Common = false, Require = "_EvenGirth",
+            Props = new[]{ "_EvenGirth", "_EvenGirthMargin" } },
         new Category{ Title = "巻きの端のほつれ", Common = false, Require = "_GooEdgeFray",
             Props = new[]{ "_GooEdgeFray" } },
         // 糸が巻かれて繭になっていくアニメ（通常は Udon が MPB で進み具合を渡す）
