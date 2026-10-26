@@ -34,7 +34,7 @@
 //  ★ くっついた繭を 1 つに（CGINC/SpiderCocoon_Group.cginc）: CocoonGroupLinker（Udon）が
 //     くっついた繭をまとめ、グループの代表にだけ仲間の円筒と共通の巻き座標を
 //     MaterialPropertyBlock で渡す。代表は仲間の円筒の和の中だけを共通の向きの帯で巻き、
-//     他の繭は描かない。Group Bulge > 0 は体表を厚い外殻へ膨らませ、近い部位間を糸でつなぐ。
+//     他の繭は描かない。Group Bulge > 0 は体表を厚い 1 つの繭（まとめ繭）へ膨らませ、近い部位間を糸でつなぐ。
 //     巻きの端では帯が細って途切れる（_GooEdgeFray）。輪に入り込んだ別の部位の面は
 //     体表の向きで除ける（_WrapFacing）。
 //
@@ -141,7 +141,7 @@ Shader "mecaota/CocoonDecal"
         // CocoonGroupLinker が MaterialPropertyBlock で指示する）
         // 全身繭では Udon が骨から作った部位（最大 16）と、繭同士の接続部位を作る組
         // （_GroupBridgePairs / _GroupBridgeCount）を MaterialPropertyBlock で渡し、
-        // 脇や股の凹みをまたいで外形に沿う外殻にする（組が無ければ代表からの放射）
+        // 脇や股の凹みをまたいで外形に沿うまとめ繭にする（組が無ければ代表からの放射）
         // プロパティ名の Bridge は繭同士の接続部位のこと。名前は作成済みのマテリアルと、値を渡す Udon
         // （CocoonGroupLinker やワールドのスクリプト）が参照しているので変えない
         [Header(Group Volume)]
@@ -152,14 +152,14 @@ Shader "mecaota/CocoonDecal"
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
         _GroupShellBlend ("部位間の一体感 (Group Shell Blend)", Range(0, 4)) = 0.8
         _GroupMarchSteps ("まとめ繭のレイマーチ最大歩数 (Shell March Steps)", Range(32, 160)) = 80
-        // 遠い外殻の最大歩数。カメラから箱の中心までが Far Start m までは上の歩数、Far End m 以上はこの歩数で、
-        // 間はなめらかに減らす（上の歩数以上にすると減らさない）。遠い外殻は輪郭の外周が 1 画素細る程度
+        // 遠いまとめ繭の最大歩数。カメラから箱の中心までが Far Start m までは上の歩数、Far End m 以上はこの歩数で、
+        // 間はなめらかに減らす（上の歩数以上にすると減らさない）。遠いまとめ繭は輪郭の外周が 1 画素細る程度
         _GroupMarchStepsFar ("遠くのまとめ繭の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
         _GroupMarchFarStart ("歩数を減らし始める距離 m (Shell Far Start)", Float) = 2.5
         _GroupMarchFarEnd   ("遠くの歩数になる距離 m (Shell Far End)", Float) = 5
-        // 不透明な物の向こうに完全に隠れた外殻（2x2 の画素単位）を、深度テクスチャで見てレイマーチの前に捨てる（既定 ON）。
+        // 不透明な物の向こうに完全に隠れたまとめ繭（2x2 の画素単位）を、深度テクスチャで見てレイマーチの前に捨てる（既定 ON）。
         // 深度テクスチャには入るのに深度バッファでは前を隠さない物（キュー 2500 以下で ShadowCaster を持つ ZWrite Off の物、
-        // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずの外殻が欠けることがある。
+        // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずのまとめ繭が欠けることがある。
         // そういう場面では OFF にする（従来どおり全部レイマーチする）
         [ToggleUI] _GroupDepthCut ("隠れたまとめ繭を quad 単位で捨てる (Shell Depth Cut)", Float) = 1
         // 形を絞った接続部位（_GroupBridgePairs[k].w > 0 の組。全身繭の前腕↔胴など）の
@@ -610,7 +610,7 @@ Shader "mecaota/CocoonDecal"
             return o;
         }
         // Pass 2（通常カメラの glue）用の頂点シェーダー。
-        // 鏡の中・グループの代表（外殻あり、ジャック以外）・代表に任せた繭は、カメラとマテリアルだけで
+        // 鏡の中・グループの代表（まとめ繭あり、ジャック以外）・代表に任せた繭は、カメラとマテリアルだけで
         // 決まる（画素ごとに変わらない）ので、フラグメントで discard する代わりに頂点で三角形を潰す。
         // フラグメントが 1 つも出ないので、画面の結果は discard と同じで、処理だけが減る（2026-10-14）。
         v2f_d vertGlue(appdata_d v)
@@ -620,7 +620,7 @@ Shader "mecaota/CocoonDecal"
                 o.pos = float4(0.0, 0.0, 0.0, 0.0);
             return o;
         }
-        // Pass 3（鏡専用の glue）用。鏡の外・鏡の中のジャック・外殻ありの代表・代表に任せた繭は頂点で潰す
+        // Pass 3（鏡専用の glue）用。鏡の外・鏡の中のジャック・まとめ繭ありの代表・代表に任せた繭は頂点で潰す
         v2f_d vertGlueMirror(appdata_d v)
         {
             v2f_d o = vert(v);
@@ -780,7 +780,7 @@ Shader "mecaota/CocoonDecal"
 
                 // ==== 通常: 深度→体表 glue。輪郭は糸の厚みぶん外へ膨張 ====
                 // （視界ジャックは Pass 0/1 が担当）
-                // ミラー（Pass 3 が担当）・外殻ありのグループの代表（GROUP_SHELL が担当）・
+                // ミラー（Pass 3 が担当）・まとめ繭ありのグループの代表（GROUP_SHELL が担当）・
                 // 代表に任せた繭は、頂点シェーダー vertGlue で三角形を潰すので、ここへは来ない。
 
                 float3 camFwd = -UNITY_MATRIX_V[2].xyz;
@@ -1027,7 +1027,7 @@ Shader "mecaota/CocoonDecal"
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
 
-                // このパスはミラー内でのみ描く。鏡の外・ミラー内ジャック・外殻ありの代表・
+                // このパスはミラー内でのみ描く。鏡の外・ミラー内ジャック・まとめ繭ありの代表・
                 // 代表に任せた繭は、頂点シェーダー vertGlueMirror で三角形を潰すので、ここへは来ない。
                 // ミラー内ジャック時は重ねない。
                 // 既知の制限: _VisionJackInMirror=1 でミラー内ジャックが発火して
@@ -1105,7 +1105,7 @@ Shader "mecaota/CocoonDecal"
         // 視界ジャック（Pass 0/1）と同じく、深度パスと色パスに分ける。
         //   GROUP_SHELL_DEPTH: 色は塗らず、濃い所（不透明度 SCG_SHELL_DEPTH_ALPHA 以上）だけ深度を書く
         //   GROUP_SHELL      : 深度は書かずに塗る。薄い所は奥の巣や糸を隠さない
-        // ※ 外殻の形を探す計算（レイマーチ）を両パスで 1 回ずつ行うので、そのぶん重くなる。
+        // ※ まとめ繭の形を探す計算（レイマーチ）を両パスで 1 回ずつ行うので、そのぶん重くなる。
         Pass
         {
             Name "GROUP_SHELL_DEPTH"
@@ -1143,7 +1143,7 @@ Shader "mecaota/CocoonDecal"
             ZTest LEqual
             Cull Front
             Blend SrcAlpha OneMinusSrcAlpha
-            // ジャックの画素だけ避ける。糸の芯（bit64）は避けない: 外殻は実深度で ZTest するので
+            // ジャックの画素だけ避ける。糸の芯（bit64）は避けない: まとめ繭は実深度で ZTest するので
             // 手前の糸には負け、奥の糸（先に描画済み）には半透明で重なって透かす
             Stencil { Ref [_StencilRef] ReadMask [_StencilRef] Comp NotEqual }
             CGPROGRAM
