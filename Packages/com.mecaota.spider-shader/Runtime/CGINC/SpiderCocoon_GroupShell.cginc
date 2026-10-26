@@ -1,13 +1,13 @@
 #ifndef SPIDERCOCOON_GROUP_SHELL_INCLUDED
 #define SPIDERCOCOON_GROUP_SHELL_INCLUDED
 
-// 外殻の深度パス（GROUP_SHELL_DEPTH）で深度を書く不透明度の下限。
+// まとめ繭の深度パス（GROUP_SHELL_DEPTH）で深度を書く不透明度の下限。
 // 視界ジャック（0.9）より低くし、糸の本体（不透明度 0.7〜0.9 くらい）は奥の物を隠し、薄い膜だけ透かす
 #define SCG_SHELL_DEPTH_ALPHA 0.5
 
 // World-space envelope. The shape never comes from screen depth: both VR eyes see the same
 // surface, and moving the camera cannot change which body samples define it.
-// 外殻の形は、ワールド座標の部位（_GroupMemA/B）と繭同士の接続部位だけで決まる。画面の深度から形は作らないので、
+// まとめ繭の形は、ワールド座標の部位（_GroupMemA/B）と繭同士の接続部位だけで決まる。画面の深度から形は作らないので、
 // 両目で同じ形になり、カメラを動かしても形は変わらない。
 // 画面の深度（_CameraDepthTexture）を読むのは 1 か所だけ: 不透明な物の向こうに完全に隠れた
 // 2x2 の画素（quad）を、レイマーチの前に丸ごと捨てる（SCG_QuadHidden。2026-10-14 Phase 3）。
@@ -15,10 +15,10 @@
 //   - 以前の案（画素ごとにレイの終点を深度で打ち切る。WorkLogs/2026-10-14-render-perf-audit/phase2a.md の 3d）は、
 //     MSAA の輪郭の画素や 2x2 の画面微分を通して遮蔽物の輪郭で見た目が変わったので見送った。
 //     今の形は quad 単位で、周り 1 画素まで見るので、まっすぐな輪郭ではその問題が起きない（同 phase3.md の 7）。
-//   - 前提（満たさないと、見えるはずの外殻を quad ごと捨てることがある）:
+//   - 前提（満たさないと、見えるはずのまとめ繭を quad ごと捨てることがある）:
 //     ・深度テクスチャがこのカメラのもの。大きさが画面と違う・画素の番号と画面 UV が合わない・鏡・平行投影では打ち切らない。
 //     ・(a) 深度テクスチャに入る物は、深度バッファでも前を隠すこと。深度テクスチャには入るのに深度バッファでは
-//       前を隠さない物の向こうでは、見えるはずの外殻を quad ごと捨てる。例: キュー 2500 以下で ShadowCaster パスを持つ
+//       前を隠さない物の向こうでは、見えるはずのまとめ繭を quad ごと捨てる。例: キュー 2500 以下で ShadowCaster パスを持つ
 //       ZWrite Off の物、alpha to coverage のカットアウト、ShadowCaster と本体で頂点の変形が違うシェーダー。
 //     ・(b) MSAA で、遮蔽物どうしの間に 1 画素より細い隙間があると、その隙間からサンプル点だけが見える分が消える
 //       （隙間の両側の画素中心がどちらも隠れているため）。まっすぐな輪郭と、1 画素以上の隙間なら一致する。
@@ -28,7 +28,7 @@ float _GroupAxisFollow;
 float _GroupAxisBlend;
 float _GroupLeadIndex;
 float4 _GroupWrapOrigin;
-float _GroupMarchSteps; // 外殻レイマーチの最大歩数（全身の 2 m 級の箱でも穴が開かないよう上げられる）
+float _GroupMarchSteps; // まとめ繭のレイマーチ最大歩数（全身の 2 m 級の箱でも穴が開かないよう上げられる）
 // 「形を絞った接続部位」（_GroupBridgePairs[k].w > 0 の組）の半分の高さの倍率（既定 1）。
 // 絞った接続部位の半分の高さ = 短いほうの部位の半分の高さ × この値。
 // w = 0 の組（腿↔腿など）と、組を使わない木の繭には効かない。
@@ -36,9 +36,9 @@ float _GroupBridgeHeightScale;
 // 言葉の対応: コード上の Bridge / bridge（_GroupBridge*・SCG_PairBridge・bridgeCenter など）＝繭同士の接続部位。
 // 接続部位は 2 つの部位の中心を結ぶ線分に沿って断面を動かした線織面（ruled surface）に厚みを付けた形。
 // 名前を Bridge のままにしている理由は SpiderCocoon_Group.cginc の _GroupBridgeCount の注記。
-// 遠い外殻の最大歩数（2026-10-14 Phase 3）。カメラ（両目の中点）から箱の中心までの距離が
+// 遠いまとめ繭の最大歩数（2026-10-14 Phase 3）。カメラ（両目の中点）から箱の中心までの距離が
 // _GroupMarchFarStart m までは _GroupMarchSteps、_GroupMarchFarEnd m 以上は _GroupMarchStepsFar で、
-// 間はなめらかに減らす。遠い外殻は画面上で小さいので、歩数切れで輪郭の外周が 1 画素細る程度。
+// 間はなめらかに減らす。遠いまとめ繭は画面上で小さいので、歩数切れで輪郭の外周が 1 画素細る程度。
 // _GroupMarchStepsFar を _GroupMarchSteps 以上にすると減らさない（従来どおり）。
 float _GroupMarchStepsFar;
 float _GroupMarchFarStart;
@@ -138,7 +138,7 @@ struct SCG_FieldConst
 {
     int    n;             // 部位の数
     int    lead;          // 代表の部位
-    float  thickness;     // 膨らみ（glue の厚み + 外殻の膨らみ）
+    float  thickness;     // 膨らみ（glue の厚み + まとめ繭の膨らみ）
     float  blend;         // 部位どうしをなめらかにつなぐ幅（smooth-min の k）
     bool   pairMode;      // 接続部位の組が渡されている（全身繭）
     float  radiusScale;
@@ -188,7 +188,7 @@ SCG_FieldConst SCG_MakeFieldConst()
 //   そこで「中心からの距離 >= best + blend + 半分の高さ + 半径 + 厚み + 余裕」なら飛ばす。
 //   最初の部位（best がまだ無い）は必ず計算する。
 //   端の値（cap）は飛ばした部位の分を合成しない。飛ばさない場合も lerp の重みが 1 なので
-//   丸め誤差（1 ulp）以外は同じ。cap を使う呼び出し（外殻の色のほつれ）は allowSkip = false で呼ぶ。
+//   丸め誤差（1 ulp）以外は同じ。cap を使う呼び出し（まとめ繭の色のほつれ）は allowSkip = false で呼ぶ。
 float SCG_VolumeFieldC(float3 p, SCG_FieldConst fc, bool allowSkip, out float cap)
 {
     float best = 1e6; cap = 0;
@@ -278,7 +278,7 @@ float SCG_VolumeDistanceC(float3 p, SCG_FieldConst fc)
 }
 
 // 全部位がカプセル（端の丸め > 0.5）か。そのとき端の値 cap はどこでも -1（SCG_RoundedSection）になり、
-// 外殻のほつれは「十分内側」で一定なので、距離場をもう 1 回評価して cap を求める必要が無い。
+// まとめ繭のほつれは「十分内側」で一定なので、距離場をもう 1 回評価して cap を求める必要が無い。
 // 0.51 は、2 部位の丸めを補間した接続部位の丸めも確実に 0.5 を超えるための余裕。
 bool SCG_AllCapsules(SCG_FieldConst fc)
 {
@@ -350,7 +350,7 @@ void SCG_AxisWrap(float3 p, out float3 local, out float3 colX, out float3 colY)
 // ---- 隠れた quad を丸ごと捨てる（2026-10-14 Phase 3。SCG_QuadHidden）----
 // quad（2x2 の画素）の 4 画素と、その周り 1 画素（合わせて 4x4 の画素中心）の全部で、
 // 「深度テクスチャの面までの距離 × 1.01 + 1 cm が、その画素の視線が箱に入る距離以下」
-// （= 不透明な面が外殻の箱より手前にある）なら、その quad を丸ごと捨てる。
+// （= 不透明な面がまとめ繭の箱より手前にある）なら、その quad を丸ごと捨てる。
 //   - 画面微分は使わない。4 つの画素が同じ 16 点を同じ式で調べるので、quad の全員が同じ答えになる
 //     （捨てた quad には見える画素が無いので、残る画素の fwidth も変わらない）。
 //   - 周り 1 画素まで見るのは MSAA のため。深度テクスチャは画素中心の 1 点の値なので、遮蔽物の輪郭の画素では
@@ -421,7 +421,7 @@ bool SCG_QuadHidden(float2 svPos, float2 screenUV, float3 ro, float3 halfBox)
     if (any(abs(uvSelf - screenUV) >= 0.5 * texel)) return false;
     // 自分の画素が見えていれば、16 点の全部が隠れることはない（答えは「捨てない」で、ほかの 3 画素と同じ）。
     // 自分の画素の判定は、下の 16 点の中の同じ点と同じ式・同じ値なので、quad の答えはそろったまま。
-    // 見えている外殻の画素（ふつうの場合）は、ここで 1 点だけ見て終わる
+    // 見えているまとめ繭の画素（ふつうの場合）は、ここで 1 点だけ見て終わる
     bool allHidden = false;
     [branch] if (SCG_DepthHiddenAt(floor(p) + 0.5, texel, flipY, ro, halfBox) > 0.5)
     {
@@ -475,7 +475,7 @@ fixed4 SCG_ShadeGroupShell(float2 screenUV, float3 worldDir, float2 svPos, out f
     bool inside = d < 0;
     bool hit = false;
     // Fixed world tolerance; no per-eye randomization, dithering or screen-derived shape.
-    // 最大歩数はマテリアルの _GroupMarchSteps（32〜160、既定 80）。遠い外殻は _GroupMarchStepsFar まで減らす
+    // 最大歩数はマテリアルの _GroupMarchSteps（32〜160、既定 80）。遠いまとめ繭は _GroupMarchStepsFar まで減らす
     // （2026-10-14 Phase 3）。距離は箱の中心まで（物体ごとに 1 つの値。両目で同じ歩数になるよう中央の目から測る）
     float3 boxCenter = float3(unity_ObjectToWorld._m03, unity_ObjectToWorld._m13, unity_ObjectToWorld._m23);
     float camDist = distance(SC_MonoCameraPos(), boxCenter);

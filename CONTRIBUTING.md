@@ -45,7 +45,7 @@ Website/                              配布ページのテンプレート
 | `SpiderThread_Goo.cginc` | 粘液の束・膜の距離場（`STG_GooField`） | 蜘蛛糸、蜘蛛の巣ドレープの焼き込み |
 | `SpiderCocoon_Goo.cginc` | 繭の粘液の帯・巻きアニメ（`SC_CompositeGoo`） | 繭・繭デカール |
 | `SpiderCocoon_VisionJack.cginc` | 視界ジャック（包まれ演出） | 繭・繭デカール |
-| `SpiderCocoon_Group.cginc` / `_GroupShell.cginc` | くっついた繭のまとめ描き・外殻 | 繭デカール |
+| `SpiderCocoon_Group.cginc` / `_GroupShell.cginc` | くっついた繭のまとめ描き・まとめ繭（レイマーチ） | 繭デカール |
 | `SpiderCocoon_Sheet.cginc` | 表面の模様「蜘蛛の巣ドレープ風」（`_SurfaceStyle`） | 繭デカール |
 | `SpiderWeb_Core.cginc` | 巣の頂点・フラグメントの処理（`SpiderWeb.shader` の本体）。`SW_BAKE` を定義して include すると視線と光の向きが焼き込み用に置き換わり、巣の lilToon 焼き込み用の `Editor/Shaders/SpiderWebBaker.shader` と同じ式を共有する | 巣、巣の lilToon 焼き込み |
 | `SpiderCocoon_Pull.cginc` | 接触追従の変形（`SC_PULL_MAX = 16`） | 巣・繭・蜘蛛の巣ドレープ |
