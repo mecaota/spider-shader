@@ -151,17 +151,17 @@ Shader "mecaota/CocoonDecal"
         _GroupAxisFollow ("部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
         _GroupShellBlend ("部位間の一体感 (Group Shell Blend)", Range(0, 4)) = 0.8
-        _GroupMarchSteps ("外殻レイマーチの最大歩数 (Shell March Steps)", Range(32, 160)) = 80
+        _GroupMarchSteps ("まとめ繭のレイマーチ最大歩数 (Shell March Steps)", Range(32, 160)) = 80
         // 遠い外殻の最大歩数。カメラから箱の中心までが Far Start m までは上の歩数、Far End m 以上はこの歩数で、
         // 間はなめらかに減らす（上の歩数以上にすると減らさない）。遠い外殻は輪郭の外周が 1 画素細る程度
-        _GroupMarchStepsFar ("遠くの外殻の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
+        _GroupMarchStepsFar ("遠くのまとめ繭の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
         _GroupMarchFarStart ("歩数を減らし始める距離 m (Shell Far Start)", Float) = 2.5
         _GroupMarchFarEnd   ("遠くの歩数になる距離 m (Shell Far End)", Float) = 5
         // 不透明な物の向こうに完全に隠れた外殻（2x2 の画素単位）を、深度テクスチャで見てレイマーチの前に捨てる（既定 ON）。
         // 深度テクスチャには入るのに深度バッファでは前を隠さない物（キュー 2500 以下で ShadowCaster を持つ ZWrite Off の物、
         // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずの外殻が欠けることがある。
         // そういう場面では OFF にする（従来どおり全部レイマーチする）
-        [ToggleUI] _GroupDepthCut ("隠れた外殻を quad 単位で捨てる (Shell Depth Cut)", Float) = 1
+        [ToggleUI] _GroupDepthCut ("隠れたまとめ繭を quad 単位で捨てる (Shell Depth Cut)", Float) = 1
         // 形を絞った接続部位（_GroupBridgePairs[k].w > 0 の組。全身繭の前腕↔胴など）の
         // 半分の高さ = 短いほうの部位の半分の高さ × この値。w = 0 の組と木の繭には効かない
         _GroupBridgeHeightScale ("絞った繭同士の接続部位の高さ倍率 (Connection Height Scale)", Range(0, 1.5)) = 1
