@@ -103,6 +103,9 @@ public class SpiderCocoonShaderGUI : ShaderGUI
                            "_GroupMarchStepsFar", "_GroupMarchFarStart", "_GroupMarchFarEnd", "_GroupDepthCut", "_GroupBridgeHeightScale" } },
         new Category{ Title = "糸の厚み", Common = false, Require = "_GlueThickness",
             Props = new[]{ "_GlueThickness" } },
+        // 体に沿う繭（ミイラ）→ 太さのそろった繭。筒の位置と太さ（_EvenGirthA / B）は駆動スクリプトが MPB で渡す
+        new Category{ Title = "太さをそろえる", Common = false, Require = "_EvenGirth",
+            Props = new[]{ "_EvenGirth", "_EvenGirthMargin" } },
         new Category{ Title = "巻きの端のほつれ", Common = false, Require = "_GooEdgeFray",
             Props = new[]{ "_GooEdgeFray" } },
         // 糸が巻かれて繭になっていくアニメ（通常は Udon が MPB で進み具合を渡す）
@@ -114,8 +117,9 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_GroundTex", "_GroundColor", "_GroundDetectScale", "_GroundNormalY" } },
         // Require はデカール専用プロパティにする（_JackRadius は本体シェーダーにも
         // 追加されたため、それを条件にすると本体側で重複表示されてしまう）
+        // 頭の周りの内壁（_JackHoodRadius / _JackHoodOpen）は、駆動スクリプトが本人の頭の位置（_JackHead）を渡したときだけ効く
         new Category{ Title = "視界ジャック", Common = false, Require = "_RadiusFit",
-            Props = new[]{ "_VisionJackEnable", "_VisionJackInMirror", "_JackRadius", "_JackStretch" } },
+            Props = new[]{ "_VisionJackEnable", "_VisionJackInMirror", "_JackRadius", "_JackStretch", "_JackHoodRadius", "_JackHoodOpen" } },
 
         // ---- トレイル版（SpiderSilk）固有 ----
         // _GravityTrailColor（トレイルの頂点色の青を全長として使う）は
