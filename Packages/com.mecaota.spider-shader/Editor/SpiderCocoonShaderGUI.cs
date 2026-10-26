@@ -117,8 +117,9 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             Props = new[]{ "_GroundTex", "_GroundColor", "_GroundDetectScale", "_GroundNormalY" } },
         // Require はデカール専用プロパティにする（_JackRadius は本体シェーダーにも
         // 追加されたため、それを条件にすると本体側で重複表示されてしまう）
+        // 頭の周りの内壁（_JackHoodRadius / _JackHoodOpen）は、駆動スクリプトが本人の頭の位置（_JackHead）を渡したときだけ効く
         new Category{ Title = "視界ジャック", Common = false, Require = "_RadiusFit",
-            Props = new[]{ "_VisionJackEnable", "_VisionJackInMirror", "_JackRadius", "_JackStretch" } },
+            Props = new[]{ "_VisionJackEnable", "_VisionJackInMirror", "_JackRadius", "_JackStretch", "_JackHoodRadius", "_JackHoodOpen" } },
 
         // ---- トレイル版（SpiderSilk）固有 ----
         // _GravityTrailColor（トレイルの頂点色の青を全長として使う）は
