@@ -91,6 +91,9 @@ Shader "mecaota/SpiderWebDrape"
 
         [Header(Render State)]
         [ToggleUI] _HideBackFibers ("裏面の糸を隠す (Hide Back Fibers)", Float) = 0
+        // 被った本人の視界を白く覆わないよう、カメラからこの距離（m）より近い所を消す（その 6 割の距離までで 0）。0 で無効。
+        // 他の人のカメラは体から離れているので、今まで通り全部見える。
+        _NearFade ("カメラ近くを消す距離 m 0で無効 (Near Fade)", Range(0, 1)) = 0.35
 
         [Header(Seed)]
         _Seed      ("揺らぎシード (Seed)", Float) = 0
@@ -204,6 +207,7 @@ Shader "mecaota/SpiderWebDrape"
             float _WebLayerAdhere, _WebLayerAdhereScale, _WebLayerTwist;
             float _WebLayerShift, _WebLayerOpacity;
             float _WebLayerWidthOuter, _WebLayerWidthJitter;
+            float _NearFade;
 
             // ---- 接触追従の変形（uniform と変位関数は繭と共通の Pull.cginc） ----
             #include "CGINC/SpiderCocoon_Pull.cginc"
@@ -396,6 +400,8 @@ Shader "mecaota/SpiderWebDrape"
                 goo.a = lerp(goo.a, farAlpha, p.farWeight);
                 // 色・深度の両パスが使う最終不透明度を薄くし、伸びた所の深度も残さない。
                 goo.a *= drapeStretchFade;
+                // カメラのすぐ近く（被った本人の頭のまわり）は消す。深度パスも同じ alpha を使うので深度も書かない。
+                if (_NearFade > 0.0) goo.a *= smoothstep(_NearFade * 0.6, _NearFade, distance(_WorldSpaceCameraPos, i.worldPos));
                 if (layer > 0.5) goo.a *= pow(clamp(_WebLayerOpacity, 0.3, 1.0), layer);
                 // 色/深度の面積判定と最終alphaは共通。深度の芯だけは未解像になるほど弱める。
                 // 遠景の平均被覆率が0.5を超えても、面全体を不透明な深度にしない。
