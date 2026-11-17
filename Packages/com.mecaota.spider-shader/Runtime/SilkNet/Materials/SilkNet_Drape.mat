@@ -1,0 +1,78 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: SilkNet_Drape
+  m_Shader: {fileID: 4800000, guid: b0327c6319ad42ecb66124997519468b, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - _NET_DRAPE
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BakedCoverage:
+        m_Texture: {fileID: 18700000, guid: 0c11c6f027724e51960b795dd2921dca, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BakedDetail:
+        m_Texture: {fileID: 18700000, guid: 6de234ff44124cb293a4936f0cce7d14, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BakedShape:
+        m_Texture: {fileID: 18700000, guid: 57207913bc44436992e72b874a64d8a6, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _BackHideDistance: 10
+    - _BackMode: 0
+    - _BackWidth: 0.55
+    - _DrapeBunch: 0.03
+    - _DrapeCling: 3
+    - _DrapeCount: 0
+    - _DrapeEnable: 1
+    - _DrapeFollowBlend: 0.05
+    - _DrapeFollowHang: 1
+    - _DrapeFollowHangDist: 0.25
+    - _DrapeFollowPush: 1
+    - _DrapeGap: 0.025
+    - _DrapeLayer: 0.012
+    - _DrapeSag: 0.2
+    - _DrapeSmooth: 0.06
+    - _DrapeStretchFade: 3
+    - _DrapeTail: 0.3
+    - _DrapeTurns: 0
+    - _DrapeWrap: 1
+    - _FormShade: 0
+    - _NetDataVersion: 4
+    - _NetEdgeFade: 0.09
+    - _NetFill: 0.32
+    - _NetKind: 1
+    - _NetMerge: 0.5
+    - _NetProfileShade: 1
+    - _NetSeed: 0
+    - _NetSimpleDistance: 6
+    - _NetSlice: 0
+    - _NetSliceCount: 2
+    - _NetWidth: 1.4
+    m_Colors:
+    - _BackTint: {r: 0.7, g: 0.73, b: 0.8, a: 1}
+    - _NetBakeRange: {r: 24, g: 0.3, b: 16, a: 512}
+    - _NetCageExtent: {r: 0, g: 0, b: 0, a: 0}
+    - _NetTiling: {r: 1, g: 1, b: 0, a: 0}
+    - _SilkLookLink: {r: 0, g: 0, b: 0, a: 0}
+  m_BuildTextureStacks: []

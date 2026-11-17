@@ -1,0 +1,21 @@
+{
+  "dataVersion": 4,
+  "kind": "Web",
+  "generator": "SilkNetPatternCore v4",
+  "tool": "proto-net impl-src (.NET)",
+  "size": 512,
+  "sliceCount": 3,
+  "wrap": "Clamp",
+  "seeds": [55, 54, 53],
+  "distanceRangePx": 24,
+  "closedFill": 0.16,
+  "radiusRangePx": 16,
+  "fillMaxPx": 16,
+  "coverageFill": 0.16,
+  "layout": "slices stacked vertically, slice 0 at the top; import as 2D Array with flipbookRows = sliceCount",
+  "slices": [
+    { "seed": 55, "bundles": 0, "carved_holes": 17, "edge_anchors": 6, "fan_max": 4, "fan_min": 2, "fine_threads": 65, "free_ends": 0, "hole_eqd_max": 412.4793, "hole_eqd_min": 6.3831, "holes": 83, "linked": 11, "max_inscribed_radius_px": 13.3182, "medium_threads": 15, "strands": 31, "tethers": 10, "thread_fraction_default_fill": 0.2587, "thread_fraction_fill0": 0.2473, "thread_fraction_outer_default_fill": 0.1878 },
+    { "seed": 54, "bundles": 0, "carved_holes": 13, "edge_anchors": 6, "fan_max": 4, "fan_min": 2, "fine_threads": 65, "free_ends": 0, "hole_eqd_max": 422.0606, "hole_eqd_min": 7.8176, "holes": 61, "linked": 8, "max_inscribed_radius_px": 13.7363, "medium_threads": 15, "strands": 28, "tethers": 9, "thread_fraction_default_fill": 0.2521, "thread_fraction_fill0": 0.2419, "thread_fraction_outer_default_fill": 0.2023 },
+    { "seed": 53, "bundles": 0, "carved_holes": 13, "edge_anchors": 5, "fan_max": 4, "fan_min": 2, "fine_threads": 65, "free_ends": 0, "hole_eqd_max": 382.6653, "hole_eqd_min": 6.7703, "holes": 75, "linked": 6, "max_inscribed_radius_px": 15.0313, "medium_threads": 15, "strands": 24, "tethers": 7, "thread_fraction_default_fill": 0.2412, "thread_fraction_fill0": 0.2309, "thread_fraction_outer_default_fill": 0.2033 }
+  ]
+}

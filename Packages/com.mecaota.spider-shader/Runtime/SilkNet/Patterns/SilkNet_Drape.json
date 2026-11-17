@@ -1,0 +1,20 @@
+{
+  "dataVersion": 4,
+  "kind": "Drape",
+  "generator": "SilkNetPatternCore v4",
+  "tool": "proto-net impl-src (.NET)",
+  "size": 512,
+  "sliceCount": 2,
+  "wrap": "Clamp",
+  "seeds": [46, 53],
+  "distanceRangePx": 24,
+  "closedFill": 0.3,
+  "radiusRangePx": 16,
+  "fillMaxPx": 16,
+  "coverageFill": 0.3,
+  "layout": "slices stacked vertically, slice 0 at the top; import as 2D Array with flipbookRows = sliceCount",
+  "slices": [
+    { "seed": 46, "bundles": 0, "carved_holes": 3, "edge_anchors": 6, "fan_max": 4, "fan_min": 2, "fine_threads": 32, "free_ends": 0, "hole_eqd_max": 386.8448, "hole_eqd_min": 8.9562, "holes": 55, "linked": 9, "max_inscribed_radius_px": 20.32, "medium_threads": 15, "strands": 27, "tethers": 9, "thread_fraction_default_fill": 0.2574, "thread_fraction_fill0": 0.2372, "thread_fraction_outer_default_fill": 0.2236 },
+    { "seed": 53, "bundles": 0, "carved_holes": 2, "edge_anchors": 5, "fan_max": 4, "fan_min": 2, "fine_threads": 32, "free_ends": 0, "hole_eqd_max": 397.726, "hole_eqd_min": 9.373, "holes": 48, "linked": 3, "max_inscribed_radius_px": 21.2262, "medium_threads": 15, "strands": 20, "tethers": 6, "thread_fraction_default_fill": 0.2637, "thread_fraction_fill0": 0.2461, "thread_fraction_outer_default_fill": 0.2197 }
+  ]
+}
