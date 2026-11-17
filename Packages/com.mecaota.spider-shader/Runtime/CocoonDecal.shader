@@ -215,6 +215,10 @@ Shader "mecaota/CocoonDecal"
         _SheetLayerTwist    ("層ごとの回転 角度 (Layer Twist)", Range(0, 180)) = 8
         _SheetLayerShift    ("2枚目以降の模様のずれ m (Pattern Shift)", Range(0, 0.3)) = 0.08
         _SheetLayerOpacity  ("層ごとの不透明度倍率 (Layer Opacity)", Range(0.3, 1)) = 0.95
+        // 0 より大きい = 継ぎ目（箱の -X、角度 ±180°）の無いらせんの巻き方（帯が 1 周でちょうど整数本ぶん上がる）。
+        // 0 = 前と同じ巻き方。部位の繭のドライバーが MPB で入れる想定（網つきの全身の繭は 0 のまま）。効くのは外殻の 2 パスだけ。
+        // 名前は第1版（継ぎ目の左右を混ぜる角度）の名残。今は 0 か、0 より大きいかだけを見る
+        _SheetSeamBlend     ("継ぎ目なしの巻き方 ドライバーが入れる 0=切 (Seamless Wrap)", Range(0, 90)) = 0
         [IntRange] _GooStrands ("束の本数 (Strands)", Range(1, 4))           = 3
         _GooWidth           ("束の太さ 帯幅比 (Strand Width)", Range(0.02, 1)) = 0.24
         _GooSpread          ("束の並ぶ幅 (Spread)", Range(0, 1))             = 0.6
@@ -1503,6 +1507,7 @@ Shader "mecaota/CocoonDecal"
             #pragma shader_feature_local SC_SURFACE_NET   // 色パスと同じ模様で不透明度を求める（インスペクタが揃える）
             fixed4 fragGroupShellDepth(v2f_d i, out float depth : SV_Depth) : SV_Target
             {
+                SCS_SeamlessPass = true;   // 部位の繭は継ぎ目の無いらせんで巻ける（_SheetSeamBlend。CGINC/SpiderCocoon_Sheet.cginc）
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 // i.pos.xy = SV_Position（画素の中心）。隠れた quad を捨てる判定（SCG_QuadHidden）に使う
@@ -1533,6 +1538,7 @@ Shader "mecaota/CocoonDecal"
             #pragma shader_feature_local SC_SURFACE_NET   // 表面の模様（_SurfaceStyle = 1 で蜘蛛の巣ドレープ。インスペクタが揃える）
             fixed4 fragGroupShell(v2f_d i, out float depth : SV_Depth) : SV_Target
             {
+                SCS_SeamlessPass = true;   // 部位の繭は継ぎ目の無いらせんで巻ける（_SheetSeamBlend。CGINC/SpiderCocoon_Sheet.cginc）
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 // i.pos.xy = SV_Position（画素の中心）。隠れた quad を捨てる判定（SCG_QuadHidden）に使う
