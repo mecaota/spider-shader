@@ -8,10 +8,12 @@
 |---|---|---|---|
 | [接触追従の変形](#接触追従の変形surfacecontactdeformer) | ○ `SurfaceContactDeformer` | 蜘蛛の巣・繭・蜘蛛の巣ドレープ | 手足が触れた所が貼り付き、上げると伸び、押すと凹む |
 | [繭のまとめ描き](#繭のまとめ描きcocoongrouplinker) | ○ `CocoonGroupLinker` | 体に張り付く繭 | くっついた複数の繭を、同じ糸でまとめて巻いたように描く |
-| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・蜘蛛の巣ドレープ | 投げた網が体の形に沿ってかぶさる |
+| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・蜘蛛の巣ドレープ・糸の網 | 投げた網が体の形に沿ってかぶさる |
 | [繭プロジェクターの駆動](CocoonProjector.md#駆動スクリプトspidercocoonprojectormaskdriver) | ○ `SpiderCocoonProjectorMaskDriver` | 繭プロジェクター（体に張り付く繭と組む） | 体に張り付く繭を、捕まった人のアバターにだけ描く |
 
 **前提**: VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）が入ったプロジェクトが必要です。
+
+蜘蛛が糸を撃って捕まえるなどの蜘蛛のギミックは、このパッケージには入っていません。別のパッケージ（`com.mecaota.spider-gimmick`・`com.mecaota.gunner`）の説明を見てください。
 
 ### しくみの共通点（初心者向け）
 
@@ -167,13 +169,14 @@ Udon が MaterialPropertyBlock で渡す配列（インスペクタには出ま�
 | Thread Sag | 0.06 | 糸のたるみ（長さ 1 m あたりの m） |
 | Thread From Deformed Web | OFF | ON で、糸の始点を変形した後の面にする（凹み・伸びと糸を一緒に使う巣用）。Web Max Bulge が 0 より大きいときは OFF でも ON と同じ |
 | Web Max Bulge | 0 | 面が膨らむ上限（m）。手足がこれより離れた分は面を引っ張らず、糸が受け持つ。0 で上限なし（従来どおり）。Auto Release Distance より十分小さくする。下の「膨らみの上限と糸」 |
+| Web Max Bulge Along Surface | ON | ON で、Web Max Bulge を面に沿った向きにもかける（くっついた所からどの向きに引いても、巣は上限の長さまでしか伸びず、超えた分は糸になる）。木の幹の巣のように、歩いて離れる向きが面に沿う巣でも糸が出る。OFF で、面から離れる向き（法線の向き）だけにかけ、面に沿ったずれは面がそのまま追従する（0.13.0〜0.14.0 の動き） |
 | Thread Fade Length | 0.03 | Web Max Bulge を使うとき、面の先が手足に届かない長さがこの値（m）になるまで糸を細くしておく。0 で細くしない |
 
 ##### 膨らみの上限と糸（Web Max Bulge）
 
 巣にくっついた手足を離していくと、巣は上限の長さまで手足の方へ膨らみ、それより離れた分は粘液の糸が巣と手足をつなぎます。ゴムのように伸び切った巣から、糸が引き出されて見えます。
 
-- 上限が効くのは、くっついた側（手足がいた側）へ引っ張る向きの量だけです。面に沿った向きのずれは、今までどおり面が追従します。
+- 上限が効くのは、くっついた側（手足がいた側）へ引っ張る向きの量だけです。Web Max Bulge Along Surface が ON（既定）なら面に沿った向きのずれも合わせた長さに、OFF なら面から離れる向きの量だけに上限がかかります（OFF のとき、面に沿ったずれは面が追従します）。
 - 手足を面へ押し込む向きでは、上限は効かず、面だけが凹みます。このとき糸は出ません（`pullOnly` が ON なら凹みもしません）。
 - 糸は、変形した面の先が手足に届かなかった分だけ出ます。上限で止めた分のほか、引っ張りの弱い巣（`_PullStrength` が 1 未満）、`_PullMaxStretch` で千切れて戻った巣、`_PullEnable` が OFF の巣、近くの別の接点と平均されて届かない分も、糸がつなぎます。
 - 糸は、届かない長さが「Thread Fade Length」になるまで細く描き、上限の前後でぱっと現れたり消えたりしないようにします。
@@ -405,7 +408,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 ## 体に覆いかぶさる変形（Drape）
 
-投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)と[蜘蛛の巣ドレープ](SpiderWebDrape.md)が対応しています。
+投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)・[蜘蛛の巣ドレープ](SpiderWebDrape.md)・[糸の網](SpiderSilkNet.md)が対応しています。
 
 体の形（ボーンから作ったカプセル）と網の位置・向きを、Udon が MaterialPropertyBlock で毎フレーム渡します。パッケージには、そのための汎用の駆動スクリプト [SpiderWebDrapeDriver](#駆動スクリプトspiderwebdrapedriver) が入っています。値が渡されない間は、変形は何も起きません。作者のワールドでは、網の飛行や着弾の同期まで含めた独自の `CaptureNetDrape` で駆動しています（[開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯)）。
 
