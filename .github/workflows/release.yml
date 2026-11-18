@@ -2,14 +2,22 @@ name: Build Release
 
 on: 
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - Packages/*/package.json
 
 jobs:
 
   # Validate Repository Configuration
   config:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       config_package: ${{ steps.config_package.outputs.configPackage }}
+      released: ${{ steps.check_tag.outputs.released }}
+      version: ${{ steps.check_tag.outputs.version }}
     steps:
 
     # Ensure that required repository variable has been created for the Package
@@ -22,6 +30,22 @@ jobs:
           echo "configPackage=false" >> $GITHUB_OUTPUT;
         fi
 
+    - name: Checkout
+      if: steps.config_package.outputs.configPackage == 'true'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Check Tag
+      id: check_tag
+      if: steps.config_package.outputs.configPackage == 'true'
+      env:
+        PACKAGE_NAME: ${{ vars.PACKAGE_NAME }}
+      run: |
+        version="$(jq -r .version "Packages/$PACKAGE_NAME/package.json")"
+        tag="$(git ls-remote --tags --refs origin "refs/tags/$version")"
+        if [ -n "$tag" ]; then released=true; else released=false; fi
+        echo "released=$released" >> "$GITHUB_OUTPUT"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
   # Build and release the Package
   # If the repository is not configured properly, this job will be skipped
   build:
@@ -31,12 +55,27 @@ jobs:
       contents: write
     env:
       packagePath: Packages/${{ vars.PACKAGE_NAME }}
-    if: needs.config.outputs.config_package == 'true'
+    if: needs.config.outputs.config_package == 'true' && (github.event_name == 'workflow_dispatch' || needs.config.outputs.released == 'false')
+    # Builds of the same version run one at a time, so the later one stops at the tag the earlier one created
+    concurrency:
+      group: release-${{ needs.config.outputs.version }}
+      cancel-in-progress: false
     steps:
 
       # Checkout Local Repository
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The if above lets manual runs through
+      - name: Check Tag
+        env:
+          version: ${{ needs.config.outputs.version }}
+        run: |
+          tag="$(git ls-remote --tags --refs origin "refs/tags/$version")"
+          if [ -n "$tag" ]; then
+            echo "::error::タグ $version がもうあります。Bump Version で版を上げてから実行してください"
+            exit 1
+          fi
 
       # Get the Package version based on the package.json file
       - name: Get Version
