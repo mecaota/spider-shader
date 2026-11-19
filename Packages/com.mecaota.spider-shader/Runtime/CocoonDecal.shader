@@ -81,7 +81,6 @@ Shader "mecaota/CocoonDecal"
         _ThreadThickness    ("糸の太さ (Thickness)", Range(0.01, 1.0))     = 0.35
         _ThreadJitter       ("太さの乱雑性 (Thickness Jitter)", Range(0, 1))= 0.3
         _ThreadFuzz         ("幅の揺らぎ (Fuzz Amount)", Range(0, 1))       = 0.2
-        [HideInInspector] _ThreadFuzzScale    ("(非推奨) 揺らぎの細かさ (Fuzz Scale)", Float)          = 8.0
 
         [Header(Winding Layout)]
         _WindingCount       ("巻き数 (Winding Count)", Float)               = 24
@@ -114,13 +113,11 @@ Shader "mecaota/CocoonDecal"
         _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))       = 1
         _GooThick     ("粘液の太さ倍率 (Goo Thickness)", Range(0.5, 4))      = 1.6
         _GooBeads     ("糊の玉の大きさ (Glue Beads)", Range(0, 1))           = 0.15
-        [HideInInspector] _GooBeadFreq  ("(非推奨) 糊の玉の細かさ 糸方向UV毎 (Bead Freq)", Float)        = 14
         _GooFlat      ("帯の平たさ (Ribbon Flatness)", Range(0, 0.95))      = 0.45
         _GooFiberMix  ("帯の中の筋の濃さ (Fiber Lines)", Range(0, 1))         = 0.5
         _GooFiberLines("帯1本あたりの筋の本数 (Lines Per Ribbon)", Range(1, 8)) = 4
         _GooOverlapShadow ("重なりの影 (Overlap Shadow)", Range(0, 1))       = 0.6
         _GooWebFill   ("隣の糸との間の膜 (Membrane Fill)", Range(0, 1))       = 0.5
-        [HideInInspector] _GooWebScale  ("(非推奨) 膜のまだらの細かさ UV毎 (Membrane Noise)", Float)     = 6
 
         [Header(Goo Shading)]
         _GooColor           ("明部の色 (Goo Color)", Color)                  = (0.88, 0.87, 0.94, 1)
@@ -139,8 +136,6 @@ Shader "mecaota/CocoonDecal"
         _GooGlossBreak      ("ハイライトの途切れ (Gloss Break)", Range(0, 1))  = 0.3
 
         [Header(Projection Fit)]
-        [HideInInspector] _RadiusFit          ("(非推奨) 円筒半径 (box内接=0.5)", Range(0.05, 0.5))   = 0.5
-        [HideInInspector] _HeightFit          ("(非推奨) 円筒高さ (box一杯=0.5)", Range(0.05, 0.5))   = 0.5
         _ProjectRange       ("投影の許容距離 (Project Range m)", Range(0, 0.5)) = 0.1
 
         [Header(Glue Thickness)]
@@ -150,10 +145,9 @@ Shader "mecaota/CocoonDecal"
         // 0 = 今までどおり体に沿う。1 = 一番太い所の太さの筒（両端は丸い）で体全体を包む。間は筒が少しずつ太る。
         // 筒の位置と太さは、繭プロジェクターの駆動スクリプト（Cocoon Renderer にこの箱を入れたとき）が骨から毎フレーム渡す
         // （_EvenGirthA / _EvenGirthB）。繭プロジェクターと組むのに渡されていないときは筒を描かない。
-        // 繭プロジェクターと組まないときは、この箱の円柱（円筒半径・円筒高さ）を、箱からはみ出さない太さに収めて筒にする
+        // 繭プロジェクターと組まないときは、この箱の円柱を、箱からはみ出さない太さに収めて筒にする
         [Header(Even Girth)]
         _EvenGirth          ("太さをそろえる 0=体に沿う 1=均一な繭 (Even Girth)", Range(0, 1)) = 0
-        [HideInInspector] _EvenGirthMargin    ("(非推奨) そろえた繭の太さの足し引き m (Even Girth Margin)", Range(-0.1, 0.2)) = 0.02
         [HideInInspector] _EvenGirthA ("Even Girth Bottom xyz (script)", Vector) = (0, 0, 0, 0)
         [HideInInspector] _EvenGirthB ("Even Girth Top xyz w=Radius (script)", Vector) = (0, 0, 0, 0)
 
@@ -168,15 +162,9 @@ Shader "mecaota/CocoonDecal"
         _GroupBulge ("まとめ描きの膨らみ m (Group Bulge)", Range(0, 0.12)) = 0.045
         _GroupBridgeSpan ("繭同士の接続部位を作る距離 m (Group Connection Span)", Range(0, 0.5)) = 0.1
         _GroupRadiusScale ("まとめ繭の半径フィット (Group Radius Fit)", Range(0.25, 1)) = 0.75
-        [HideInInspector] _GroupAxisFollow ("(非推奨) 部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
         _GroupShellBlend ("部位間の一体感 (Group Shell Blend)", Range(0, 4)) = 0.8
         _GroupMarchSteps ("まとめ繭のレイマーチ最大歩数 (Shell March Steps)", Range(32, 160)) = 80
-        // 遠いまとめ繭の最大歩数。カメラから箱の中心までが Far Start m までは上の歩数、Far End m 以上はこの歩数で、
-        // 間はなめらかに減らす（上の歩数以上にすると減らさない）。遠いまとめ繭は輪郭の外周が 1 画素細る程度
-        [HideInInspector] _GroupMarchStepsFar ("(非推奨) 遠くのまとめ繭の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
-        [HideInInspector] _GroupMarchFarStart ("(非推奨) 歩数を減らし始める距離 m (Shell Far Start)", Float) = 2.5
-        [HideInInspector] _GroupMarchFarEnd   ("(非推奨) 遠くの歩数になる距離 m (Shell Far End)", Float) = 5
         // 不透明な物の向こうに完全に隠れたまとめ繭（2x2 の画素単位）を、深度テクスチャで見てレイマーチの前に捨てる（既定 ON）。
         // 深度テクスチャには入るのに深度バッファでは前を隠さない物（キュー 2500 以下で ShadowCaster を持つ ZWrite Off の物、
         // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずのまとめ繭が欠けることがある。
@@ -233,23 +221,14 @@ Shader "mecaota/CocoonDecal"
         [Header(Facing Cull)]
         _WrapFacing         ("他の部位を除く面の向き -1で無効 (Facing Cull)", Range(-1, 1)) = -1
 
-        [Header(Ground And Ceiling)]
-        [HideInInspector] _GroundTex          ("(非推奨) 床/天井テクスチャ 蜘蛛の巣など (Ground Web)", 2D) = "black" {}
-        [HideInInspector] _GroundColor        ("(非推奨) 床/天井テクスチャの色 (Ground Tint)", Color) = (1, 1, 1, 1)
-        [HideInInspector] _GroundDetectScale  ("(非推奨) 床判定のサンプル間隔 m (Ground Detect Scale)", Range(0.01, 0.2)) = 0.05
-        [HideInInspector] _GroundNormalY      ("(非推奨) 水平とみなす法線Y (Horizontal Normal Y)", Range(0.5, 0.99)) = 0.8
-
         [Header(Vision Jack)]
         [Toggle] _VisionJackEnable ("視界ジャック有効 (Vision Jack)", Float) = 1
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
         _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
-        [HideInInspector] _JackStretch        ("(非推奨) ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
         // 捕まった本人の視界を「実際の繭の内側」にする（2026-10-25）。駆動スクリプトが本人の頭の位置（_JackHead）を
-        // 渡したときだけ使う。渡されていなければ従来の紡錘形の内壁（上の 2 つ）。
+        // 渡したときだけ使う。渡されていなければ従来の紡錘形の内壁（上の半径倍率）。
         // 頭の周りの内壁: 目を中心にした球。体の繭と同じ模様で、下（体を見下ろす向き）は開けて体に張り付いた繭を見せる。
         // 太さをそろえる（_EvenGirth）が 0 より大きいときは、内壁をその筒の内側の面にする（外から見える繭と同じ形）
-        [HideInInspector] _JackHoodRadius     ("(非推奨) 頭の周りの内壁の半径 m (Jack Hood Radius)", Range(0.08, 0.5)) = 0.15
-        [HideInInspector] _JackHoodOpen       ("(非推奨) 頭の周りの内壁の下の開き 度 真下から (Jack Hood Opening)", Range(0, 150)) = 55
         [HideInInspector] _JackHead ("Jack Head xyz w=Gate Radius (script)", Vector) = (0, 0, 0, 0)
 
         [Header(Render State)]
@@ -287,36 +266,40 @@ Shader "mecaota/CocoonDecal"
 
         #include "CGINC/SpiderCocoon_Noise.cginc"
         #include "CGINC/SpiderCocoon_Common.cginc"
+        // 繭本体などと共有の uniform のうち、デカールでは固定値にするもの（Common の uniform は使われずに消える）
+        #define _ThreadFuzzScale 8.0
+        #define _GooWebScale     6.0
+        #define _JackStretch     1.0
         #include "CGINC/SpiderCocoon_Thread.cginc"
         #include "CGINC/SpiderCocoon_Lighting.cginc"
         #include "CGINC/SpiderCocoon_Compose.cginc"
         #include "CGINC/SpiderGoo_Shading.cginc"
         // 表面の模様「蜘蛛の巣ドレープ」（_SurfaceStyle）を使えるようにする。Goo の後に Sheet を読む
         #define SC_COCOON_SHEET_STYLE
+        #define _GooBeadFreq 14.0
         #include "CGINC/SpiderCocoon_Goo.cginc"
+        // Sheet が _GooBeadFreq を別の uniform に付け替えるので、ここで外す
+        #undef _GooBeadFreq
         #include "CGINC/SpiderCocoon_Sheet.cginc"
         #include "CGINC/SpiderCocoon_VisionJack.cginc"
 
         UNITY_DECLARE_SCREENSPACE_TEXTURE(_CameraDepthTexture);
 
-        // ※ _JackRadius / _JackStretch は共通化に伴い Common.cginc 側で宣言
-        float _RadiusFit;
-        float _HeightFit;
+        // ※ _JackRadius は共通化に伴い Common.cginc 側で宣言
+        static const float _RadiusFit = 0.5;
+        static const float _HeightFit = 0.5;
         float _ProjectRange;
         float _GlueThickness;
         // 捕まった本人の視界（実際の繭の内側）。_JackHead は駆動スクリプトが渡す（xyz = 本人の頭、w = 発火の半径 m）
-        float  _JackHoodRadius;
-        float  _JackHoodOpen;
+        static const float _JackHoodRadius = 0.15;
+        static const float _JackHoodOpen   = 55.0;
         float4 _JackHead;
 
         // 近接した繭を 1 つの繭として描く（CocoonGroupLinker が MPB で指示する）
         #include "CGINC/SpiderCocoon_Group.cginc"
 
-        sampler2D _GroundTex;
-        float4    _GroundTex_ST;
-        fixed4    _GroundColor;
-        float     _GroundDetectScale;
-        float     _GroundNormalY;
+        static const float _GroundDetectScale = 0.05;
+        static const float _GroundNormalY     = 0.8;
 
         // 深度の LOD0 サンプル（動的ループ内でも安全な明示 LOD 版）
         #if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED)
@@ -607,7 +590,7 @@ Shader "mecaota/CocoonDecal"
         // まとめ描き（CocoonGroupLinker）の繭では使わない。
         // ---------------------------------------------------------------------
         float  _EvenGirth;
-        float  _EvenGirthMargin;
+        static const float _EvenGirthMargin = 0.02;
         float4 _EvenGirthA;       // xyz = 筒の下端（ワールド）
         float4 _EvenGirthB;       // xyz = 筒の上端、w = 体の一番太い所の半径 m（0 以下 = 渡されていない）
         float  _GlueStencilRef;   // 繭プロジェクターと組んでいるか（0 でない）を頂点で見る（パス 6）
@@ -1333,19 +1316,7 @@ Shader "mecaota/CocoonDecal"
                     if (gc.a > 0.001) return gc;
                 }
 
-                if (!shellHit)
-                {
-                    // ==== 床・天井: 指定テクスチャ（蜘蛛の巣など）を貼る ====
-                    // 未設定（既定 "black"＝α0）なら透明のまま＝何も表示されない。
-                    if (isFlat && all(abs(localPos) <= 0.5))
-                    {
-                        float2 wuv = (localPos.xz + 0.5) * _GroundTex_ST.xy + _GroundTex_ST.zw;
-                        fixed4 web = tex2D(_GroundTex, wuv) * _GroundColor;
-                        if (web.a <= 0.001) discard;
-                        return web;
-                    }
-                    discard;
-                }
+                if (!shellHit) discard;
 
                 // 巻きの境界（単独は自分の円筒、代表は仲間の円筒の和）でほつれさせる。
                 // 帯はグループ共通の巻き座標なので、繭をまたいで同じ向きに走る

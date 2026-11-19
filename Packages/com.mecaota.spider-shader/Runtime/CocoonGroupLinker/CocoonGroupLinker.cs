@@ -23,7 +23,7 @@ using UnityEngine;
 /// ・距離の総当たりは表示中の繭どうしだけ
 ///
 /// 注意:
-/// ・円筒の式はシェーダーの CocoonDecal（_RadiusFit / _HeightFit の内接円筒）と一致させる
+/// ・円筒の式はシェーダーの CocoonDecal（箱の内接円筒）と一致させる
 /// ・追従器がボーン位置へ動かした後に読むため PostLateUpdate で動く
 /// </summary>
 [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
@@ -319,8 +319,8 @@ public class CocoonGroupLinker : UdonSharpBehaviour
         if (m == null) { return false; }
         Transform t = r.transform;
         Vector3 s = t.lossyScale;
-        float rad = m.GetFloat("_RadiusFit") * Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.z));
-        float hh = m.GetFloat("_HeightFit") * Mathf.Abs(s.y);
+        float rad = 0.5f * Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.z));
+        float hh = 0.5f * Mathf.Abs(s.y);
         _center[i] = t.position;
         _axis[i] = t.up;
         _hh[i] = hh;

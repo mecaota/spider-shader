@@ -24,7 +24,7 @@
 //       （隙間の両側の画素中心がどちらも隠れているため）。まっすぐな輪郭と、1 画素以上の隙間なら一致する。
 //   - 前提が守れない場面では、マテリアルの _GroupDepthCut を 0 にすると打ち切らない（従来どおり全部レイマーチする）。
 float _GroupRadiusScale;
-float _GroupAxisFollow;
+static const float _GroupAxisFollow = 0.8;
 float _GroupAxisBlend;
 float _GroupLeadIndex;
 float4 _GroupWrapOrigin;
@@ -39,10 +39,9 @@ float _GroupBridgeHeightScale;
 // 遠いまとめ繭の最大歩数（2026-10-14 Phase 3）。カメラ（両目の中点）から箱の中心までの距離が
 // _GroupMarchFarStart m までは _GroupMarchSteps、_GroupMarchFarEnd m 以上は _GroupMarchStepsFar で、
 // 間はなめらかに減らす。遠いまとめ繭は画面上で小さいので、歩数切れで輪郭の外周が 1 画素細る程度。
-// _GroupMarchStepsFar を _GroupMarchSteps 以上にすると減らさない（従来どおり）。
-float _GroupMarchStepsFar;
-float _GroupMarchFarStart;
-float _GroupMarchFarEnd;
+static const float _GroupMarchStepsFar = 60.0;
+static const float _GroupMarchFarStart = 2.5;
+static const float _GroupMarchFarEnd   = 5.0;
 // 隠れた quad を捨てるか（マテリアル。既定 1、0 で打ち切らない。上の前提が守れない場面の逃げ道）
 float _GroupDepthCut;
 // 深度テクスチャの大きさ（Unity が設定する。このカメラの深度テクスチャかの確認に使う）
