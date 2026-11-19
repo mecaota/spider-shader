@@ -81,7 +81,7 @@ Shader "mecaota/CocoonDecal"
         _ThreadThickness    ("糸の太さ (Thickness)", Range(0.01, 1.0))     = 0.35
         _ThreadJitter       ("太さの乱雑性 (Thickness Jitter)", Range(0, 1))= 0.3
         _ThreadFuzz         ("幅の揺らぎ (Fuzz Amount)", Range(0, 1))       = 0.2
-        _ThreadFuzzScale    ("揺らぎの細かさ (Fuzz Scale)", Float)          = 8.0
+        [HideInInspector] _ThreadFuzzScale    ("揺らぎの細かさ (Fuzz Scale)", Float)          = 8.0
 
         [Header(Winding Layout)]
         _WindingCount       ("巻き数 (Winding Count)", Float)               = 24
@@ -114,13 +114,13 @@ Shader "mecaota/CocoonDecal"
         _GooAmount    ("粘液感 0で乾いた糸 (Goo Amount)", Range(0, 1))       = 1
         _GooThick     ("粘液の太さ倍率 (Goo Thickness)", Range(0.5, 4))      = 1.6
         _GooBeads     ("糊の玉の大きさ (Glue Beads)", Range(0, 1))           = 0.15
-        _GooBeadFreq  ("糊の玉の細かさ 糸方向UV毎 (Bead Freq)", Float)        = 14
+        [HideInInspector] _GooBeadFreq  ("糊の玉の細かさ 糸方向UV毎 (Bead Freq)", Float)        = 14
         _GooFlat      ("帯の平たさ (Ribbon Flatness)", Range(0, 0.95))      = 0.45
         _GooFiberMix  ("帯の中の筋の濃さ (Fiber Lines)", Range(0, 1))         = 0.5
         _GooFiberLines("帯1本あたりの筋の本数 (Lines Per Ribbon)", Range(1, 8)) = 4
         _GooOverlapShadow ("重なりの影 (Overlap Shadow)", Range(0, 1))       = 0.6
         _GooWebFill   ("隣の糸との間の膜 (Membrane Fill)", Range(0, 1))       = 0.5
-        _GooWebScale  ("膜のまだらの細かさ UV毎 (Membrane Noise)", Float)     = 6
+        [HideInInspector] _GooWebScale  ("膜のまだらの細かさ UV毎 (Membrane Noise)", Float)     = 6
 
         [Header(Goo Shading)]
         _GooColor           ("明部の色 (Goo Color)", Color)                  = (0.88, 0.87, 0.94, 1)
@@ -139,8 +139,8 @@ Shader "mecaota/CocoonDecal"
         _GooGlossBreak      ("ハイライトの途切れ (Gloss Break)", Range(0, 1))  = 0.3
 
         [Header(Projection Fit)]
-        _RadiusFit          ("円筒半径 (box内接=0.5)", Range(0.05, 0.5))   = 0.5
-        _HeightFit          ("円筒高さ (box一杯=0.5)", Range(0.05, 0.5))   = 0.5
+        [HideInInspector] _RadiusFit          ("円筒半径 (box内接=0.5)", Range(0.05, 0.5))   = 0.5
+        [HideInInspector] _HeightFit          ("円筒高さ (box一杯=0.5)", Range(0.05, 0.5))   = 0.5
         _ProjectRange       ("投影の許容距離 (Project Range m)", Range(0, 0.5)) = 0.1
 
         [Header(Glue Thickness)]
@@ -153,7 +153,7 @@ Shader "mecaota/CocoonDecal"
         // 繭プロジェクターと組まないときは、この箱の円柱（円筒半径・円筒高さ）を、箱からはみ出さない太さに収めて筒にする
         [Header(Even Girth)]
         _EvenGirth          ("太さをそろえる 0=体に沿う 1=均一な繭 (Even Girth)", Range(0, 1)) = 0
-        _EvenGirthMargin    ("そろえた繭の太さの足し引き m (Even Girth Margin)", Range(-0.1, 0.2)) = 0.02
+        [HideInInspector] _EvenGirthMargin    ("そろえた繭の太さの足し引き m (Even Girth Margin)", Range(-0.1, 0.2)) = 0.02
         [HideInInspector] _EvenGirthA ("Even Girth Bottom xyz (script)", Vector) = (0, 0, 0, 0)
         [HideInInspector] _EvenGirthB ("Even Girth Top xyz w=Radius (script)", Vector) = (0, 0, 0, 0)
 
@@ -168,15 +168,15 @@ Shader "mecaota/CocoonDecal"
         _GroupBulge ("まとめ描きの膨らみ m (Group Bulge)", Range(0, 0.12)) = 0.045
         _GroupBridgeSpan ("繭同士の接続部位を作る距離 m (Group Connection Span)", Range(0, 0.5)) = 0.1
         _GroupRadiusScale ("まとめ繭の半径フィット (Group Radius Fit)", Range(0.25, 1)) = 0.75
-        _GroupAxisFollow ("部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
+        [HideInInspector] _GroupAxisFollow ("部位の軸に沿う強さ (Axis Follow)", Range(0, 1)) = 0.8
         _GroupAxisBlend ("軸をつなぐ滑らかさ m (Axis Blend)", Range(0.025, 0.4)) = 0.12
         _GroupShellBlend ("部位間の一体感 (Group Shell Blend)", Range(0, 4)) = 0.8
         _GroupMarchSteps ("まとめ繭のレイマーチ最大歩数 (Shell March Steps)", Range(32, 160)) = 80
         // 遠いまとめ繭の最大歩数。カメラから箱の中心までが Far Start m までは上の歩数、Far End m 以上はこの歩数で、
         // 間はなめらかに減らす（上の歩数以上にすると減らさない）。遠いまとめ繭は輪郭の外周が 1 画素細る程度
-        _GroupMarchStepsFar ("遠くのまとめ繭の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
-        _GroupMarchFarStart ("歩数を減らし始める距離 m (Shell Far Start)", Float) = 2.5
-        _GroupMarchFarEnd   ("遠くの歩数になる距離 m (Shell Far End)", Float) = 5
+        [HideInInspector] _GroupMarchStepsFar ("遠くのまとめ繭の最大歩数 (Shell Far March Steps)", Range(32, 160)) = 60
+        [HideInInspector] _GroupMarchFarStart ("歩数を減らし始める距離 m (Shell Far Start)", Float) = 2.5
+        [HideInInspector] _GroupMarchFarEnd   ("遠くの歩数になる距離 m (Shell Far End)", Float) = 5
         // 不透明な物の向こうに完全に隠れたまとめ繭（2x2 の画素単位）を、深度テクスチャで見てレイマーチの前に捨てる（既定 ON）。
         // 深度テクスチャには入るのに深度バッファでは前を隠さない物（キュー 2500 以下で ShadowCaster を持つ ZWrite Off の物、
         // alpha to coverage のカットアウトなど）や、MSAA で 1 画素より細い隙間の向こうでは、見えるはずのまとめ繭が欠けることがある。
@@ -234,22 +234,22 @@ Shader "mecaota/CocoonDecal"
         _WrapFacing         ("他の部位を除く面の向き -1で無効 (Facing Cull)", Range(-1, 1)) = -1
 
         [Header(Ground And Ceiling)]
-        _GroundTex          ("床/天井テクスチャ 蜘蛛の巣など (Ground Web)", 2D) = "black" {}
-        _GroundColor        ("床/天井テクスチャの色 (Ground Tint)", Color) = (1, 1, 1, 1)
-        _GroundDetectScale  ("床判定のサンプル間隔 m (Ground Detect Scale)", Range(0.01, 0.2)) = 0.05
-        _GroundNormalY      ("水平とみなす法線Y (Horizontal Normal Y)", Range(0.5, 0.99)) = 0.8
+        [HideInInspector] _GroundTex          ("床/天井テクスチャ 蜘蛛の巣など (Ground Web)", 2D) = "black" {}
+        [HideInInspector] _GroundColor        ("床/天井テクスチャの色 (Ground Tint)", Color) = (1, 1, 1, 1)
+        [HideInInspector] _GroundDetectScale  ("床判定のサンプル間隔 m (Ground Detect Scale)", Range(0.01, 0.2)) = 0.05
+        [HideInInspector] _GroundNormalY      ("水平とみなす法線Y (Horizontal Normal Y)", Range(0.5, 0.99)) = 0.8
 
         [Header(Vision Jack)]
         [Toggle] _VisionJackEnable ("視界ジャック有効 (Vision Jack)", Float) = 1
         [Toggle] _VisionJackInMirror ("ミラー内でも発火 (In Mirror)", Float) = 0
         _JackRadius         ("ジャック内壁の半径倍率 (Jack Radius Scale)", Range(0.2, 2)) = 0.7
-        _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
+        [HideInInspector] _JackStretch        ("ジャック内壁が閉じるまでの縦距離 (Jack Vertical Stretch)", Range(0.25, 4)) = 1.0
         // 捕まった本人の視界を「実際の繭の内側」にする（2026-10-25）。駆動スクリプトが本人の頭の位置（_JackHead）を
         // 渡したときだけ使う。渡されていなければ従来の紡錘形の内壁（上の 2 つ）。
         // 頭の周りの内壁: 目を中心にした球。体の繭と同じ模様で、下（体を見下ろす向き）は開けて体に張り付いた繭を見せる。
         // 太さをそろえる（_EvenGirth）が 0 より大きいときは、内壁をその筒の内側の面にする（外から見える繭と同じ形）
-        _JackHoodRadius     ("頭の周りの内壁の半径 m (Jack Hood Radius)", Range(0.08, 0.5)) = 0.15
-        _JackHoodOpen       ("頭の周りの内壁の下の開き 度 真下から (Jack Hood Opening)", Range(0, 150)) = 55
+        [HideInInspector] _JackHoodRadius     ("頭の周りの内壁の半径 m (Jack Hood Radius)", Range(0.08, 0.5)) = 0.15
+        [HideInInspector] _JackHoodOpen       ("頭の周りの内壁の下の開き 度 真下から (Jack Hood Opening)", Range(0, 150)) = 55
         [HideInInspector] _JackHead ("Jack Head xyz w=Gate Radius (script)", Vector) = (0, 0, 0, 0)
 
         [Header(Render State)]
