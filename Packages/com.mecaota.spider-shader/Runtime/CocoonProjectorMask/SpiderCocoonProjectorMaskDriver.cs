@@ -133,7 +133,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
             maskMaterial.SetVector("_OwnerHips", none);
             for (int i = 0; i < _pointNames.Length; i++) { maskMaterial.SetVector(_pointNames[i], none); }
         }
-        // 太さをそろえる筒も「渡していない」に戻す（繭デカールの箱を次の人に使い回すとき、前の人の筒が残らないように）
+        // 太さをそろえる筒も「渡していない」に戻す（箱を次の人に使い回すとき、前の人の筒が残らないように。箱の Renderer の有効・無効は呼ぶ側が決める）
         WriteGirthNone();
         WriteJackHeadNone();
         SetProjector(false);
