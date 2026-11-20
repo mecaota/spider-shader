@@ -62,7 +62,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     public float attachmentRadius = 0.5f;
 
     [Header("太さをそろえる（繭デカールの _EvenGirth と組む）")]
-    [Tooltip("繭デカール（mecaota/CocoonDecal）の箱の Renderer（任意）。入れると、骨から「体の一番太い所の太さの筒」を毎フレーム計算して、この Renderer に MaterialPropertyBlock で渡す。繭デカールのマテリアルの「太さをそろえる」を 0 より大きくすると、その太さのそろった繭になる。空なら渡さない（繭プロジェクターと組む繭デカールは、筒を描かない）")]
+    [Tooltip("繭デカール（mecaota/CocoonDecal）の箱の Renderer（任意）。入れると、骨から「体の一番太い所の太さの筒」を毎フレーム計算して、この Renderer に MaterialPropertyBlock で渡す。繭デカールのマテリアルの「太さをそろえる」を 0 より大きくすると、その太さのそろった繭になる。空なら渡さない（繭デカールは箱の円柱を筒にする）")]
     public Renderer cocoonRenderer;
     // 最後に渡した筒（ワールド。girthRadius が 0 なら渡していない）。半径は体の一番太い所までで、繭デカールが足す
     // 足し引き・糸の厚みは含まない。繭デカールの箱を筒が入る大きさに広げるスクリプトが読む
@@ -203,7 +203,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
     // 軸から一番遠くまで張り出した所（骨 + 円柱の太さ）までを含む筒を作る。
     // 上下の端は骨の位置で止める（太さを足さない）。上端は頭のてっぺん、下端は足の裏。
     // 円柱の太さは大人の体（腰〜首 0.45 m）の目安を、その人の腰〜首の長さで伸び縮みさせる。
-    // 筒の端の丸みと糸の厚みは繭デカールが足す。骨が足りず筒が作れないときは「渡していない」にする（繭デカールは筒を描かない）
+    // 筒の端の丸みと糸の厚みは繭デカールが足す。骨が足りず筒が作れないときは「渡していない」にする（繭デカールは箱の円柱を筒にする）
     private void WriteGirth(VRCPlayerApi p)
     {
         Vector3 hips = p.GetBonePosition(HumanBodyBones.Hips);
@@ -286,7 +286,7 @@ public class SpiderCocoonProjectorMaskDriver : UdonSharpBehaviour
         girthRadius = _gMaxRadial;
     }
 
-    // 筒を「渡していない」にする（w = 0。繭プロジェクターと組む繭デカールは筒を描かない）
+    // 筒を「渡していない」にする（w = 0。繭デカールは箱の円柱を筒にする）
     private void WriteGirthNone()
     {
         girthRadius = 0f;
