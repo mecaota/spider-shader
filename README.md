@@ -33,7 +33,7 @@
 
 ## 動作環境
 
-- Unity 2022.3（Built-in Render Pipeline）
+- Unity 6000.0.67f1（Built-in Render Pipeline）
 - VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）。同梱の Udon スクリプトが参照しているため、シェーダーだけを使う場合も必要です。
 - lilToon（任意。巣の焼き込み機能を使う場合だけ必要。2.3.x で確認）
 - PC 向けワールドを想定しています。Quest（Android）では、どのシェーダーも動作を確認していません。
