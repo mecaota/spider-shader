@@ -2,12 +2,13 @@
   "name": "com.mecaota.spider-shader",
   "displayName": "Spider Shaders",
   "description": "蜘蛛の巣・繭による拘束表現を行うVRChatワールド向けシェーダー集（Unity Built-in RP専用）",
-  "version": "0.16.1",
+  "version": "0.17.0",
   "author": {
     "name": "mecaota",
     "url": "https://github.com/mecaota/"
   },
-  "unity": "2022.3",
+  "unity": "6000.0",
+  "unityRelease": "67f1",
   "vpmDependencies": {
     "com.vrchat.worlds": ">=3.8.1"
   },

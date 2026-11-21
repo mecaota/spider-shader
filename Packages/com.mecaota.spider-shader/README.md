@@ -26,7 +26,7 @@
 
 ## 動作環境
 
-- Unity 2022.3 / Built-in Render Pipeline
+- Unity 6000.0.67f1 / Built-in Render Pipeline
 - VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）
 
 ## ライセンス
