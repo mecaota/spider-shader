@@ -90,4 +90,70 @@ SGS_Detail SGS_ReadDetail(SGS_Shape shape)
     result.glossNoise = value.a;
     return result;
 }
+// ---- データ版 4: 糸の網（mecaota/SpiderSilkNet）用の読み取り ----
+// 枚の番号を直接指定して読む。既存の SGS_ReadShape / SGS_ReadDetail（層の番号から枚を決める版 3）は変えない。
+// 版 4 の画像（Editor/SilkNet/SilkNetPatternCore.cs が焼く。1 枚 512 角を縦に並べた PNG を 2D Array で取り込む）:
+//   _BakedShape    rg = 糸だけの符号付き距離, 既定の膜の量で閉じた形（糸＋膜）の符号付き距離（どちらも 0.5 がふち、小さいほど内側）
+//   _BakedDetail   rgba = ふちの外向き xy, 糸の半径, 糸ごとの乱数
+//   _BakedCoverage r = 既定の膜の量での糸＋膜の面積（遠景用）
+float4 _NetBakeRange;   // x = 距離の範囲（±画素）, y = G を焼いた膜の量（0..1）, z = 糸の半径の範囲（画素）, w = 1 枚の一辺の画素数
+float  _NetDataVersion; // 4（2.5 より大きいときだけ遠景の被覆率を使う）
+float  _NetSliceCount;  // 配列の枚数（0 なら未設定）
+
+struct SGS_NetShape
+{
+    float3 uvSlice;       // 読んだ UV（折り返す前）と枚の番号
+    float  lod;           // 明示したミップの段
+    float  d;             // 糸だけの符号付き距離（画素。負が糸の内側）
+    float  dClosed;       // 既定の膜の量で閉じた形の符号付き距離（画素）
+    float  texelPerPixel; // 画面 1 画素あたりの絵柄の画素数（AA の幅と遠景の判定に使う）
+    float  coverage;      // 遠景の被覆率（版 4 未満は 0）
+};
+
+// patternUV: 折り返す前の UV。籠目（Repeat）は 0..1 を超えてよい。ミップの段は折り返す前の微分で決めるので、
+// タイルの継ぎ目でミップが飛ばない。微分はここで確定させるので、この後で discard してよい。
+SGS_NetShape SGS_ReadShapeSlice(float2 patternUV, float slice)
+{
+    SGS_NetShape s;
+    float texels = max(_NetBakeRange.w, 1.0);
+    s.uvSlice = float3(patternUV, clamp(slice, 0.0, max(_NetSliceCount - 1.0, 0.0)));
+    float2 dx = ddx(patternUV) * texels, dy = ddy(patternUV) * texels;
+    s.texelPerPixel = max(max(length(dx), length(dy)), 1e-4);
+    // ミップを半段浅くする（斜めから見た遠景で糸が平均されて薄まりすぎないように）
+    s.lod = clamp(log2(max(s.texelPerPixel, 1.0)) - 0.5, 0.0, log2(texels));
+    float2 v = UNITY_SAMPLE_TEX2DARRAY_LOD(_BakedShape, s.uvSlice, s.lod).rg;
+    s.d = (v.x * 2.0 - 1.0) * _NetBakeRange.x;
+    s.dClosed = (v.y * 2.0 - 1.0) * _NetBakeRange.x;
+    s.coverage = (_NetDataVersion > 2.5) ? UNITY_SAMPLE_TEX2DARRAY_LOD(_BakedCoverage, s.uvSlice, s.lod).r : 0.0;
+    return s;
+}
+
+// 同じ枚・同じミップの段で、UV をずらした所の 2 つの距離（糸だけ, 膜あり）を読む（陰の帯を作るため）
+float2 SGS_ReadNetShapeAt(SGS_NetShape s, float2 uvOffset)
+{
+    float2 v = UNITY_SAMPLE_TEX2DARRAY_LOD(_BakedShape, float3(s.uvSlice.xy + uvOffset, s.uvSlice.z), s.lod).rg;
+    return (v * 2.0 - 1.0) * _NetBakeRange.x;
+}
+
+struct SGS_NetDetail
+{
+    float2 direction;     // ふちの外向き（絵柄の UV の向き。正規化済み）
+    float  radius;        // 糸の半径（画素）
+    float  strandRandom;  // 糸ごとの乱数 0..1
+};
+
+SGS_NetDetail SGS_ReadNetDetail(SGS_NetShape s)
+{
+    // discard の後でも使えるよう、暗黙の微分は使わない（段は SGS_ReadShapeSlice で決めたもの）
+    float4 v = UNITY_SAMPLE_TEX2DARRAY_LOD(_BakedDetail, s.uvSlice, s.lod);
+    SGS_NetDetail r;
+    r.direction = v.rg * 2.0 - 1.0;
+    // 生成器は画素の行（下向き）で勾配を取り、Unity は PNG の一番上を v = 1 として取り込む。
+    // 絵柄の UV（v は上向き）に合わせて y の符号を反転する
+    r.direction.y = -r.direction.y;
+    r.direction = (dot(r.direction, r.direction) > 1e-6) ? normalize(r.direction) : float2(1.0, 0.0);
+    r.radius = max(v.b * _NetBakeRange.z, 0.5);
+    r.strandRandom = v.a;
+    return r;
+}
 #endif

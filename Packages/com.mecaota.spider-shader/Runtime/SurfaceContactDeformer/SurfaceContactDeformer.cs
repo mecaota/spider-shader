@@ -989,6 +989,32 @@ public class SurfaceContactDeformer : UdonSharpBehaviour
         return new Vector3(l.x, 0f, l.z); // Plane
     }
 
+    // ---- BATCH1 G0c: a read-only surface query for the walking spiders (SpiderLocomotion.Web.cs). No Raycast, no state change, no sync. ----
+    // _SurfaceQuery(world): the nearest point of this web's surface to a world point (the formula, as the capture uses it). U# has no out, so the rest comes back in fields:
+    // queryNormal = the surface normal there (world, the face's own side, not yet oriented), queryInside = the point is inside the capture range (the surface exists there),
+    // queryEdge = roughly how far (m, world) the point is from the edge of the surface (0 on or outside the edge).
+    [System.NonSerialized] public Vector3 queryNormal = Vector3.up;
+    [System.NonSerialized] public bool queryInside;
+    [System.NonSerialized] public float queryEdge;
+
+    public Vector3 _SurfaceQuery(Vector3 world)
+    {
+        EnsureInit();
+        Transform f = Face(0);
+        Vector3 l = f.InverseTransformPoint(world);
+        Vector3 pr = ProjectLocal(l);
+        queryInside = InCaptureRange(pr);
+        queryNormal = SurfaceNormal(0, l);
+        Vector3 s = f.lossyScale;
+        float scale = (Mathf.Abs(s.x) + Mathf.Abs(s.y) + Mathf.Abs(s.z)) / 3f;
+        float edge = 1f;
+        if (shape == SurfaceShape.Plane) edge = _fanCapture ? 1f : captureRadiusLocal - new Vector2(pr.x, pr.z).magnitude;
+        else if (shape == SurfaceShape.Cylinder) edge = surfaceHalfHeightLocal - Mathf.Abs(pr.y);
+        else if (shape == SurfaceShape.TreeFan) edge = (1.02f - _tfS) * Mathf.Max(treeReach, 0.01f);
+        queryEdge = queryInside ? Mathf.Max(0f, edge * scale) : 0f;
+        return f.TransformPoint(pr);
+    }
+
     private bool InCaptureRange(Vector3 l)
     {
         if (shape == SurfaceShape.Plane)

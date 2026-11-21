@@ -18,7 +18,9 @@ Packages/com.mecaota.spider-shader/   パッケージ本体（VCC で配布さ�
     SurfaceContactDeformer/           接触追従の変形の Udon
     WebDrape/                         体に覆いかぶさる変形を駆動する Udon（SpiderWebDrapeDriver）
     WebBake/                          巣の lilToon 焼き込みの控え（エディター専用のコンポーネント）
+    SilkNet/                          糸の網の標準マテリアル（Materials/）・メッシュ（Meshes/）・焼いた絵柄（Patterns/）
   Editor/                             インスペクタ・質感の継承・プリセット・焼き込み・メッシュ生成（Editor 専用）
+    SilkNet/                          糸の網の絵柄の生成器（SilkNetPatternCore.cs）・焼き直し・メッシュ生成・マテリアルの補助
     SpiderWeb*Bake*.cs                巣の lilToon 焼き込み（確認画面・控えのインスペクタ・ビルド時の除去。SpiderWebMaterialSnapshotUtil.cs も）
     Shaders/, CGINC/                  焼き込み用シェーダー（Editor 専用。蜘蛛の巣ドレープ用と、巣の lilToon 焼き込み用の SpiderWebBaker.shader）
   Presets/                            標準プリセット（SpiderShaderPreset アセット）
@@ -38,9 +40,9 @@ Website/                              配布ページのテンプレート
 
 | CGINC | 役割 | 使うシェーダー |
 |---|---|---|
-| `SpiderSilk_Look.cginc` | 質感 21 項目の uniform 宣言（**宣言はここだけ**） | 繭プロジェクターを除く 5 シェーダー（`SpiderCocoon_Common` / `SpiderGoo_Shading` 経由） |
-| `SpiderGoo_Shading.cginc` | 粘液の塗り（丸い断面・トゥーン・ハイライト・輪郭線・透け） | 糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ |
-| `SpiderCocoon_Common.cginc` / `SpiderCocoon_Noise.cginc` / `SpiderCocoon_Thread.cginc` / `SpiderCocoon_Lighting.cginc` | 共通の uniform・ノイズ・糸の位相・リムライト・揺れ | 糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ |
+| `SpiderSilk_Look.cginc` | 質感 21 項目の uniform 宣言（**宣言はここだけ**） | 繭プロジェクターを除く 6 シェーダー（`SpiderCocoon_Common` / `SpiderGoo_Shading` 経由） |
+| `SpiderGoo_Shading.cginc` | 粘液の塗り（丸い断面・トゥーン・ハイライト・輪郭線・透け） | 糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網 |
+| `SpiderCocoon_Common.cginc` / `SpiderCocoon_Noise.cginc` / `SpiderCocoon_Thread.cginc` / `SpiderCocoon_Lighting.cginc` | 共通の uniform・ノイズ・糸の位相・リムライト・揺れ | 糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網 |
 | `SpiderCocoon_Compose.cginc` | 乾いた糸のレイヤー合成（`SC_CompositeLayers`） | 蜘蛛糸（乾いた糸モード）。繭・繭デカールは include のみ |
 | `SpiderThread_Goo.cginc` | 粘液の束・膜の距離場（`STG_GooField`） | 蜘蛛糸、蜘蛛の巣ドレープの焼き込み |
 | `SpiderCocoon_Goo.cginc` | 繭の粘液の帯・巻きアニメ（`SC_CompositeGoo`） | 繭・繭デカール |
@@ -49,22 +51,23 @@ Website/                              配布ページのテンプレート
 | `SpiderCocoon_Sheet.cginc` | 表面の模様「蜘蛛の巣ドレープ風」（`_SurfaceStyle`） | 繭デカール |
 | `SpiderWeb_Core.cginc` | 巣の頂点・フラグメントの処理（`SpiderWeb.shader` の本体）。`SW_BAKE` を定義して include すると視線と光の向きが焼き込み用に置き換わり、巣の lilToon 焼き込み用の `Editor/Shaders/SpiderWebBaker.shader` と同じ式を共有する | 巣、巣の lilToon 焼き込み |
 | `SpiderCocoon_Pull.cginc` | 接触追従の変形（`SC_PULL_MAX = 16`） | 巣・繭・蜘蛛の巣ドレープ |
-| `SpiderWeb_Drape.cginc` | 体に覆いかぶさる変形（`SW_DRAPE_MAX = 20`） | 巣・蜘蛛の巣ドレープ |
+| `SpiderWeb_Drape.cginc` | 体に覆いかぶさる変形（`SW_DRAPE_MAX = 20`） | 巣・蜘蛛の巣ドレープ・糸の網 |
 | `SpiderSilk_Motion.cginc` | 揺れ・重力たゆみの波形 | 糸・巣 |
-| `SpiderGooSheet_BakedPattern.cginc` | 焼き込んだ模様の読み取り | 蜘蛛の巣ドレープ |
+| `SpiderGooSheet_BakedPattern.cginc` | 焼き込んだ模様の読み取り | 蜘蛛の巣ドレープ・糸の網 |
+| `SpiderSilkNet_Core.cginc` | 糸の網の頂点・画素の処理（`SpiderSilkNet.shader` の本体。3 パス共通） | 糸の網 |
 
 インスペクタは全シェーダー共通の `Editor/SpiderCocoonShaderGUI.cs`（繭プロジェクターを除く）が描きます。
 
 ## 変更するときの約束
 
-- **質感 21 項目**は、名前・型・範囲・既定値・属性を全 5 シェーダーで完全に一致させます。足す・消すときは `Runtime/CGINC/SpiderSilk_Look.cginc`・`Editor/SpiderSilkLook.cs`（`Props`）・5 つの `.shader` の Properties を一緒に直します。メニュー **Tools > SpiderShader > 質感プロパティの一致チェック**（取り込み時にも自動実行）で確かめられ、一致しない間は自動同期が止まります。
+- **質感 21 項目**は、名前・型・範囲・既定値・属性を全 6 シェーダー（継承元の蜘蛛糸と、継承先の 5 つ）で完全に一致させます。足す・消すときは `Runtime/CGINC/SpiderSilk_Look.cginc`・`Editor/SpiderSilkLook.cs`（`Props`）・6 つの `.shader` の Properties を一緒に直します。メニュー **Tools > SpiderShader > 質感プロパティの一致チェック**（取り込み時にも自動実行）で確かめられ、一致しない間は自動同期が止まります。
 - **新しいプロパティ**は `SpiderCocoonShaderGUI.cs` の `Categories` 表に登録します。未登録だと「その他（未分類）」に出ます。プリセットでの扱い（`Part` = Look / Shape / Gimmick、`Hidden`）もここで決まります。Udon が実行時に渡す値は `RuntimeOnlyProps` に入れてプリセットから除外します。
 - ShaderLab の属性の引数（`[Header(...)]` など）は ASCII のみです（日本語を書くとパースエラー）。表示名の日本語は問題ありません。
 - **ステンシルのビット**: 繭の視界ジャック 128（`_StencilRef`）、蜘蛛糸の芯 64（`_SilkStencilBit`）、繭プロジェクター 32（`_StencilReceiverBit`）、蜘蛛の体 16（ワールド側のシェーダーが立てる）。デカールの体表 glue は `_GlueStencilRef` / `_GlueStencilReadMask`（既定 0 / 208 = 128 + 64 + 16、繭プロジェクターと組むときは 32 / 240）。どれかを変えたら合計をそろえます。
 - **描画順**: 蜘蛛糸は `Transparent-10`、それ以外は `Transparent`。理由は [蜘蛛糸の「描画順とステンシル」](docs/SpiderSilk.md#描画順とステンシル)。
 - **上限値の対応**: `SC_PULL_MAX` = `SurfaceContactDeformer.MaxSlots`（16。スロットの状態を外から読む API が int のビットマスクを使うため 32 以下に限る。超えるとコンパイルエラーになる）、まとめ描きの仲間 `SCG_MAX_MEMBERS`（16）と `CocoonGroupLinker` の `MaxMembers`（16）、覆いかぶさる変形のカプセル `SW_DRAPE_MAX`（20）と `SpiderWebDrapeDriver.MaxCapsules`（20）。
 - 新しい UdonSharp スクリプトのプログラムアセット（`.asset`）は、`sourceCsScript` だけを指した中身の空のものを置いてあり、Unity で開いたときに UdonSharp がコンパイルして中身を作ります。作り直された `.asset` は、そのままコミットして構いません。
-- 繭・繭デカールはオブジェクト空間を使う判定があるため `DisableBatching` タグを付けています。
+- 繭・繭デカール・糸の網はオブジェクト空間を使う判定があるため `DisableBatching` タグを付けています。
 - 巣の lilToon 焼き込み（`Editor/SpiderWebLilToonBaker.cs`）の焼き方（座標・色・ミップ・lilToon の設定）を変えたら `ToolVersion` を上げます。`SpiderWeb_Core.cginc` を変えると焼き込みの色も変わりますが、焼いた巣には自動では反映されません（焼き直しが必要）。
 
 ## ドキュメントの方針

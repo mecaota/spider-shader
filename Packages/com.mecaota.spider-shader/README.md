@@ -15,6 +15,7 @@
 | `mecaota/Cocoon` | 円柱の繭（中に入ると内壁に包まれる） | [繭](https://github.com/mecaota/spider-shader/blob/main/docs/Cocoon.md) |
 | `mecaota/CocoonDecal` | 体の表面に張り付く繭（PC 専用・影付きライト必須） | [繭デカール](https://github.com/mecaota/spider-shader/blob/main/docs/CocoonDecal.md) |
 | `mecaota/SpiderWebDrape` | 体にかぶさる粘液のシート（PC 専用・焼き込みが必要） | [蜘蛛の巣ドレープ](https://github.com/mecaota/spider-shader/blob/main/docs/SpiderWebDrape.md) |
+| `mecaota/SpiderSilkNet` | 不規則な網（籠目の籠・張り巣の板。絵柄の画像とメッシュは `Runtime/SilkNet`） | [糸の網](https://github.com/mecaota/spider-shader/blob/main/docs/SpiderSilkNet.md) |
 | `mecaota/CocoonProjector` | 体に張り付く繭をアバターにだけ描くための目印（試験実装・PC 専用。駆動は `Runtime/CocoonProjectorMask`） | [繭プロジェクター](https://github.com/mecaota/spider-shader/blob/main/docs/CocoonProjector.md) |
 
 ## 共通機能・Udon ギミック

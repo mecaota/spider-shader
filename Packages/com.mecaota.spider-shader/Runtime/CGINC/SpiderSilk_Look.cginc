@@ -6,9 +6,9 @@
 // 蜘蛛糸の「質感（Look）」21 個の uniform を、ここ 1 か所でだけ宣言する。
 //
 // SpiderSilk（継承元の蜘蛛糸）/ SpiderWeb / Cocoon /
-// CocoonDecal / SpiderWebDrape（蜘蛛の巣ドレープ）の 5 シェーダーが同じ意味で使う値。
+// CocoonDecal / SpiderWebDrape（蜘蛛の巣ドレープ）/ SpiderSilkNet（糸の網）の 6 シェーダーが同じ意味で使う値。
 // （繭プロジェクター CocoonProjector は色を描かないので使わない）
-// 巣・繭・繭デカール・蜘蛛の巣ドレープのマテリアルには、エディタ拡張が「継承元の蜘蛛糸マテリアル」の
+// 巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網のマテリアルには、エディタ拡張が「継承元の蜘蛛糸マテリアル」の
 // 値をそのまま書き写す（実行時の処理は無い。Editor/SpiderSilkLook.cs）。
 //
 // ※ uniform = マテリアルの値をシェーダーへ渡す変数（Web の CSS 変数のようなもの）。

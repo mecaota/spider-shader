@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 // =============================================================================
-// 繭・繭デカール・蜘蛛糸・蜘蛛の巣・蜘蛛の巣ドレープ系で共用のカスタムインスペクタ。
+// 繭・繭デカール・蜘蛛糸・蜘蛛の巣・蜘蛛の巣ドレープ系・糸の網で共用のカスタムインスペクタ。
 // lilToon 風にカテゴリごとの折りたたみボックスで整理し、色分けして表示する。
 //   ・紫系「質感」: 蜘蛛糸の質感 21 項目（Editor/SpiderSilkLook.cs）。蜘蛛糸のマテリアルで
 //     決めて、巣・繭・繭デカール・蜘蛛の巣ドレープはそれを継承する（継承先では「蜘蛛糸の質感（継承）」欄に
@@ -146,6 +146,21 @@ public class SpiderCocoonShaderGUI : ShaderGUI
                            "_WebLayerAdhereScale", "_WebLayerTwist", "_WebLayerShift", "_WebLayerOpacity",
                            "_WebLayerWidthOuter", "_WebLayerWidthJitter" } },
 
+        // ---- 糸の網（SpiderSilkNet）固有 ----
+        // 絵柄の配列は焼いた PNG（2D Array）。種類と枚数はインスペクタが配列から自動で入れる（SpiderSilkNetMaterial.SyncNet）。
+        // Require は糸の網だけが持つ _NetSlice
+        new Category{ Title = "糸の網の絵柄", Common = false, Require = "_NetSlice",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_BakedShape", "_BakedDetail", "_BakedCoverage", "_NetSlice", "_NetSeed", "_NetTiling" } },
+        new Category{ Title = "糸の網の形", Common = false, Require = "_NetSlice",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_NetWidth", "_NetFill", "_NetMerge", "_NetEdgeFade", "_NetProfileShade", "_FormShade" } },
+        new Category{ Title = "糸の網の裏側", Common = false, Require = "_NetSlice",
+            Part = PresetPart.Shape,
+            Props = new[]{ "_BackMode", "_NetCageExtent", "_BackTint", "_BackWidth" } },
+        new Category{ Title = "糸の網の距離による簡略化", Common = false, Require = "_NetSlice",
+            Props = new[]{ "_NetSimpleDistance", "_BackHideDistance" } },
+
         // ---- 蜘蛛の巣版（SpiderWeb）固有 ----
         // 巣の形・配置はメッシュ（平面 / 木の扇形）ごとに決まるので、プリセットでは
         // 「形」区分にして、適用時に今の値を残せるようにする
@@ -222,7 +237,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
             foreach (var mp in list) drawn.Add(mp.name);
 
             string label = cat.SilkLook
-                ? cat.Title + (role == SpiderSilkLook.Role.Source ? "（蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープへ継承）" : "")
+                ? cat.Title + (role == SpiderSilkLook.Role.Source ? "（蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網へ継承）" : "")
                 : cat.Title + (cat.Common ? "（共通）" : "（固有）");
             bool open = cat.SilkLook ? DrawSectionFoldout(label, SpiderSilkLookPanel.LookColor) : DrawSectionFoldout(label, cat.Common);
             if (open)
@@ -236,6 +251,7 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         }
 
         SpiderGooSheetBakePanel.Draw(materialEditor);
+        SpiderSilkNetMaterial.DrawPanel(materialEditor);
         SpiderWebLilToonBakePanel.Draw(materialEditor);
 
         // カテゴリ表に無い新規プロパティの取りこぼし防止
@@ -295,6 +311,8 @@ public class SpiderCocoonShaderGUI : ShaderGUI
 
     public static bool SyncKeywords(Material material)
     {
+        // 糸の網: 配列から枚数と種類を入れ、_DrapeEnable とキーワード _NET_DRAPE をそろえる
+        if (SpiderSilkNetMaterial.IsNet(material)) return SpiderSilkNetMaterial.SyncNet(material);
         if (material == null || !material.HasProperty("_SurfaceStyle")) return false;
         bool net = material.GetFloat("_SurfaceStyle") > 0.5f;
         if (material.IsKeywordEnabled(SurfaceNetKeyword) == net) return false;
@@ -383,6 +401,8 @@ public class SpiderCocoonShaderGUI : ShaderGUI
         "_ClipLine",
         "_BakedShape", "_BakedDetail", "_BakedUVSpan", "_BakedSliceCount", "_BakedWetParams",
         "_BakedCoverage", "_BakedTexelSize", "_BakedDistanceRange", "_BakedRadiusRange",
+        // 糸の網: 配列から自動で入る値と、部品ごとに MaterialPropertyBlock で入れる種
+        "_NetKind", "_NetSliceCount", "_NetDataVersion", "_NetBakeRange", "_NetSeed",
     };
 
     internal class PresetGroup

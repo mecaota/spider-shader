@@ -9,7 +9,7 @@ using UnityEngine.Rendering;
 // SpiderSilkLook — 「蜘蛛糸の質感」の継承を扱う中心クラス（エディタ専用・実行時の処理はゼロ）。
 //
 //  蜘蛛糸（SpiderSilk）のマテリアルを「継承元」にして、巣（SpiderWeb）・
-//  繭（Cocoon）・デカール・蜘蛛の巣ドレープ系（四角・絡みつき・水玉）へ、色・陰影・
+//  繭（Cocoon）・デカール・蜘蛛の巣ドレープ系（四角・絡みつき・水玉）・糸の網（SpiderSilkNet）へ、色・陰影・
 //  ツヤ・トゥーン・リムなど 21 個の値（Props）を書き写す。
 //  Web でいえば「元データ（継承元）から派生データ（継承先の値）を作り直す」仕組みで、
 //  継承先の質感は常に継承元から計算し直して決まる（継承先では編集しない）。
@@ -29,7 +29,7 @@ public static class SpiderSilkLook
     public const string SourceShaderName = "mecaota/SpiderSilk";
     public static readonly string[] InheritorShaderNames =
         { "mecaota/SpiderWeb", "mecaota/Cocoon", "mecaota/CocoonDecal",
-          "mecaota/SpiderWebDrape" };
+          "mecaota/SpiderWebDrape", "mecaota/SpiderSilkNet" };
 
     /// <summary>継承先に「どの蜘蛛糸マテリアルを継承元にするか」を記録する隠しプロパティ（描画には使わない）。</summary>
     public const string LinkProperty = "_SilkLookLink";

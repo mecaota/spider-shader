@@ -8,10 +8,12 @@
 |---|---|---|---|
 | [接触追従の変形](#接触追従の変形surfacecontactdeformer) | ○ `SurfaceContactDeformer` | 蜘蛛の巣・繭・蜘蛛の巣ドレープ | 手足が触れた所が貼り付き、上げると伸び、押すと凹む |
 | [繭のまとめ描き](#繭のまとめ描きcocoongrouplinker) | ○ `CocoonGroupLinker` | 体に張り付く繭 | くっついた複数の繭を、同じ糸でまとめて巻いたように描く |
-| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・蜘蛛の巣ドレープ | 投げた網が体の形に沿ってかぶさる |
+| [体に覆いかぶさる変形](#体に覆いかぶさる変形drape) | ○ `SpiderWebDrapeDriver` | 蜘蛛の巣・蜘蛛の巣ドレープ・糸の網 | 投げた網が体の形に沿ってかぶさる |
 | [繭プロジェクターの駆動](CocoonProjector.md#駆動スクリプトspidercocoonprojectormaskdriver) | ○ `SpiderCocoonProjectorMaskDriver` | 繭プロジェクター（体に張り付く繭と組む） | 体に張り付く繭を、捕まった人のアバターにだけ描く |
 
 **前提**: VRChat Worlds SDK 3.8.1 以上（UdonSharp を含む）が入ったプロジェクトが必要です。
+
+蜘蛛が糸を撃って捕まえるなどの蜘蛛のギミックは、このパッケージには入っていません。別のパッケージ（`com.mecaota.spider-gimmick`・`com.mecaota.gunner`）の説明を見てください。
 
 ### しくみの共通点（初心者向け）
 
@@ -407,7 +409,7 @@ public class WebSlotScanner : UdonSharpBehaviour
 
 ## 体に覆いかぶさる変形（Drape）
 
-投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)と[蜘蛛の巣ドレープ](SpiderWebDrape.md)が対応しています。
+投げつけた網が、当たった人の体の形に沿ってかぶさる表現です。[蜘蛛の巣](SpiderWeb.md)・[蜘蛛の巣ドレープ](SpiderWebDrape.md)・[糸の網](SpiderSilkNet.md)が対応しています。
 
 体の形（ボーンから作ったカプセル）と網の位置・向きを、Udon が MaterialPropertyBlock で毎フレーム渡します。パッケージには、そのための汎用の駆動スクリプト [SpiderWebDrapeDriver](#駆動スクリプトspiderwebdrapedriver) が入っています。値が渡されない間は、変形は何も起きません。作者のワールドでは、網の飛行や着弾の同期まで含めた独自の `CaptureNetDrape` で駆動しています（[開発者向けノート](../CONTRIBUTING.md#作者のワールドwebbedworldでの使用例と経緯)）。
 

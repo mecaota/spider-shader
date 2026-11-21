@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84114eb74d80b6f4095a9ff5b0261706, type: 3}
+  m_Name: Net_Cage
+  m_EditorClassIdentifier:
+  displayName: "\u7c60\u76ee\u306e\u7c60"
+  category: "\u7cf8\u306e\u7db2"
+  description: "\u4e0a\u3092\u7d5e\u3063\u305f\u7c60\uff08SilkNetCage \u30e1\u30c3\u30b7\u30e5\uff09\u7528\u3002\u7c60\u76ee\u306e\u7d75\u67c4\u3001\u819c 0.3\u3001\u65ad\u9762\u306e\u9670 0.6\u3001\u88cf\u306f\u819c\u306a\u3057\u306e\u7d30\u3044\u7cf8\uff080.55 \u500d\u30fb3 \u5272\u6697\u304f\uff09\u3002\n\u7d75\u67c4\u306e\u914d\u5217\u306f\u30d7\u30ea\u30bb\u30c3\u30c8\u306b\u542b\u307e\u306a\u3044\uff08\u30a4\u30f3\u30b9\u30da\u30af\u30bf\u306e\u300c\u6a19\u6e96\u306e\u7c60\u76ee\u3092\u5165\u308c\u308b\u300d\u304b\u3001\u6a19\u6e96\u30de\u30c6\u30ea\u30a2\u30eb SilkNet_Cage \u3092\u4f7f\u3046\uff09\u3002\n\n\u203b \u8cea\u611f\uff0821 \u9805\u76ee\uff09\u306f\u542b\u307e\u306a\u3044\u3002\u9069\u7528\u5148\u30de\u30c6\u30ea\u30a2\u30eb\u306e\u300c\u7d99\u627f\u5143\u306e\u8718\u86db\u7cf8\u300d\u3067\u6c7a\u307e\u308b\u3002"
+  order: 10
+  shader: {fileID: 4800000, guid: b0327c6319ad42ecb66124997519468b, type: 3}
+  renderQueue: -1
+  floats:
+  - name: _NetSlice
+    value: -1
+  - name: _NetWidth
+    value: 1
+  - name: _NetFill
+    value: 0.3
+  - name: _NetMerge
+    value: 0.5
+  - name: _NetEdgeFade
+    value: 0
+  - name: _NetProfileShade
+    value: 0.6
+  - name: _FormShade
+    value: 0
+  - name: _BackMode
+    value: 1
+  - name: _BackWidth
+    value: 0.55
+  colors:
+  - name: _BackTint
+    value: {r: 0.7, g: 0.73, b: 0.8, a: 1}
+  vectors:
+  - name: _NetTiling
+    value: {x: 1, y: 1, z: 0, w: 0}
+  - name: _NetCageExtent
+    value: {x: 0.47, y: 1.1, z: 0.47, w: 0}
+  textures: []

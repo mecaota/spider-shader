@@ -11,7 +11,7 @@
 - 見た目は 2 種類から選べます。
   - **乾いた糸**（既定）: 細い糸が数本、帯に沿って走ります。
   - **粘液モード**: 太い粘液の束が蛇行し、束の間に穴の空いた膜が張ります（アニメの「いとをはく」のような見た目）。
-- このシェーダーの「質感」（粘液の色・ツヤ・トゥーン・リム）は、蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープに**継承**されます。くわしくは [質感の継承](CommonFeatures.md#質感の継承) を参照してください。
+- このシェーダーの「質感」（粘液の色・ツヤ・トゥーン・リム）は、蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網に**継承**されます。くわしくは [質感の継承](CommonFeatures.md#質感の継承) を参照してください。
 - 対応環境: Unity Built-in Render Pipeline。PC で動作確認しています。Quest（Android）では未検証です。
 
 ## こんなときに使う
@@ -243,7 +243,7 @@ Render Queue・Enable GPU Instancing・Double Sided Global Illumination（Unity 
 |---|---|
 | `Runtime/SpiderSilk.shader` | シェーダー本体 |
 | `Runtime/CGINC/SpiderThread_Goo.cginc` | 粘液モードの束・膜の形（距離場） |
-| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープと共通） |
+| `Runtime/CGINC/SpiderGoo_Shading.cginc` | 粘液の塗り（蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網と共通） |
 | `Runtime/CGINC/SpiderCocoon_Compose.cginc` ほか `SpiderCocoon_*.cginc` | 乾いた糸モードの糸の計算 |
 | `Runtime/CGINC/SpiderSilk_Motion.cginc` | 重力のたゆみ（巣の揺れと共通の波形） |
 | `Runtime/CGINC/SpiderSilk_Look.cginc` | 質感 21 項目の宣言 |

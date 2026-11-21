@@ -13,10 +13,10 @@ Shader "mecaota/SpiderWebDrape"
 {
     Properties
     {
-        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 5 シェーダー
-        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ）で
+        // ※ 質感（Look）21 個（_Goo の色・陰影・光沢・粘液感 / トゥーン / リム）は 6 シェーダー
+        //   （蜘蛛糸・蜘蛛の巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網）で
         //   名前・型・範囲・既定値を完全一致させる（一覧: Editor/SpiderSilkLook.cs、宣言: CGINC/SpiderSilk_Look.cginc）。
-        //   巣・繭・繭デカール・蜘蛛の巣ドレープではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
+        //   巣・繭・繭デカール・蜘蛛の巣ドレープ・糸の網ではこの値を「継承元の蜘蛛糸マテリアル」から受け継ぐ。
         // カテゴリ分けは CustomEditor（SpiderCocoonShaderGUI）が担当。
         // [Header] は標準インスペクタ向けのフォールバック表示。
         // ※ ShaderLab の属性引数は ASCII のみ（日本語を書くとパースエラー）。
@@ -91,6 +91,9 @@ Shader "mecaota/SpiderWebDrape"
 
         [Header(Render State)]
         [ToggleUI] _HideBackFibers ("裏面の糸を隠す (Hide Back Fibers)", Float) = 0
+        // 被った本人の視界を白く覆わないよう、カメラからこの距離（m）より近い所を消す（その 6 割の距離までで 0）。0 で無効。
+        // 他の人のカメラは体から離れているので、今まで通り全部見える。
+        _NearFade ("カメラ近くを消す距離 m 0で無効 (Near Fade)", Range(0, 1)) = 0.35
 
         [Header(Seed)]
         _Seed      ("揺らぎシード (Seed)", Float) = 0
@@ -204,6 +207,7 @@ Shader "mecaota/SpiderWebDrape"
             float _WebLayerAdhere, _WebLayerAdhereScale, _WebLayerTwist;
             float _WebLayerShift, _WebLayerOpacity;
             float _WebLayerWidthOuter, _WebLayerWidthJitter;
+            float _NearFade;
 
             // ---- 接触追従の変形（uniform と変位関数は繭と共通の Pull.cginc） ----
             #include "CGINC/SpiderCocoon_Pull.cginc"
@@ -396,6 +400,8 @@ Shader "mecaota/SpiderWebDrape"
                 goo.a = lerp(goo.a, farAlpha, p.farWeight);
                 // 色・深度の両パスが使う最終不透明度を薄くし、伸びた所の深度も残さない。
                 goo.a *= drapeStretchFade;
+                // カメラのすぐ近く（被った本人の頭のまわり）は消す。深度パスも同じ alpha を使うので深度も書かない。
+                if (_NearFade > 0.0) goo.a *= smoothstep(_NearFade * 0.6, _NearFade, distance(_WorldSpaceCameraPos, i.worldPos));
                 if (layer > 0.5) goo.a *= pow(clamp(_WebLayerOpacity, 0.3, 1.0), layer);
                 // 色/深度の面積判定と最終alphaは共通。深度の芯だけは未解像になるほど弱める。
                 // 遠景の平均被覆率が0.5を超えても、面全体を不透明な深度にしない。
